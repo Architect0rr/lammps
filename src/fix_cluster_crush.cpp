@@ -17,7 +17,6 @@
 #include "irregular.h"
 #include "lattice.h"
 #include "math_special.h"
-// #include "input.h"
 
 #include <cmath>
 #include <cstring>
@@ -59,8 +58,8 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg)
   double overlap = utils::numeric(FLERR, arg[4], true, lmp);
   if (overlap < 0)
     error->all(FLERR, "Minimum distance for fix cluster/crush must be non-negative");
-  // apply scaling factor for styles that use distance-dependent factors
 
+  // apply scaling factor for styles that use distance-dependent factors
   overlap *= domain->lattice->xlattice;
   odistsq = overlap * overlap;
 
@@ -270,14 +269,6 @@ void FixClusterCrush::pre_exchange()
   int atoms2move_total = 0;
   for (int proc = 0; proc < nprocs; ++proc){atoms2move_total += nptt_rank[proc]; }
 
-  // clear global->local map for owned and ghost atoms
-  // clear ghost count and any ghost bonus data internal to AtomVec
-
-  // if (atom->map_style != Atom::MAP_NONE) atom->map_clear();
-  // atom->nghost = 0;
-  // atom->avec->clear_bonus();
-  // atom->avec->grow(0);
-
   double **x = atom->x;
   double **v = atom->v;
 
@@ -320,29 +311,6 @@ void FixClusterCrush::pre_exchange()
       }
     }
   }
-
-  // MPI_Barrier(world);
-
-  // init per-atom fix/compute/variable values for created atoms
-
-  // atom->data_fix_compute_variable(atom->nlocal, atom->nlocal);
-
-  // // set new total # of atoms and error check
-  // bigint nblocal = atom->nlocal;
-  // MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-  // if (atom->natoms < 0 || atom->natoms >= MAXBIGINT) error->all(FLERR, "Too many total atoms");
-
-  // // check that atom IDs are valid
-
-  // atom->tag_check();
-
-  // if global map exists, reset it
-  // invoke map_init() b/c atom count has grown
-
-  // if (atom->map_style != Atom::MAP_NONE) {
-  //   atom->map_init();
-  //   atom->map_set();
-  // }
 
   // move atoms back inside simulation box and to new processors
   // use remap() instead of pbc() in case atoms moved a long distance
@@ -389,11 +357,12 @@ void FixClusterCrush::pre_exchange()
 
 } // void FixClusterCrush::post_integrate()
 
-/* ---------------------------------------------------------------------- */
+/* ----------------------------------------------------------------------
+  attempts to create coords up to maxtry times
+  criteria for insertion: region, triclinic box, overlap
+------------------------------------------------------------------------- */
 
 bool FixClusterCrush::gen_one() {
-  // attempt to insert an atom/molecule up to maxtry times
-  // criteria for insertion: region, triclinic box, overlap
 
   int ntry = 0;
   bool success = false;
@@ -468,7 +437,11 @@ double FixClusterCrush::maxwell_distribution3D(double prob, double mass, double 
 }
 
 /* ----------------------------------------------------------------------
-   Inverse error function
+  Inverse error function
+  Implementation of the inverse error function based on the rational
+  approximation of percentage points of normal distribution available from
+  https://www.jstor.org/stable/2347330.
+  Copy-pasted from https://github.com/lakshayg/erfinv.
 ------------------------------------------------------------------------- */
 
 long double FixClusterCrush::erfinv(long double x) noexcept(true) {
@@ -570,7 +543,7 @@ long double FixClusterCrush::erfinv_refine(long double x, int niter) noexcept(tr
   constexpr long double k = 0.8862269254527580136490837416706L; // 0.5 * sqrt(pi)
   long double y = erfinv(x);
   while (niter-- > 0) {
-    y -= k * (std::erfl(y) - x) / std::expl(-y * y);
+    y -= k * (std::erfl(y) - x) / MathSpecial::fm_exp(-y * y);
   }
   return y;
 }
