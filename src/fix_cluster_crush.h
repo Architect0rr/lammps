@@ -50,14 +50,11 @@ class FixClusterCrush : public Fix {
   double monomer_temperature, odistsq;
 
   double xlo, ylo, zlo, xhi, yhi, zhi;
-  double lamda[3], *coord;
+  double lamda[3];
   double *boxlo, *boxhi;
   double xone[3];
 
   bool gen_one();
-  double maxwell_distribution3D(double, double, double) noexcept(true);
-  long double erfinv(long double) noexcept(true);
-  long double erfinv_refine(long double, int) noexcept(true);
 };
 
 } // namespace LAMMPS_NS
