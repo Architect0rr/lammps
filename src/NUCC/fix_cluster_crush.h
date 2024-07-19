@@ -17,10 +17,14 @@ FixStyle(cluster/crush,FixClusterCrush);
 #include "compute.h"
 #include "region.h"
 #include "random_park.h"
+#include "mapalloc.h"
 
 #include <map>
 #include <set>
 #include <vector>
+
+typedef NucC::Alloc<std::pair<const tagint, std::vector<tagint>>> myalloc;
+typedef std::map<tagint, std::vector<tagint>, std::less<tagint>, myalloc> mymap;
 
 namespace LAMMPS_NS {
 
@@ -39,11 +43,17 @@ class FixClusterCrush : public Fix {
   RanPark *xrandom = nullptr;
   RanPark *vrandom = nullptr;
 
-  std::map<tagint, std::vector<tagint>> atoms_by_cID; // Mapping cID  -> local idx
-  std::map<tagint, std::vector<tagint>> cIDs_by_size; // Mapping size -> cIDs
+  myalloc alloc;
+  // Mapping cID  -> local idx
+  mymap atoms_by_cID = mymap(alloc);
+  // Mapping size -> cIDs
+  mymap cIDs_by_size = mymap(alloc);
 
   FILE* fp;
   int screenflag, fileflag;
+
+  bigint next_step;
+  int nevery;
 
   int maxtry, triclinic, scaleflag, fix_temp;
   int kmax;

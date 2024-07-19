@@ -30,7 +30,7 @@ static constexpr int DEFAULT_MAXTRY = 1000;
 /* ---------------------------------------------------------------------- */
 
 FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg)
-    : Fix(lmp, narg, arg)
+    : Fix(lmp, narg, arg), alloc(lmp->memory, lmp->error)
 {
 
   restart_pbc = 1;
@@ -39,6 +39,8 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg)
   screenflag = 1;
   fileflag = 0;
   maxtry = DEFAULT_MAXTRY;
+  next_step = 0;
+  nevery = 1;
 
   if (domain->dimension == 2){
     error->all(FLERR, "cluster/crush is not compatible with 2D yet");
@@ -122,6 +124,11 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg)
           error->one(FLERR, "Cannot open fix print file {}: {}", arg[iarg + 1],
                       utils::getsyserror());
       }
+      iarg += 2;
+
+    } else if (strcmp(arg[iarg], "nevery") == 0){
+      // Get execution period
+      nevery = utils::numeric(FLERR, arg[iarg + 1], true, lmp);
       iarg += 2;
 
     } else if (strcmp(arg[iarg], "units") == 0) {
@@ -211,8 +218,12 @@ void FixClusterCrush::init() {}
 
 void FixClusterCrush::pre_exchange()
 {
+  if (update->ntimestep < next_step) return;
+  next_step = update->ntimestep + nevery;
+
+
   // Do cluster analysis and retrieve data
-  compute_cluster_atom->compute_peratom();
+  // compute_cluster_atom->compute_peratom();
   double *cluster_ids = compute_cluster_atom->vector_atom;
 
   // Clear buffers
