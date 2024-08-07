@@ -10,21 +10,14 @@ FixStyle(cluster/crush,FixClusterCrush);
 // clang-format on
 #else
 
-#ifndef LAMMPS_FIX_CRUSH_H
-#define LAMMPS_FIX_CRUSH_H
+#ifndef LAMMPS_FIX_CLUSTER_CRUSH_H
+#define LAMMPS_FIX_CLUSTER_CRUSH_H
 
 #include "fix.h"
 #include "compute.h"
 #include "region.h"
 #include "random_park.h"
-#include "mapalloc.h"
-
-#include <map>
-#include <set>
-#include <vector>
-
-typedef NucC::Alloc<std::pair<const tagint, std::vector<tagint>>> myalloc;
-typedef std::map<tagint, std::vector<tagint>, std::less<tagint>, myalloc> mymap;
+#include "compute_cluster_size.h"
 
 namespace LAMMPS_NS {
 
@@ -38,16 +31,17 @@ class FixClusterCrush : public Fix {
 
  protected:
   Region *region = nullptr;
-  Compute *compute_cluster_atom = nullptr;
+  //  Compute *compute_cluster_size = nullptr;
+  ComputeClusterSize *compute_cluster_size = nullptr;
 
   RanPark *xrandom = nullptr;
   RanPark *vrandom = nullptr;
 
-  myalloc alloc;
-  // Mapping cID  -> local idx
-  mymap atoms_by_cID = mymap(alloc);
-  // Mapping size -> cIDs
-  mymap cIDs_by_size = mymap(alloc);
+//   myalloc alloc;
+//   // Mapping cID  -> local idx
+//   mymap atoms_by_cID = mymap(alloc);
+//   // Mapping size -> cIDs
+//   mymap cIDs_by_size = mymap(alloc);
 
   FILE* fp;
   int screenflag, fileflag;

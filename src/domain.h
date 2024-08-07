@@ -177,6 +177,9 @@ class Domain : protected Pointers {
   void subbox_corners();
   void lamda_box_corners(double *, double *);
 
+  double volume();
+  double subvolume();
+
   // minimum image convention check
   // return 1 if any distance > 1/2 of box size
   // indicates a special neighbor is actually not in a bond,

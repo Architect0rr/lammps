@@ -2366,3 +2366,90 @@ void Domain::lamda_box_corners(double *lo, double *hi)
   corners[7][0] = hi[0]; corners[7][1] = hi[1]; corners[7][2] = hi[2];
   lamda2x(corners[7],corners[7]);
 }
+
+/* ----------------------------------------------------------------------
+   calculate simulation box volume
+------------------------------------------------------------------------- */
+
+double Domain::volume() {
+  if (dimension == 2){
+    if (triclinic) {
+      // Calculate area for 2D box (projection onto xy plane)
+      return fabs(avec[0] * (bvec[1] * cvec[2] - bvec[2] * cvec[1]) -
+                avec[1] * (bvec[0] * cvec[2] - bvec[2] * cvec[0]) +
+                avec[2] * (bvec[0] * cvec[1] - bvec[1] * cvec[0]));
+    } else {
+      // Calculate area for 2D orthogonal box
+      return xprd * yprd;
+    }
+  } else {
+    if (triclinic) {
+      // Calculate volume using the triple product of the edge vectors
+      double a = avec[0];
+      double b = avec[1];
+      double c = avec[2];
+      double d = bvec[0];
+      double e = bvec[1];
+      double f = bvec[2];
+      double g = cvec[0];
+      double h = cvec[1];
+      double i = cvec[2];
+
+      return fabs(a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g));
+    } else {
+      // Calculate volume for orthogonal box
+      return xprd * yprd * zprd;
+    }
+  }
+}
+
+/* ----------------------------------------------------------------------
+   calculate sub-box volume owned by this proc
+------------------------------------------------------------------------- */
+
+double Domain::subvolume() {
+  if (dimension == 2) {
+    if (triclinic) {
+      // WARNING: there could be bugs.
+      // Calculate the area of the parallelogram formed by the subdomain's
+      // projection onto the xy plane.
+      // The area is given by the magnitude of the cross product of the
+      // two vectors defining the parallelogram.
+      // The vectors are:
+      //   (xhi - xlo, 0, 0)
+      //   (xy, yhi - ylo, 0)
+      // The cross product is:
+      //   (0, 0, (xhi - xlo)*(yhi - ylo) - xy*0)
+      // The magnitude of the cross product is:
+      //   |(xhi - xlo)*(yhi - ylo)|
+
+      double xlo = sublo_lamda[0];
+      double xhi = subhi_lamda[0];
+      double ylo = sublo_lamda[1];
+      double yhi = subhi_lamda[1];
+      double xy = this->xy;
+
+      return fabs((xhi - xlo) * (yhi - ylo));
+    } else {
+      // Calculate subarea for orthogonal box
+      return (subhi[0] - sublo[0]) * (subhi[1] - sublo[1]);
+    }
+  } else {
+    if (triclinic) {
+      // WARNING: there could be bugs.
+      // Calculate subvolume using the triple product of the edge vectors
+      // of the sub-box, which are defined by the lamda coordinates.
+      double a = (subhi_lamda[0] - sublo_lamda[0]) * prd[0];
+      double b = (subhi_lamda[1] - sublo_lamda[1]) * prd[1];
+      double c = (subhi_lamda[2] - sublo_lamda[2]) * prd[2];
+      double d = yz * (subhi_lamda[1] - sublo_lamda[1]) * prd[1];
+      double e = xz * (subhi_lamda[2] - sublo_lamda[2]) * prd[2];
+      double f = xy * (subhi_lamda[0] - sublo_lamda[0]) * prd[0];
+
+      return fabs(a * (e * c - f * b) - b * (d * c - f * a) + c * (d * b - e * a));
+    } else {
+      // Calculate subvolume for orthogonal box
+      return (subhi[0] - sublo[0]) * (subhi[1] - sublo[1]) * (subhi[2] - sublo[2]);
+    }
+  }
+}

@@ -1,24 +1,42 @@
+#ifndef NUCC_MAPALLOC_H
+#define NUCC_MAPALLOC_H
+
 #include "error.h"
 #include "memory.h"
 #include "lmptype.h"
+#include "comm.h"
+
+#include <unordered_map>
+#include <limits>
+#include <iostream>
+#include <cstdint>
+#include <iomanip>
+#include <sstream>
 
 using namespace LAMMPS_NS;
 
-/* The following code is modified example from the book
- * "The C++ Standard Library - A Tutorial and Reference"
- * by Nicolai M. Josuttis, Addison-Wesley, 1999
- *
- * (C) Copyright Nicolai M. Josuttis 1999.
- * Permission to copy, use, modify, sell and distribute this software
- * is granted provided this copyright notice appears in all copies.
- * This software is provided "as is" without express or implied
- * warranty, and with no claim as to its suitability for any purpose.
- */
-
-#include <limits>
-#include <iostream>
-
 namespace NucC {
+    // Cantor pairing function
+    uint64_t cantor(const int64_t x, const int64_t y);
+
+    // Hash function for integer pairs
+    std::string hashPair(const int64_t a, const int64_t b);
+
+    class Mgr{
+      public:
+        int getID(){
+            return id++;
+        }
+
+        int64_t add(int64_t n){
+            return allocated += n;
+        }
+
+      private:
+        int64_t allocated = 0;
+        int id = 0;
+    };
+
     template <class T>
     class Alloc {
       public:
@@ -28,8 +46,9 @@ namespace NucC {
         typedef const T* const_pointer;
         typedef T&       reference;
         typedef const T& const_reference;
-        typedef bigint   size_type;
+        typedef LAMMPS_NS::bigint   size_type;
         typedef std::ptrdiff_t difference_type;
+        static constexpr unsigned type_size = sizeof(T);
 
         template <typename U>
         friend class Alloc;
@@ -50,52 +69,48 @@ namespace NucC {
 
         // constructors and destructor
         Alloc() = delete;
-        Alloc(Memory* memory, Error* error) noexcept(true): memory(memory), error(error), allocated(0) {}
-        Alloc(const Alloc& other) noexcept(true): memory(other.memory), error(other.error), allocated(0) {}
-        Alloc(Alloc&& other) noexcept(true): memory(other.memory), error(other.error), allocated(other.allocated) {
+        Alloc(LAMMPS_NS::LAMMPS* lmp) noexcept(true): lmp(lmp), allocated(0), ncall(0) {}
+        Alloc(const Alloc& other) noexcept(true): lmp(lmp), allocated(0), ncall(0) {}
+        Alloc(Alloc&& other) noexcept(true): lmp(other.lmp), allocated(other.allocated), ncall(other.ncall) {
             other.allocated = 0;
+            other.ncall = 0;
         }
         Alloc& operator=(const Alloc& other) noexcept(true) {
-            memory = other.memory;
-            error = other.error;
+            lmp = other.lmp;
             allocated = 0;
+            ncall = 0;
         }
         Alloc& operator=(Alloc&& other) noexcept(true) {
-            memory = other.memory;
-            error = other.error;
+            lmp = other.lmp;
             allocated = other.allocated;
             other.allocated = 0;
+            ncall = other.ncall;
+            other.ncall = 0;
         }
 
         template <class U>
-        Alloc (const Alloc<U>& other) noexcept(true) {
-            memory = other.memory;
-            error = other.error;
-            allocated = 0;
-        }
+        Alloc (const Alloc<U>& other) noexcept(true): lmp(other.lmp), allocated(0), ncall(0) {}
 
         template <class U>
         Alloc (Alloc<U>&& other) noexcept(true) = delete;
 
         ~Alloc() noexcept(true) {
             if (allocated > 0){
-                error->warning(FLERR, "Destructing allocator with allocated memory: {} elements unfreed ({} bytes)", allocated, allocated*sizeof(T));
+                lmp->error->warning(FLERR, "Destructing allocator with allocated memory: {} elements unfreed ({} bytes)", allocated, allocated*type_size);
             }
         }
 
         // return maximum number of elements that can be allocated
         size_type max_size () const throw() {
-            return std::numeric_limits<size_type>::max() / sizeof(T);
+            return std::numeric_limits<size_type>::max() / type_size;
         }
 
         // allocate but don't initialize num elements of type T
-        pointer allocate (size_type num, const void* = 0) {
-            static size_type ncall = 0;
-            static char name[33];
-            snprintf(name, 33, "mapalloc_%d", ncall);
-            ++ncall;
-            allocated += num;
-            return static_cast<pointer>(memory->smalloc(num*sizeof(T), name));
+        pointer allocate (volatile size_type num, const void* = 0) {
+            volatile size_type nc = num * type_size;
+            allocated += nc;
+            // const char *cname = fmt::format("mapalloc_{}_{}", hashPair(type_size*ncall, lmp->comm->me), ncall++).c_str();
+            return static_cast<pointer>(lmp->memory->smalloc(nc, "cname"));
         }
 
         // initialize elements of allocated storage p with value value
@@ -112,13 +127,14 @@ namespace NucC {
 
         // deallocate storage p of deleted elements
         void deallocate (pointer p, size_type num) {
-            allocated -= num;
-            memory->sfree(p);
+            size_type nc = num*type_size;
+            allocated -= nc;
+            lmp->memory->sfree(p);
         }
 
       private:
-        Memory* memory;
-        Error* error;
+        size_type ncall = 0;
+        LAMMPS_NS::LAMMPS* lmp = nullptr;
         size_type allocated = 0;
     };
 
@@ -134,3 +150,5 @@ namespace NucC {
         return false;
     }
 } // namespace NucC
+
+#endif // !NUCC_MAPALLOC_H

@@ -24,13 +24,12 @@
 using namespace LAMMPS_NS;
 using namespace FixConst;
 
-static constexpr double EPSILON = 1.0e-6;
-static constexpr int DEFAULT_MAXTRY = 1000;
+constexpr int DEFAULT_MAXTRY = 1000;
 
 /* ---------------------------------------------------------------------- */
 
 FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg)
-    : Fix(lmp, narg, arg), alloc(lmp->memory, lmp->error)
+    : Fix(lmp, narg, arg)
 {
 
   restart_pbc = 1;
@@ -46,7 +45,7 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg)
     error->all(FLERR, "cluster/crush is not compatible with 2D yet");
   }
 
-  if (narg < 8) utils::missing_cmd_args(FLERR, "cluster/crush", error);
+  if (narg < 9) utils::missing_cmd_args(FLERR, "cluster/crush", error);
 
   // Parse arguments //
 
@@ -73,6 +72,13 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg)
   // Get the seed for coordinate generator
   int xseed = utils::numeric(FLERR, arg[6], true, lmp);
   xrandom = new RanPark(lmp, xseed);
+
+  // Get cluster/size compute
+  // compute_cluster_size = lmp->modify->get_compute_by_id(arg[7]);
+  compute_cluster_size = static_cast<ComputeClusterSize*>(lmp->modify->get_compute_by_id(arg[7]));
+  if (compute_cluster_size == nullptr){
+    error->all(FLERR, "cluster/crush: Cannot find compute of style 'cluster/size' with id: {}", arg[7]);
+  }
 
   // Parse optional keywords
 
@@ -145,13 +151,6 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg)
     }
   }
 
-  // Get cluster/atom compute
-  auto computes = lmp->modify->get_compute_by_style("cluster/atom");
-  if (computes.empty()){
-    error->all(FLERR, "cluster/crush: Cannot find compute with style: 'cluster/atom'");
-  }
-  compute_cluster_atom = computes.at(0);
-
   triclinic = domain->triclinic;
 
   // bounding box for atom creation
@@ -222,33 +221,44 @@ void FixClusterCrush::pre_exchange()
   next_step = update->ntimestep + nevery;
 
 
-  // Do cluster analysis and retrieve data
-  // compute_cluster_atom->compute_peratom();
-  double *cluster_ids = compute_cluster_atom->vector_atom;
+  // // Do cluster analysis and retrieve data
+  // // compute_cluster_atom->compute_peratom();
+  // double *cluster_ids = compute_cluster_atom->vector_atom;
 
-  // Clear buffers
-  atoms_by_cID.clear();
-  cIDs_by_size.clear();
+  // // Clear buffers
+  // atoms_by_cID.clear();
+  // cIDs_by_size.clear();
 
-  // Sort atom IDs by cluster IDs
-  for (tagint i = 0; i < atom->nlocal; ++i){
-    if (atom->mask[i] & groupbit) {
-      atoms_by_cID[static_cast<tagint>(cluster_ids[i])].emplace_back(i);
-    }
-  }
+  // // Sort atom IDs by cluster IDs
+  // for (int i = 0; i < atom->nlocal; ++i){
+  //   if (atom->mask[i] & groupbit) {
+  //     atoms_by_cID[static_cast<int>(cluster_ids[i])].emplace_back(i);
+  //   }
+  // }
+
+  // int clusters2crush_total = 0;
+  // // Sum cluster size over all procs
+  // int l_size = 0; // local size of cluster
+  // int t_size = 0; // global size of cluster
+  // for (int i = 1; i <= atom->natoms; ++i){
+  //   l_size = 0 ? atoms_by_cID.count(i) == 0 : atoms_by_cID[i].size();
+  //   MPI_Allreduce(&l_size, &t_size, 1, MPI_INT, MPI_SUM, world);
+  //   if (t_size >= kmax){
+  //     ++clusters2crush_total;
+  //     if (l_size > 0){
+  //       cIDs_by_size[t_size].emplace_back(i);
+  //     }
+  //   }
+  // }
+
+  compute_cluster_size->compute_array();
+  auto cIDs_by_size = compute_cluster_size->cIDs_by_size;
+  auto atoms_by_cID = compute_cluster_size->atoms_by_cID;
 
   int clusters2crush_total = 0;
-  // Sum cluster size over all procs
-  tagint l_size = 0; // local size of cluster
-  tagint t_size = 0; // global size of cluster
-  for (tagint i = 1; i <= atom->natoms; ++i){
-    l_size = 0 ? atoms_by_cID.count(i) == 0 : atoms_by_cID[i].size();
-    MPI_Allreduce(&l_size, &t_size, 1, MPI_INT, MPI_SUM, world);
-    if (t_size >= kmax){
-      ++clusters2crush_total;
-      if (l_size > 0){
-        cIDs_by_size[t_size].emplace_back(i);
-      }
+  for (const auto& [size, clids] : cIDs_by_size){
+    if (size > kmax){
+      clusters2crush_total += clids.size();
     }
   }
 
@@ -256,7 +266,7 @@ void FixClusterCrush::pre_exchange()
     if (comm->me == 0){
       if (screenflag) utils::logmesg(lmp, "No clusters with size exceeding {}\n", kmax);
       if (fileflag) {
-        fmt::print(fp, "{},{},{}\n", update->ntimestep, 0, 0);
+        fmt::print(fp, "{},{},{}, {}\n", update->ntimestep, 0, 0, 0);
         fflush(fp);
       }
     }
