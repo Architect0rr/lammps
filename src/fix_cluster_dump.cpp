@@ -182,6 +182,9 @@ void FixClusterDump::end_of_step()
                 compute_supersaturation_density->scalar,
                 compute_supersaturation_mono->scalar
               );
+    fflush(cldist);
+    fflush(cltemp);
+    fflush(scalars);
   }
 
 
