@@ -31,17 +31,10 @@ class FixClusterCrush : public Fix {
 
  protected:
   Region *region = nullptr;
-  //  Compute *compute_cluster_size = nullptr;
   ComputeClusterSize *compute_cluster_size = nullptr;
 
   RanPark *xrandom = nullptr;
   RanPark *vrandom = nullptr;
-
-//   myalloc alloc;
-//   // Mapping cID  -> local idx
-//   mymap atoms_by_cID = mymap(alloc);
-//   // Mapping size -> cIDs
-//   mymap cIDs_by_size = mymap(alloc);
 
   FILE* fp;
   int screenflag, fileflag;

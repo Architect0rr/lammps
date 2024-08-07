@@ -95,6 +95,8 @@ FixClusterDump::FixClusterDump(LAMMPS *lmp, int narg, char **arg)
   }
   compute_temp = computes[0];
 
+  next_step = update->ntimestep - (update->ntimestep % nevery);
+
 }
 
 /* ---------------------------------------------------------------------- */
@@ -162,19 +164,17 @@ void FixClusterDump::end_of_step()
   double* temp = compute_cluster_temp->vector;
 
   if (comm->me == 0){
+    fprintf(cldist, "%d,", update->ntimestep);
     for (bigint i = 1; i < write_cutoff; ++i){
-      fprintf(cldist, "%d", static_cast<bigint>(dist[i]));
-      fprintf(cldist, ",");
+      fprintf(cldist, "%d,", static_cast<bigint>(dist[i]));
     }
-    fprintf(cldist, "%d", static_cast<bigint>(dist[write_cutoff]));
-    fprintf(cldist, "\n");
+    fprintf(cldist, "%d\n", static_cast<bigint>(dist[write_cutoff]));
 
+    fprintf(cltemp, "%d,", update->ntimestep);
     for (bigint i = 1; i < write_cutoff; ++i){
-      fprintf(cltemp, "%.5f", temp[i]);
-      fprintf(cltemp, ",");
+      fprintf(cltemp, "%.5f,", temp[i]);
     }
-    fprintf(cltemp, "%.5f", temp[write_cutoff]);
-    fprintf(cltemp, "\n");
+    fprintf(cltemp, "%.5f\n", temp[write_cutoff]);
 
     fmt::print(scalars, "{},{},{},{}\n",
                 update->ntimestep,

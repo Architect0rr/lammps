@@ -191,6 +191,8 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg)
       fflush(fp);
     }
 
+  next_step = update->ntimestep - (update->ntimestep % nevery);
+
 }
 
 /* ---------------------------------------------------------------------- */
@@ -220,36 +222,6 @@ void FixClusterCrush::pre_exchange()
   if (update->ntimestep < next_step) return;
   next_step = update->ntimestep + nevery;
 
-
-  // // Do cluster analysis and retrieve data
-  // // compute_cluster_atom->compute_peratom();
-  // double *cluster_ids = compute_cluster_atom->vector_atom;
-
-  // // Clear buffers
-  // atoms_by_cID.clear();
-  // cIDs_by_size.clear();
-
-  // // Sort atom IDs by cluster IDs
-  // for (int i = 0; i < atom->nlocal; ++i){
-  //   if (atom->mask[i] & groupbit) {
-  //     atoms_by_cID[static_cast<int>(cluster_ids[i])].emplace_back(i);
-  //   }
-  // }
-
-  // int clusters2crush_total = 0;
-  // // Sum cluster size over all procs
-  // int l_size = 0; // local size of cluster
-  // int t_size = 0; // global size of cluster
-  // for (int i = 1; i <= atom->natoms; ++i){
-  //   l_size = 0 ? atoms_by_cID.count(i) == 0 : atoms_by_cID[i].size();
-  //   MPI_Allreduce(&l_size, &t_size, 1, MPI_INT, MPI_SUM, world);
-  //   if (t_size >= kmax){
-  //     ++clusters2crush_total;
-  //     if (l_size > 0){
-  //       cIDs_by_size[t_size].emplace_back(i);
-  //     }
-  //   }
-  // }
 
   compute_cluster_size->compute_array();
   auto cIDs_by_size = compute_cluster_size->cIDs_by_size;
