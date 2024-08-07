@@ -45,7 +45,7 @@ class ComputeSupersaturationMono : public Compute {
   double coeffs[2];
   Compute *compute_neighs = nullptr;
   Compute *compute_temp = nullptr;
-  int local_monomers;
+  bigint local_monomers;
   bigint global_monomers;
 
   double execute_func();

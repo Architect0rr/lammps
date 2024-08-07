@@ -85,10 +85,11 @@ void ComputeSupersaturationMono::init()
 
 double ComputeSupersaturationMono::compute_scalar() {
   invoked_scalar = update->ntimestep;
-  compute_local();
-  MPI_Allreduce(&local_monomers, &global_monomers, 1, MPI_INT, MPI_SUM, world);
 
-  scalar = global_monomers / domain->volume() / execute_func();
+  compute_local();
+  MPI_Allreduce(&local_monomers, &global_monomers, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+
+  scalar = static_cast<double>(global_monomers) / domain->volume() / execute_func();
   return scalar;
 }
 
@@ -96,6 +97,8 @@ double ComputeSupersaturationMono::compute_scalar() {
 
 void ComputeSupersaturationMono::compute_local()
 {
+  invoked_local = update->ntimestep;
+
   local_monomers = 0;
   if (compute_neighs->invoked_peratom != update->ntimestep){
     compute_neighs->compute_peratom();
@@ -103,7 +106,7 @@ void ComputeSupersaturationMono::compute_local()
   if (compute_temp->invoked_scalar != update->ntimestep){
     compute_temp->compute_scalar();
   }
-  for (bigint i = 0; i < atom->nlocal; ++i){
+  for (int i = 0; i < atom->nlocal; ++i){
     if (atom->mask[i] & groupbit) {
       if (compute_neighs->vector_atom[i] == 0){
         ++local_monomers;
@@ -111,7 +114,7 @@ void ComputeSupersaturationMono::compute_local()
     }
   }
 
-  local_scalar = local_monomers / domain->subvolume() / execute_func();
+  local_scalar = static_cast<double>(local_monomers) / domain->subvolume() / execute_func();
 
 }
 
