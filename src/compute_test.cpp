@@ -15,24 +15,15 @@
 
 #include "atom.h"
 #include "comm.h"
-#include "domain.h"
 #include "error.h"
-#include "force.h"
 #include "memory.h"
 #include "modify.h"
-#include "neigh_list.h"
-#include "neighbor.h"
-#include "pair.h"
-#include "update.h"
-
-#include <cmath>
 
 using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-ComputeTest::ComputeTest(LAMMPS *lmp, int narg, char **arg) :
-    Compute(lmp, narg, arg)
+ComputeTest::ComputeTest(LAMMPS *lmp, int narg, char **arg) : Compute(lmp, narg, arg)
 {
 
   scalar_flag = 1;
@@ -50,21 +41,16 @@ ComputeTest::ComputeTest(LAMMPS *lmp, int narg, char **arg) :
   size_local_cols = 10;
 
   nloc = 1;
-
 }
 
 /* ---------------------------------------------------------------------- */
 
 ComputeTest::~ComputeTest()
 {
-  if (vector != nullptr)
-    lmp->memory->destroy(vector);
-  if (array != nullptr)
-    lmp->memory->destroy(array);
-  if (array_atom != nullptr)
-    lmp->memory->destroy(array_atom);
-  if (array_local != nullptr)
-    lmp->memory->destroy(array_local);
+  if (vector != nullptr) lmp->memory->destroy(vector);
+  if (array != nullptr) lmp->memory->destroy(array);
+  if (array_atom != nullptr) lmp->memory->destroy(array_atom);
+  if (array_local != nullptr) lmp->memory->destroy(array_local);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -77,50 +63,47 @@ void ComputeTest::init()
 
 /* ---------------------------------------------------------------------- */
 
-double ComputeTest::compute_scalar() {
+double ComputeTest::compute_scalar()
+{
   scalar = 66.6;
   return scalar;
 }
-void ComputeTest::compute_vector() {
-  if (vector == nullptr){
+void ComputeTest::compute_vector()
+{
+  if (vector == nullptr) {
     lmp->memory->create(vector, size_vector, "compute:test:vector");
-    for (int i = 0; i < size_vector; ++i){
-      vector[i] = i;
-    }
+    for (int i = 0; i < size_vector; ++i) { vector[i] = i; }
   }
 }
-void ComputeTest::compute_array() {
-  if (array == nullptr){
+void ComputeTest::compute_array()
+{
+  if (array == nullptr) {
     lmp->memory->create(array, size_array_rows, size_array_cols, "compute:test:array");
-    for (int i = 0; i < size_array_rows; ++i){
-      for (int j = 0; j < size_array_cols; ++j){
-        array[i][j] = i*j;
-      }
+    for (int i = 0; i < size_array_rows; ++i) {
+      for (int j = 0; j < size_array_cols; ++j) { array[i][j] = i * j; }
     }
   }
 }
-void ComputeTest::compute_peratom() {
-  if (atom->nlocal != nloc && array_atom != nullptr){
+void ComputeTest::compute_peratom()
+{
+  if (atom->nlocal != nloc && array_atom != nullptr) {
     lmp->memory->destroy(array_atom);
     array_atom = nullptr;
   }
-  if (array_atom == nullptr){
+  if (array_atom == nullptr) {
     nloc = atom->nlocal;
-    lmp->memory->create(array_atom, nloc*size_peratom_cols, "compute:test:array_atom");
-    for (int i = 0; i < nloc; ++i){
-      for (int j = 0; j < size_peratom_cols; ++j){
-        array_atom[i][j] = i*j;
-      }
+    lmp->memory->create(array_atom, nloc * size_peratom_cols, "compute:test:array_atom");
+    for (int i = 0; i < nloc; ++i) {
+      for (int j = 0; j < size_peratom_cols; ++j) { array_atom[i][j] = i * j; }
     }
   }
 }
-void ComputeTest::compute_local() {
-  if (array_local == nullptr){
+void ComputeTest::compute_local()
+{
+  if (array_local == nullptr) {
     lmp->memory->create(array_local, size_local_rows, size_local_rows, "compute:test:local_array");
-    for (int i = 0; i < size_local_rows; ++i){
-      for (int j = 0; j < size_local_rows; ++j){
-        array_local[i][j] = i*j;
-      }
+    for (int i = 0; i < size_local_rows; ++i) {
+      for (int j = 0; j < size_local_rows; ++j) { array_local[i][j] = i * j; }
     }
   }
 }

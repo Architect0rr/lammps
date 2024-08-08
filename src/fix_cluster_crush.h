@@ -13,11 +13,11 @@ FixStyle(cluster/crush,FixClusterCrush);
 #ifndef LAMMPS_FIX_CLUSTER_CRUSH_H
 #define LAMMPS_FIX_CLUSTER_CRUSH_H
 
-#include "fix.h"
-#include "compute.h"
-#include "region.h"
-#include "random_park.h"
 #include "compute_cluster_size.h"
+
+#include "fix.h"
+#include "random_park.h"
+#include "region.h"
 
 namespace LAMMPS_NS {
 
@@ -36,7 +36,7 @@ class FixClusterCrush : public Fix {
   RanPark *xrandom = nullptr;
   RanPark *vrandom = nullptr;
 
-  FILE* fp;
+  FILE *fp;
   int screenflag, fileflag;
 
   bigint next_step;
@@ -54,7 +54,7 @@ class FixClusterCrush : public Fix {
   bool gen_one();
 };
 
-} // namespace LAMMPS_NS
+}    // namespace LAMMPS_NS
 
 #endif
 #endif

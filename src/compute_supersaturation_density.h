@@ -34,7 +34,6 @@ class ComputeSupersaturationDensity : public Compute {
   double memory_usage() override;
 
  private:
-
   double xlo, ylo, zlo, xhi, yhi, zhi;
   double lamda[3];
   double *boxlo, *boxhi;

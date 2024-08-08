@@ -37,8 +37,8 @@ class ComputeClusterTemp : public Compute {
  private:
   ComputeClusterSize *compute_cluster_size = nullptr;
   Compute *compute_ke_atom = nullptr;
-  double* temp = nullptr;
-  double* local_temp = nullptr;
+  double *temp = nullptr;
+  double *local_temp = nullptr;
 };
 
 }    // namespace LAMMPS_NS

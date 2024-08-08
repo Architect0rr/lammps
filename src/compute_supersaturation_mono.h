@@ -35,6 +35,7 @@ class ComputeSupersaturationMono : public Compute {
   double memory_usage() override;
 
   double local_scalar;
+
  private:
   double xlo, ylo, zlo, xhi, yhi, zhi;
   double lamda[3];

@@ -29,16 +29,15 @@ class ComputeTest : public Compute {
   ComputeTest(class LAMMPS *, int, char **);
   ~ComputeTest() override;
   void init() override;
-  double compute_scalar()  override;
-  void   compute_vector()  override;
-  void   compute_array()   override;
-  void   compute_peratom() override;
-  void   compute_local()   override;
-  double memory_usage()    override;
+  double compute_scalar() override;
+  void compute_vector() override;
+  void compute_array() override;
+  void compute_peratom() override;
+  void compute_local() override;
+  double memory_usage() override;
 
  private:
   int nloc = 0;
-
 };
 
 }    // namespace LAMMPS_NS

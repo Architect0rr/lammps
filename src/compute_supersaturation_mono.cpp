@@ -17,19 +17,13 @@
 #include "comm.h"
 #include "domain.h"
 #include "error.h"
-#include "force.h"
-#include "memory.h"
 #include "modify.h"
-#include "neigh_list.h"
-#include "neighbor.h"
-#include "pair.h"
 #include "update.h"
 
 #include <cmath>
 
 using namespace LAMMPS_NS;
 
-static constexpr double EPSILON = 1.0e-6;
 /* ---------------------------------------------------------------------- */
 
 ComputeSupersaturationMono::ComputeSupersaturationMono(LAMMPS *lmp, int narg, char **arg) :
@@ -46,18 +40,20 @@ ComputeSupersaturationMono::ComputeSupersaturationMono(LAMMPS *lmp, int narg, ch
 
   // Target region
   region = domain->get_region_by_id(arg[3]);
-  if (region == nullptr){
+  if (region == nullptr) {
     error->all(FLERR, "compute supersaturation: Cannot find target region {}", arg[3]);
   }
 
   // Get neighs compute
   compute_neighs = lmp->modify->get_compute_by_id(arg[4]);
-  if (compute_neighs == nullptr){
-    error->all(FLERR, "compute supersaturation: Cannot find compute with style 'coord/atom' with id: {}", arg[4]);
+  if (compute_neighs == nullptr) {
+    error->all(FLERR,
+               "compute supersaturation: Cannot find compute with style 'coord/atom' with id: {}",
+               arg[4]);
   }
 
   auto temp_computes = lmp->modify->get_compute_by_style("temp");
-  if (temp_computes.size() == 0){
+  if (temp_computes.size() == 0) {
     error->all(FLERR, "compute supersaturation: Cannot find compute with style 'temp'.");
   }
   compute_temp = temp_computes[0];
@@ -69,9 +65,7 @@ ComputeSupersaturationMono::ComputeSupersaturationMono(LAMMPS *lmp, int narg, ch
 
 /* ---------------------------------------------------------------------- */
 
-ComputeSupersaturationMono::~ComputeSupersaturationMono()
-{
-}
+ComputeSupersaturationMono::~ComputeSupersaturationMono() {}
 
 /* ---------------------------------------------------------------------- */
 
@@ -83,7 +77,8 @@ void ComputeSupersaturationMono::init()
 
 /* ---------------------------------------------------------------------- */
 
-double ComputeSupersaturationMono::compute_scalar() {
+double ComputeSupersaturationMono::compute_scalar()
+{
   invoked_scalar = update->ntimestep;
 
   compute_local();
@@ -100,29 +95,22 @@ void ComputeSupersaturationMono::compute_local()
   invoked_local = update->ntimestep;
 
   local_monomers = 0;
-  if (compute_neighs->invoked_peratom != update->ntimestep){
-    compute_neighs->compute_peratom();
-  }
-  if (compute_temp->invoked_scalar != update->ntimestep){
-    compute_temp->compute_scalar();
-  }
-  for (int i = 0; i < atom->nlocal; ++i){
+  if (compute_neighs->invoked_peratom != update->ntimestep) { compute_neighs->compute_peratom(); }
+  if (compute_temp->invoked_scalar != update->ntimestep) { compute_temp->compute_scalar(); }
+  for (int i = 0; i < atom->nlocal; ++i) {
     if (atom->mask[i] & groupbit) {
-      if (compute_neighs->vector_atom[i] == 0){
-        ++local_monomers;
-      }
+      if (compute_neighs->vector_atom[i] == 0) { ++local_monomers; }
     }
   }
 
   local_scalar = static_cast<double>(local_monomers) / domain->subvolume() / execute_func();
-
 }
 
 /* ---------------------------------------------------------------------- */
 
 double ComputeSupersaturationMono::execute_func()
 {
-  return coeffs[0]*exp(-coeffs[1]/compute_temp->scalar);
+  return coeffs[0] * exp(-coeffs[1] / compute_temp->scalar);
 }
 
 /* ----------------------------------------------------------------------

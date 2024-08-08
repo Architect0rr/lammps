@@ -22,11 +22,8 @@ ComputeStyle(cluster/size,ComputeClusterSize);
 
 #include "compute.h"
 #include "region.h"
-#include "mapalloc.h"
 
 #include <unordered_map>
-#include <unordered_set>
-#include <vector>
 
 // typedef NucC::Alloc<std::pair<const tagint, std::vector<tagint>>> myalloc;
 // typedef std::unordered_map<tagint, std::vector<tagint>, std::hash<tagint>, std::less<tagint>, myalloc> mymap;
@@ -53,9 +50,9 @@ class ComputeClusterSize : public Compute {
   double *boxlo, *boxhi;
   double sublo[3], subhi[3];    // epsilon-extended proc sub-box for adding atoms
 
-//   myalloc alloc;
+  //   myalloc alloc;
   int nloc;
-  double* dist;
+  double *dist;
   bigint nc_global;
 
   Region *region = nullptr;
