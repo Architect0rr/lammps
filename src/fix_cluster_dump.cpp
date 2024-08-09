@@ -158,27 +158,22 @@ void FixClusterDump::end_of_step()
   const double *dist = compute_cluster_size->vector;
   const double *temp = compute_cluster_temp->vector;
 
-  // fprintf(cldist, "%d,", update->ntimestep);
   if (comm->me == 0) {
     fmt::print(cldist, "{},", update->ntimestep);
     for (bigint i = 1; i < write_cutoff; ++i) {
       fmt::print(cldist, "{},", static_cast<bigint>(dist[i]));
-      // fprintf(cldist, "%d,", static_cast<bigint>(dist[i]));
     }
-    fmt::print(cldist, "{},", static_cast<bigint>(dist[write_cutoff]));
-    // fprintf(cldist, "%d\n", static_cast<bigint>(dist[write_cutoff]));
+    fmt::print(cldist, "{}\n", static_cast<bigint>(dist[write_cutoff]));
 
     fmt::print(cltemp, "{},", update->ntimestep);
-    // fprintf(cltemp, "%d,", update->ntimestep);
     for (bigint i = 1; i < write_cutoff; ++i) {
       fmt::print(cltemp, "{:.5f},", temp[i]);
-      // fprintf(cltemp, "%.5f,", temp[i]);
     }
-    fmt::print(cltemp, "{:.5f},", temp[write_cutoff]);
-    // fprintf(cltemp, "%.5f\n", temp[write_cutoff]);
+    fmt::print(cltemp, "{:.5f}\n", temp[write_cutoff]);
 
     fmt::print(scalars, "{},{:.5f},{:.5f},{:.5f}\n", update->ntimestep, compute_temp->scalar,
                compute_supersaturation_density->scalar, compute_supersaturation_mono->scalar);
+
     fflush(cldist);
     fflush(cltemp);
     fflush(scalars);
