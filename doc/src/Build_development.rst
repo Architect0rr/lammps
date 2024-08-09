@@ -88,8 +88,8 @@ on recording all commands required to do the compilation.
 
 .. _sanitizer:
 
-Address, Undefined Behavior, and Thread Sanitizer Support (CMake only)
-----------------------------------------------------------------------
+Address, Leak, Undefined Behavior, and Thread Sanitizer Support (CMake only)
+----------------------------------------------------------------------------
 
 Compilers such as GCC and Clang support generating instrumented binaries
 which use different sanitizer libraries to detect problems in the code
@@ -110,6 +110,7 @@ compilation and linking stages.  This is done through setting the
 
    -D ENABLE_SANITIZER=none       # no sanitizer active (default)
    -D ENABLE_SANITIZER=address    # enable address sanitizer / memory leak checker
+   -D ENABLE_SANITIZER=hwaddress  # enable hardware assisted address sanitizer / memory leak checker
    -D ENABLE_SANITIZER=leak       # enable memory leak checker (only)
    -D ENABLE_SANITIZER=undefined  # enable undefined behavior sanitizer
    -D ENABLE_SANITIZER=thread     # enable thread sanitizer
@@ -152,7 +153,12 @@ development headers to compile (if those are not found locally a recent
 version of that library will be downloaded and compiled along with
 LAMMPS and the test programs) and will download and compile a specific
 version of the `GoogleTest <https://github.com/google/googletest/>`_ C++
-test framework that is used to implement the tests.
+test framework that is used to implement the tests.  Those unit tests
+may be combined with memory access and leak checking with valgrind
+(see below for how to enable it).  In that case, running so-called
+death tests will create a lot of false positives and thus they can be
+disabled by configuring compilation with the additional setting
+``-D SKIP_DEATH_TESTS=on``.
 
 .. admonition:: Software version and LAMMPS configuration requirements
    :class: note
