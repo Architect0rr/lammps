@@ -40,7 +40,6 @@ class FixClusterCrush : public Fix {
   int screenflag, fileflag;
 
   bigint next_step;
-  int nevery;
 
   int maxtry, triclinic, scaleflag, fix_temp;
   int kmax;
@@ -50,6 +49,9 @@ class FixClusterCrush : public Fix {
   double lamda[3];
   double *boxlo, *boxhi;
   double xone[3];
+
+  int nprocs;
+  int *nptt_rank;    // number of atoms to move per rank
 
   bool gen_one();
 };

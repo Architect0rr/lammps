@@ -15,6 +15,7 @@
 #include "fmt/core.h"
 #include "irregular.h"
 #include "lattice.h"
+#include "memory.h"
 #include "modify.h"
 #include "update.h"
 
@@ -186,6 +187,15 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
   }
 
   next_step = update->ntimestep - (update->ntimestep % nevery);
+
+  nprocs = comm->nprocs;
+  memory->create(nptt_rank, nprocs * sizeof(int), "cluster/crush:nptt_rank");
+
+  // memory->create(xone, static_cast<int>(3 * sizeof(double)), "cluster/crush:xone");
+  // memory->create(lamda, static_cast<int>(3 * sizeof(double)), "cluster/crush:lambda");
+
+  memset(xone, 0, 3 * sizeof(double));
+  memset(lamda, 0, 3 * sizeof(double));
 }
 
 /* ---------------------------------------------------------------------- */
@@ -195,6 +205,7 @@ FixClusterCrush::~FixClusterCrush()
   delete xrandom;
   if (vrandom) delete vrandom;
   if (fp && (comm->me == 0)) fclose(fp);
+  memory->destroy(nptt_rank);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -217,7 +228,9 @@ void FixClusterCrush::pre_exchange()
   if (update->ntimestep < next_step) return;
   next_step = update->ntimestep + nevery;
 
-  compute_cluster_size->compute_array();
+  if (compute_cluster_size->invoked_vector < update->ntimestep - (nevery / 2)) {
+    compute_cluster_size->compute_vector();
+  }
   auto cIDs_by_size = compute_cluster_size->cIDs_by_size;
   auto atoms_by_cID = compute_cluster_size->atoms_by_cID;
 
@@ -243,8 +256,6 @@ void FixClusterCrush::pre_exchange()
   for (auto [size, v] : cIDs_by_size)
     for (auto cID : v) num_local_atoms_to_move += atoms_by_cID[cID].size();
 
-  int nprocs = comm->nprocs;
-  int nptt_rank[nprocs];    // number of atoms to move per rank
   memset(nptt_rank, 0, nprocs * sizeof(int));
   nptt_rank[comm->me] = num_local_atoms_to_move;
 

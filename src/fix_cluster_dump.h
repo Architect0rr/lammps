@@ -38,7 +38,6 @@ class FixClusterDump : public Fix {
   FILE *scalars;
 
   bigint next_step;
-  int nevery;
 
   int size_cutoff;
 };

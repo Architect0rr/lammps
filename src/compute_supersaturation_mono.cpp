@@ -27,7 +27,7 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 ComputeSupersaturationMono::ComputeSupersaturationMono(LAMMPS *lmp, int narg, char **arg) :
-    Compute(lmp, narg, arg)
+    Compute(lmp, narg, arg), local_scalar(0), local_monomers(0)
 {
 
   scalar_flag = 1;
