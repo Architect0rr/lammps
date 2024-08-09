@@ -393,6 +393,7 @@ buf
 builtin
 Bulacu
 Bulatov
+Bulkley
 Bureekaew
 burlywood
 Bussi
@@ -564,6 +565,7 @@ cond
 conda
 Conda
 Condens
+conductivities
 conf
 config
 configfile
@@ -1099,6 +1101,7 @@ excv
 exe
 executables
 extep
+extractable
 extrema
 extxyz
 exy
@@ -1183,6 +1186,7 @@ flaglog
 flagN
 flagVF
 flang
+flatpak
 fld
 floralwhite
 Florez
@@ -1294,6 +1298,7 @@ Gershgorin
 getrusage
 getter
 gettimeofday
+geturl
 gewald
 Gezelter
 Gflop
@@ -1352,6 +1357,7 @@ Grama
 grana
 granregion
 graphene
+Gravelle
 Greathouse
 greenyellow
 Greffet
@@ -1440,6 +1446,7 @@ henrich
 Henrich
 Hermitian
 Herrmann
+Hershchel
 Hertizian
 hertzian
 Hertzsch
@@ -1486,6 +1493,8 @@ hplanck
 Hs
 hstyle
 html
+http
+https
 hTST
 https
 hu
@@ -1831,6 +1840,7 @@ Kspace
 KSpace
 KSpaceStyle
 Kspring
+kstyle
 kT
 kTequil
 kth
@@ -2271,6 +2281,7 @@ modelled
 modelling
 Modelling
 Modine
+modularity
 moduli
 mofff
 MOFFF
@@ -2488,6 +2499,7 @@ Neumann
 Nevent
 nevery
 Nevery
+Nevins
 newfile
 Newns
 newtype
@@ -3067,17 +3079,20 @@ quatw
 queryargs
 Queteschiner
 quickmin
+quintic
 qw
 qx
 qy
 qz
 Rackers
+Radeon
 radi
 radialscreened
 radialscreenedspin
 radialspin
 radian
 radians
+radiative
 radj
 Rafferty
 rahman
@@ -3181,6 +3196,7 @@ rg
 Rg
 Rhaphson
 Rhe
+rheo
 rheological
 rheology
 rhodo
@@ -3268,6 +3284,7 @@ rsort
 rsq
 rst
 rstyle
+rsurf
 Rubensson
 Rubia
 Rud
@@ -3335,6 +3352,7 @@ Schunk
 Schuring
 Schwen
 Sci
+scp
 screenshot
 screenshots
 Scripps
@@ -3375,6 +3393,7 @@ setvel
 sevenbody
 sfftw
 sfree
+sftp
 Sg
 sgcmc
 Shan
@@ -3651,6 +3670,7 @@ Telsa
 tempCorrCoeff
 templated
 Templeton
+Tencer
 Tequil
 ters
 tersoff
@@ -3888,6 +3908,7 @@ upenn
 upto
 Urbakh
 Urbana
+url
 UreyBradley
 Usabiaga
 usec
@@ -3997,6 +4018,7 @@ Vries
 Vsevolod
 Vsmall
 Vstream
+vstyle
 vtarget
 vtk
 VTK
