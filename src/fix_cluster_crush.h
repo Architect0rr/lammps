@@ -51,7 +51,7 @@ class FixClusterCrush : public Fix {
   double xone[3];
 
   int nprocs;
-  int *nptt_rank;    // number of atoms to move per rank
+  bigint *nptt_rank;    // number of atoms to move per rank
 
   bool gen_one();
 };

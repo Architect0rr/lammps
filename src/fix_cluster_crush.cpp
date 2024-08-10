@@ -235,8 +235,8 @@ void FixClusterCrush::pre_exchange()
   auto atoms_by_cID = compute_cluster_size->atoms_by_cID;
 
   bigint clusters2crush_local = 0;
-  for (const auto &[size, clids] : cIDs_by_size) {
-    if (size > kmax) { clusters2crush_local += clids.size(); }
+  for (const auto &[size, cIDs] : cIDs_by_size) {
+    if (size > kmax) { clusters2crush_local += cIDs.size(); }
   }
 
   bigint clusters2crush_total = 0;
@@ -256,8 +256,11 @@ void FixClusterCrush::pre_exchange()
   // Count amount of local atoms to move
   int num_local_atoms_to_move = 0;
 
-  for (auto [size, v] : cIDs_by_size)
-    for (auto cID : v) num_local_atoms_to_move += atoms_by_cID[cID].size();
+  for (auto [size, cIDs] : cIDs_by_size) {
+    if (size > kmax) {
+      for (auto cID : cIDs) { num_local_atoms_to_move += atoms_by_cID[cID].size(); }
+    }
+  }
 
   memset(nptt_rank, 0, nprocs * sizeof(int));
   nptt_rank[comm->me] = num_local_atoms_to_move;
@@ -282,7 +285,7 @@ void FixClusterCrush::pre_exchange()
               x[pID][2] = xone[2];
 
               if (fix_temp) {
-                // generate vellocities
+                // generate velocities
                 constexpr long double c_v = 0.7978845608028653558798921198687L;    // sqrt(2/pi)
                 double sigma = std::sqrt(monomer_temperature / atom->mass[atom->type[pID]]);
                 double v_mean = c_v * sigma;
@@ -320,20 +323,21 @@ void FixClusterCrush::pre_exchange()
   bigint nblocal = atom->nlocal;
   bigint natoms = 0;
   MPI_Allreduce(&nblocal, &natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-  if (natoms != atom->natoms && comm->me == 0)
-    error->warning(FLERR, "Lost atoms via cluster/crush: original {} current {}", atom->natoms,
-                   natoms);
 
   int nmoved_total = 0;
   MPI_Allreduce(&nmoved, &nmoved_total, 1, MPI_INT, MPI_SUM, world);
 
-  // warn if did not successfully moved all atoms
-  if (nmoved_total < atoms2move_total && comm->me == 0)
-    error->warning(FLERR, "Only moved {} atoms out of {} ({}%)", nmoved_total, atoms2move_total,
-                   (100 * nmoved_total) / atoms2move_total);
-
-  // print status
   if (comm->me == 0) {
+    if (natoms != atom->natoms)
+      error->warning(FLERR, "Lost atoms via cluster/crush: original {} current {}", atom->natoms,
+                     natoms);
+
+    // warn if did not successfully moved all atoms
+    if (nmoved_total < atoms2move_total)
+      error->warning(FLERR, "Only moved {} atoms out of {} ({}%)", nmoved_total, atoms2move_total,
+                     (100 * nmoved_total) / atoms2move_total);
+
+    // print status
     if (screenflag)
       utils::logmesg(lmp, "Crushed {} clusters -> moved {} atoms\n", clusters2crush_total,
                      nmoved_total);

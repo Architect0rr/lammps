@@ -116,8 +116,8 @@ void ComputeClusterSize::compute_vector()
   bigint l_size = 0;    // local size of cluster
   bigint g_size = 0;    // global size of cluster
   for (bigint i = 1; i <= atom->natoms; ++i) {
-    l_size = 0 ? atoms_by_cID.count(i) == 0 : atoms_by_cID[i].size();
-    MPI_Allreduce(&l_size, &g_size, 1, MPI_INT, MPI_SUM, world);
+    l_size = atoms_by_cID.count(i) == 0 ? 0 : atoms_by_cID[i].size();
+    MPI_Allreduce(&l_size, &g_size, 1, MPI_LMP_BIGINT, MPI_SUM, world);
     if (l_size > 0) { cIDs_by_size[g_size].emplace_back(i); }
     if (g_size > 0) {
       dist[g_size] += 1;
