@@ -235,8 +235,13 @@ void FixClusterCrush::pre_exchange()
   auto atoms_by_cID = compute_cluster_size->atoms_by_cID;
 
   bigint clusters2crush_local = 0;
+  // Count amount of local atoms to move
+  int num_local_atoms_to_move = 0;
   for (const auto &[size, cIDs] : cIDs_by_size) {
-    if (size > kmax) { clusters2crush_local += cIDs.size(); }
+    if (size > kmax) {
+      clusters2crush_local += cIDs.size();
+      num_local_atoms_to_move += size;
+    }
   }
 
   bigint clusters2crush_total = 0;
@@ -253,22 +258,10 @@ void FixClusterCrush::pre_exchange()
     return;
   }
 
-  // Count amount of local atoms to move
-  int num_local_atoms_to_move = 0;
-
-  for (auto [size, cIDs] : cIDs_by_size) {
-    if (size > kmax) {
-      for (auto cID : cIDs) { num_local_atoms_to_move += atoms_by_cID[cID].size(); }
-    }
-  }
-
   memset(nptt_rank, 0, nprocs * sizeof(int));
   nptt_rank[comm->me] = num_local_atoms_to_move;
 
   MPI_Allgather(&num_local_atoms_to_move, 1, MPI_INT, nptt_rank, 1, MPI_INT, world);
-
-  int atoms2move_total = 0;
-  for (int proc = 0; proc < nprocs; ++proc) { atoms2move_total += nptt_rank[proc]; }
 
   double **x = atom->x;
   double **v = atom->v;
@@ -277,24 +270,26 @@ void FixClusterCrush::pre_exchange()
   for (int nproc = 0; nproc < nprocs; ++nproc) {
     if (nproc == comm->me) {    //
       for (auto [size, cIDs] : cIDs_by_size) {
-        for (auto cID : cIDs) {
-          for (auto pID : atoms_by_cID[cID]) {
-            if (gen_one()) {    // if success new coords will be already in xone[]
-              x[pID][0] = xone[0];
-              x[pID][1] = xone[1];
-              x[pID][2] = xone[2];
+        if (size > kmax) {
+          for (auto cID : cIDs) {
+            for (auto pID : atoms_by_cID[cID]) {
+              if (gen_one()) {    // if success new coords will be already in xone[]
+                x[pID][0] = xone[0];
+                x[pID][1] = xone[1];
+                x[pID][2] = xone[2];
 
-              if (fix_temp) {
-                // generate velocities
-                constexpr long double c_v = 0.7978845608028653558798921198687L;    // sqrt(2/pi)
-                double sigma = std::sqrt(monomer_temperature / atom->mass[atom->type[pID]]);
-                double v_mean = c_v * sigma;
-                v[pID][0] = v_mean + vrandom->gaussian() * sigma;
-                v[pID][1] = v_mean + vrandom->gaussian() * sigma;
-                if (domain->dimension == 3) { v[pID][2] = v_mean + vrandom->gaussian() * sigma; }
+                if (fix_temp) {
+                  // generate velocities
+                  constexpr long double c_v = 0.7978845608028653558798921198687L;    // sqrt(2/pi)
+                  double sigma = std::sqrt(monomer_temperature / atom->mass[atom->type[pID]]);
+                  double v_mean = c_v * sigma;
+                  v[pID][0] = v_mean + vrandom->gaussian() * sigma;
+                  v[pID][1] = v_mean + vrandom->gaussian() * sigma;
+                  if (domain->dimension == 3) { v[pID][2] = v_mean + vrandom->gaussian() * sigma; }
+                }
+
+                ++nmoved;
               }
-
-              ++nmoved;
             }
           }
         }
@@ -333,6 +328,8 @@ void FixClusterCrush::pre_exchange()
                      natoms);
 
     // warn if did not successfully moved all atoms
+    int atoms2move_total = 0;
+    for (int proc = 0; proc < nprocs; ++proc) { atoms2move_total += nptt_rank[proc]; }
     if (nmoved_total < atoms2move_total)
       error->warning(FLERR, "Only moved {} atoms out of {} ({}%)", nmoved_total, atoms2move_total,
                      (100 * nmoved_total) / atoms2move_total);
@@ -384,11 +381,12 @@ bool FixClusterCrush::gen_one()
     double **x = atom->x;
     int nlocal = atom->nlocal;
 
-    double delx, dely, delz, distsq;
     int reject = 0;
 
     // check new position for overlapping with all local atoms
     for (int i = 0; i < nlocal; i++) {
+      double delx, dely, delz, distsq;
+
       delx = xone[0] - x[i][0];
       dely = xone[1] - x[i][1];
       delz = xone[2] - x[i][2];
