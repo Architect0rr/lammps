@@ -234,16 +234,19 @@ void FixClusterCrush::pre_exchange()
   auto cIDs_by_size = compute_cluster_size->cIDs_by_size;
   auto atoms_by_cID = compute_cluster_size->atoms_by_cID;
 
-  int clusters2crush_total = 0;
+  bigint clusters2crush_local = 0;
   for (const auto &[size, clids] : cIDs_by_size) {
-    if (size > kmax) { clusters2crush_total += clids.size(); }
+    if (size > kmax) { clusters2crush_local += clids.size(); }
   }
+
+  bigint clusters2crush_total = 0;
+  MPI_Allreduce(&clusters2crush_local, &clusters2crush_total, 1, MPI_LMP_BIGINT, MPI_SUM, world);
 
   if (clusters2crush_total == 0) {
     if (comm->me == 0) {
       if (screenflag) utils::logmesg(lmp, "No clusters with size exceeding {}\n", kmax);
       if (fileflag) {
-        fmt::print(fp, "{},{},{}, {}\n", update->ntimestep, 0, 0, 0);
+        fmt::print(fp, "{},{},{},{}\n", update->ntimestep, 0, 0, 0);
         fflush(fp);
       }
     }
