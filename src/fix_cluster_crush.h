@@ -38,6 +38,8 @@ class FixClusterCrush : public Fix {
 
   FILE *fp;
   int screenflag, fileflag;
+  int logflag;
+  FILE *logfile;
 
   bigint next_step;
 
@@ -51,9 +53,13 @@ class FixClusterCrush : public Fix {
   double xone[3];
 
   int nprocs;
-  bigint *nptt_rank;    // number of atoms to move per rank
+  int *nptt_rank;    // number of atoms to move per rank
+  bigint *c2c;
+  int nloc;
+  int *p2m;
 
-  bool gen_one();
+  bool gen_one() noexcept(true);
+  void set(int) noexcept(true);
 };
 
 }    // namespace LAMMPS_NS
