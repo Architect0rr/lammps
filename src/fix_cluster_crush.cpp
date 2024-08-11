@@ -239,9 +239,8 @@ void FixClusterCrush::pre_exchange()
   int num_local_atoms_to_move = 0;
   for (const auto &[size, cIDs] : cIDs_by_size) {
     if (size > kmax) {
-      int count_cIDs = cIDs.size();
-      clusters2crush_local += count_cIDs;
-      num_local_atoms_to_move += size * count_cIDs;
+      clusters2crush_local += cIDs.size();
+      for (const auto &cID : cIDs) { num_local_atoms_to_move += atoms_by_cID[cID].size(); }
     }
   }
 
