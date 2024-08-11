@@ -272,7 +272,7 @@ void FixClusterCrush::pre_exchange()
   // Count amount of local clusters to crush
   bigint clusters2crush_local = 0;
   // Count amount of local atoms to move
-  bigint atoms2move_local = 0;
+  int atoms2move_local = 0;
 
   for (const auto &[size, cIDs] : cIDs_by_size) {
     if (size > kmax) {
@@ -291,12 +291,12 @@ void FixClusterCrush::pre_exchange()
   MPI_Allgather(&clusters2crush_local, 1, MPI_LMP_BIGINT, c2c, 1, MPI_LMP_BIGINT, world);
   memset(nptt_rank, 0, nprocs * sizeof(int));
   nptt_rank[comm->me] = atoms2move_local;
-  MPI_Allgather(&atoms2move_local, 1, MPI_LMP_BIGINT, nptt_rank, 1, MPI_INT, world);
+  MPI_Allgather(&atoms2move_local, 1, MPI_INT, nptt_rank, 1, MPI_INT, world);
   bigint atoms2move_total = 0;
   bigint clusters2crush_total = 0;
   for (int proc = 0; proc < nprocs; ++proc) {
     atoms2move_total += nptt_rank[proc];
-    clusters2crush_total = c2c[proc];
+    clusters2crush_total += c2c[proc];
   }
 
   if (comm->me == 0 && logflag){
