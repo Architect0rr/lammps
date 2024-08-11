@@ -44,6 +44,8 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
   nevery = 1;
   nloc = 0;
   p2m = nullptr;
+  velscaleflag = 0;
+  velscale = 0.0;
   // logflag = 0;
 
   // logflag = 1; // delete
@@ -152,6 +154,10 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
       else
         error->all(FLERR, "Unknown cluster/crush units option {}", arg[iarg + 1]);
       iarg += 2;
+    } else if (strcmp(arg[iarg], "velscale") == 0) {
+      velscaleflag = 1;
+      velscale = utils::numeric(FLERR, arg[iarg + 1], true, lmp);
+      iarg += 2;
     // } else if (strcmp(arg[iarg], "writelog") == 0) {
     //   logflag = 1;
     //   if (comm->me == 0){
@@ -160,6 +166,7 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
     //       error->one(FLERR, "Cannot open cluster/crush log file {}: {}", arg[iarg + 1],
     //                   utils::getsyserror());
     //   }
+    // iarg += 2;
     } else {
       error->all(FLERR, "Illegal cluster/crush command option {}", arg[iarg]);
     }
@@ -438,6 +445,12 @@ void FixClusterCrush::set(int pID) noexcept(true)
   x[pID][0] = xone[0];
   x[pID][1] = xone[1];
   x[pID][2] = xone[2];
+
+  if (velscaleflag){
+    v[pID][0] *= velscale;
+    v[pID][1] *= velscale;
+    v[pID][2] *= velscale;
+  }
 
   if (fix_temp) {
     // generate velocities
