@@ -38,8 +38,8 @@ class FixClusterCrush : public Fix {
 
   FILE *fp;
   int screenflag, fileflag;
-  int logflag;
-  FILE *logfile;
+//   int logflag;
+//   FILE *logfile;
 
   bigint next_step;
 

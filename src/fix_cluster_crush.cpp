@@ -42,17 +42,17 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
   maxtry = DEFAULT_MAXTRY;
   next_step = 0;
   nevery = 1;
-  logflag = 0;
   nloc = 0;
   p2m = nullptr;
+  // logflag = 0;
 
-  logflag = 1; // delete
-  if (comm->me == 0){
-    logfile = fopen("cluster_crush.log", "a");
-    if (logfile == nullptr)
-          error->one(FLERR, "Cannot open cluster/crush log file cluster_crush.log: {}",
-                      utils::getsyserror());
-  }
+  // logflag = 1; // delete
+  // if (comm->me == 0){
+  //   logfile = fopen("cluster_crush.log", "a");
+  //   if (logfile == nullptr)
+  //         error->one(FLERR, "Cannot open cluster/crush log file cluster_crush.log: {}",
+  //                     utils::getsyserror());
+  // }
 
   if (domain->dimension == 2) { error->all(FLERR, "cluster/crush is not compatible with 2D yet"); }
 
@@ -152,14 +152,14 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
       else
         error->all(FLERR, "Unknown cluster/crush units option {}", arg[iarg + 1]);
       iarg += 2;
-    } else if (strcmp(arg[iarg], "writelog") == 0) {
-      logflag = 1;
-      if (comm->me == 0){
-        logfile = fopen(arg[iarg + 1], "a");
-        if (logfile == nullptr)
-          error->one(FLERR, "Cannot open cluster/crush log file {}: {}", arg[iarg + 1],
-                      utils::getsyserror());
-      }
+    // } else if (strcmp(arg[iarg], "writelog") == 0) {
+    //   logflag = 1;
+    //   if (comm->me == 0){
+    //     logfile = fopen(arg[iarg + 1], "a");
+    //     if (logfile == nullptr)
+    //       error->one(FLERR, "Cannot open cluster/crush log file {}: {}", arg[iarg + 1],
+    //                   utils::getsyserror());
+    //   }
     } else {
       error->all(FLERR, "Illegal cluster/crush command option {}", arg[iarg]);
     }
@@ -225,7 +225,7 @@ FixClusterCrush::~FixClusterCrush()
   delete xrandom;
   if (vrandom) delete vrandom;
   if (fp && (comm->me == 0)) fclose(fp);
-  if (logfile && (comm->me == 0)) fclose(logfile);
+  // if (logfile && (comm->me == 0)) fclose(logfile);
   memory->destroy(nptt_rank);
   memory->destroy(c2c);
   if (p2m != nullptr){
@@ -292,6 +292,7 @@ void FixClusterCrush::pre_exchange()
   memset(nptt_rank, 0, nprocs * sizeof(int));
   nptt_rank[comm->me] = atoms2move_local;
   MPI_Allgather(&atoms2move_local, 1, MPI_INT, nptt_rank, 1, MPI_INT, world);
+
   bigint atoms2move_total = 0;
   bigint clusters2crush_total = 0;
   for (int proc = 0; proc < nprocs; ++proc) {
@@ -299,29 +300,29 @@ void FixClusterCrush::pre_exchange()
     clusters2crush_total += c2c[proc];
   }
 
-  if (comm->me == 0 && logflag){
-    time_t timer;
-    char buffer[26];
-    struct tm* tm_info;
+  // if (comm->me == 0 && logflag){
+  //   time_t timer;
+  //   char buffer[26];
+  //   struct tm* tm_info;
 
-    timer = time(NULL);
-    tm_info = localtime(&timer);
+  //   timer = time(NULL);
+  //   tm_info = localtime(&timer);
 
-    strftime(buffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+  //   strftime(buffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
 
-    fmt::print(logfile, "{}, step: {}, c2c: {}, a2m: {}\n", buffer, update->ntimestep, clusters2crush_total, atoms2move_total);
-    fmt::print(logfile, "c2c:\n");
-    for (int i = 0; i < nprocs - 1; ++i){
-      fmt::print(logfile, "{},", c2c[i]);
-    }
-    fmt::print(logfile, "{}\n", c2c[nprocs-1]);
-    fmt::print(logfile, "a2m:\n");
-    for (int i = 0; i < nprocs - 1; ++i){
-      fmt::print(logfile, "{},", nptt_rank[i]);
-    }
-    fmt::print(logfile, "{}\n", nptt_rank[nprocs-1]);
-    fflush(logfile);
-  }
+  //   fmt::print(logfile, "{}, step: {}, c2c: {}, a2m: {}\n", buffer, update->ntimestep, clusters2crush_total, atoms2move_total);
+  //   fmt::print(logfile, "c2c:\n");
+  //   for (int i = 0; i < nprocs - 1; ++i){
+  //     fmt::print(logfile, "{},", c2c[i]);
+  //   }
+  //   fmt::print(logfile, "{}\n", c2c[nprocs-1]);
+  //   fmt::print(logfile, "a2m:\n");
+  //   for (int i = 0; i < nprocs - 1; ++i){
+  //     fmt::print(logfile, "{},", nptt_rank[i]);
+  //   }
+  //   fmt::print(logfile, "{}\n", nptt_rank[nprocs-1]);
+  //   fflush(logfile);
+  // }
 
   if (clusters2crush_total == 0) {
     if (comm->me == 0) {
