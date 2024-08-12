@@ -46,15 +46,6 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
   p2m = nullptr;
   velscaleflag = 0;
   velscale = 0.0;
-  // logflag = 0;
-
-  // logflag = 1; // delete
-  // if (comm->me == 0){
-  //   logfile = fopen("cluster_crush.log", "a");
-  //   if (logfile == nullptr)
-  //         error->one(FLERR, "Cannot open cluster/crush log file cluster_crush.log: {}",
-  //                     utils::getsyserror());
-  // }
 
   if (domain->dimension == 2) { error->all(FLERR, "cluster/crush is not compatible with 2D yet"); }
 
@@ -158,15 +149,6 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
       velscaleflag = 1;
       velscale = utils::numeric(FLERR, arg[iarg + 1], true, lmp);
       iarg += 2;
-    // } else if (strcmp(arg[iarg], "writelog") == 0) {
-    //   logflag = 1;
-    //   if (comm->me == 0){
-    //     logfile = fopen(arg[iarg + 1], "a");
-    //     if (logfile == nullptr)
-    //       error->one(FLERR, "Cannot open cluster/crush log file {}: {}", arg[iarg + 1],
-    //                   utils::getsyserror());
-    //   }
-    // iarg += 2;
     } else {
       error->all(FLERR, "Illegal cluster/crush command option {}", arg[iarg]);
     }
@@ -218,9 +200,6 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
   memory->create(nptt_rank, nprocs * sizeof(int), "cluster/crush:nptt_rank");
   memory->create(c2c, nprocs * sizeof(int), "cluster/crush:c2c");
 
-  // memory->create(xone, static_cast<int>(3 * sizeof(double)), "cluster/crush:xone");
-  // memory->create(lamda, static_cast<int>(3 * sizeof(double)), "cluster/crush:lambda");
-
   memset(xone, 0, 3 * sizeof(double));
   memset(lamda, 0, 3 * sizeof(double));
 }
@@ -232,7 +211,6 @@ FixClusterCrush::~FixClusterCrush()
   delete xrandom;
   if (vrandom) delete vrandom;
   if (fp && (comm->me == 0)) fclose(fp);
-  // if (logfile && (comm->me == 0)) fclose(logfile);
   memory->destroy(nptt_rank);
   memory->destroy(c2c);
   if (p2m != nullptr){
@@ -307,30 +285,6 @@ void FixClusterCrush::pre_exchange()
     clusters2crush_total += c2c[proc];
   }
 
-  // if (comm->me == 0 && logflag){
-  //   time_t timer;
-  //   char buffer[26];
-  //   struct tm* tm_info;
-
-  //   timer = time(NULL);
-  //   tm_info = localtime(&timer);
-
-  //   strftime(buffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
-
-  //   fmt::print(logfile, "{}, step: {}, c2c: {}, a2m: {}\n", buffer, update->ntimestep, clusters2crush_total, atoms2move_total);
-  //   fmt::print(logfile, "c2c:\n");
-  //   for (int i = 0; i < nprocs - 1; ++i){
-  //     fmt::print(logfile, "{},", c2c[i]);
-  //   }
-  //   fmt::print(logfile, "{}\n", c2c[nprocs-1]);
-  //   fmt::print(logfile, "a2m:\n");
-  //   for (int i = 0; i < nprocs - 1; ++i){
-  //     fmt::print(logfile, "{},", nptt_rank[i]);
-  //   }
-  //   fmt::print(logfile, "{}\n", nptt_rank[nprocs-1]);
-  //   fflush(logfile);
-  // }
-
   if (clusters2crush_total == 0) {
     if (comm->me == 0) {
       if (screenflag) utils::logmesg(lmp, "No clusters with size exceeding {}\n", kmax);
@@ -357,45 +311,16 @@ void FixClusterCrush::pre_exchange()
     }
   }
 
-  // for (int nproc = 0; nproc < nprocs; ++nproc) {
-  //   if (nproc == comm->me) {    //
-  //     for (auto [size, cIDs] : cIDs_by_size) {
-  //       if (size > kmax) {
-  //         for (auto cID : cIDs) {
-  //           for (auto pID : atoms_by_cID[cID]) {
-  //             if (gen_one()) {    // if success new coords will be already in xone[]
-  //               x[pID][0] = xone[0];
-  //               x[pID][1] = xone[1];
-  //               x[pID][2] = xone[2];
-
-  //               if (fix_temp) {
-  //                 // generate velocities
-  //                 constexpr long double c_v = 0.7978845608028653558798921198687L;    // sqrt(2/pi)
-  //                 double sigma = std::sqrt(monomer_temperature / atom->mass[atom->type[pID]]);
-  //                 double v_mean = c_v * sigma;
-  //                 v[pID][0] = v_mean + vrandom->gaussian() * sigma;
-  //                 v[pID][1] = v_mean + vrandom->gaussian() * sigma;
-  //                 if (domain->dimension == 3) { v[pID][2] = v_mean + vrandom->gaussian() * sigma; }
-  //               }
-
-  //               ++nmoved;
-  //             }
-  //           }
-  //         }
-  //       }
-  //     }
-  //   } else {
-  //     // if it is not me, just keep random gen synchronized and check for overlap
-  //     for (int j = 0; j < nptt_rank[nproc]; ++j) { gen_one(); }
-  //   }
-  // }
-
   // move atoms back inside simulation box and to new processors
   // use remap() instead of pbc() in case atoms moved a long distance
   // use irregular() in case atoms moved a long distance
 
   imageint *image = atom->image;
-  for (int i = 0; i < atom->nlocal; i++) domain->remap(atom->x[i], image[i]);
+  // for (int i = 0; i < atom->nlocal; i++) domain->remap(atom->x[i], image[i]);
+  for (int i = 0; i < nptt_rank[comm->me]; i++) {
+    int pID = p2m[i];
+    domain->remap(atom->x[pID], image[pID]);
+  }
 
   if (domain->triclinic) domain->x2lamda(atom->nlocal);
   domain->reset_box();

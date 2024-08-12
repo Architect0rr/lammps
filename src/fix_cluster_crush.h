@@ -38,8 +38,6 @@ class FixClusterCrush : public Fix {
 
   FILE *fp;
   int screenflag, fileflag;
-   //  int logflag;
-   //  FILE *logfile;
   int velscaleflag;
   double velscale;
 
