@@ -420,12 +420,10 @@ bool FixClusterCrush::gen_one() noexcept(true)
     // minimum_image() needed to account for distances across PBC
 
     double **x = atom->x;
-    int nlocal = atom->nlocal;
-
     int reject = 0;
 
     // check new position for overlapping with all local atoms
-    for (int i = 0; i < nlocal; i++) {
+    for (int i = 0; i < atom->nmax; i++) {
       double delx, dely, delz, distsq;
 
       delx = xone[0] - x[i][0];
