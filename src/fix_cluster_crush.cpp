@@ -405,7 +405,7 @@ bool FixClusterCrush::gen_one() noexcept(true)
     // generate new random position
     xone[0] = xlo + xrandom->uniform() * (xhi - xlo);
     xone[1] = ylo + xrandom->uniform() * (yhi - ylo);
-    if (domain->dimension == 3) { xone[2] = zlo + xrandom->uniform() * (zhi - zlo); }
+    xone[2] = zlo + xrandom->uniform() * (zhi - zlo);
 
     if (region && (region->match(xone[0], xone[1], xone[2]) == 0)) continue;
 
@@ -424,14 +424,15 @@ bool FixClusterCrush::gen_one() noexcept(true)
 
     // check new position for overlapping with all local atoms
     for (int i = 0; i < atom->nmax; i++) {
-      double delx, dely, delz, distsq;
+      double delx, dely, delz, distsq, distsq1;
 
       delx = xone[0] - x[i][0];
       dely = xone[1] - x[i][1];
       delz = xone[2] - x[i][2];
+      distsq1 = delx * delx + dely * dely + delz * delz;
       domain->minimum_image(delx, dely, delz);
       distsq = delx * delx + dely * dely + delz * delz;
-      if (distsq < odistsq) {
+      if (distsq < odistsq || distsq1 < odistsq) {
         reject = 1;
         break;
       }
