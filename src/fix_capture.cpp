@@ -144,7 +144,7 @@ void FixCapture::final_integrate()
 
   constexpr long double c_v = 0.7978845608028653558798921198687L;    // sqrt(2/pi)
   for (int i = 0; i < atom->ntypes; ++i){
-    sigmas[i] = std::sqrt(compute_temp->scalar / atom->mass[i]);
+    sigmas[i] = sqrt(compute_temp->scalar / atom->mass[i]);
     vmeans[i] = c_v * sigmas[i];
   }
 
@@ -175,7 +175,7 @@ void FixCapture::final_integrate()
   MPI_Allreduce(&mean_local, &mean_total, 1, MPI_DOUBLE, MPI_SUM, world);
   mean_total /= ncaptured_total;
 
-  fmt::print(logfile, "{},{},{},{},{}\n", update->ntimestep, ncaptured_total, vmeans[0], sigmas[0], mean_total);
+  fmt::print(logfile, "{},{},{},{},{},{},{}\n", update->ntimestep, ncaptured_total, vmeans[0], sigmas[0], mean_total, compute_temp->scalar, atom->mass[0]);
 }
 
 /* ---------------------------------------------------------------------- */
