@@ -132,6 +132,9 @@ void FixCapture::init() {
     memory->destroy(vmeans);
   }
   memory->create(vmeans, atom->ntypes, "fix_capture:vmeans");
+  if (atom->mass_setflag){
+    error->all(FLERR, "fix capture: mass is not set.");
+  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -175,7 +178,7 @@ void FixCapture::final_integrate()
   MPI_Allreduce(&mean_local, &mean_total, 1, MPI_DOUBLE, MPI_SUM, world);
   mean_total /= ncaptured_total;
 
-  fmt::print(logfile, "{},{},{},{},{},{},{}\n", update->ntimestep, ncaptured_total, vmeans[0], sigmas[0], mean_total, compute_temp->scalar, atom->mass[0]);
+  fmt::print(logfile, "{},{},{},{},{},{},{},{}\n", update->ntimestep, ncaptured_total, vmeans[0], sigmas[0], mean_total, compute_temp->scalar, atom->mass[0], atom->type[0]);
 }
 
 /* ---------------------------------------------------------------------- */
