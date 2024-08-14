@@ -362,6 +362,23 @@ void FixClusterCrush::pre_exchange()
 
 /* ---------------------------------------------------------------------- */
 
+// void FixClusterCrush::check_overlap() noexcept(true){
+//   double **x = atom->x;
+
+//   for (int i = 0; i < atom->nlocal; ++i){
+//     for (int j = i + 1; j < atom->nmax; ++j){
+//       double dx = x[i][0] - x[j][0];
+//       double dy = x[i][1] - x[j][1];
+//       double dz = x[i][2] - x[j][2];
+//       if (dx*dx + dy*dy + dz*dz < 0.5){
+
+//       }
+//     }
+//   }
+// }
+
+/* ---------------------------------------------------------------------- */
+
 void FixClusterCrush::set(int pID) noexcept(true)
 {
   double **x = atom->x;
