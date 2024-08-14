@@ -94,11 +94,12 @@ FixCapture::FixCapture(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
 
   if (xlo > xhi || ylo > yhi || zlo > zhi)
     error->all(FLERR, "No overlap of box and region for cluster/crush");
-
-  logfile = fopen("fix_capture.log", "a");
-  if (logfile == nullptr)
-    error->one(FLERR, "Cannot open fix capture log file {}: {}", "fix_capture.log", utils::getsyserror());
-  fmt::print(logfile, "ts,n,vmean,sigma,mean_md\n");
+  if (comm->me == 0){
+    logfile = fopen("fix_capture.log", "a");
+    if (logfile == nullptr)
+      error->one(FLERR, "Cannot open fix capture log file {}: {}", "fix_capture.log", utils::getsyserror());
+    fmt::print(logfile, "ts,n,vmean,sigma,mean_md\n");
+  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -109,7 +110,9 @@ FixCapture::~FixCapture()
   if (sigmas != nullptr){
     memory->destroy(sigmas);
   }
-  fclose(logfile);
+  if (comm->me == 0){
+    fclose(logfile);
+  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -178,7 +181,9 @@ void FixCapture::final_integrate()
   MPI_Allreduce(&mean_local, &mean_total, 1, MPI_DOUBLE, MPI_SUM, world);
   mean_total /= ncaptured_total;
 
-  fmt::print(logfile, "{},{},{},{},{},{},{},{}\n", update->ntimestep, ncaptured_total, vmeans[0], sigmas[0], mean_total, compute_temp->scalar, atom->mass[0], atom->type[0]);
+  if (comm->me == 0){
+    fmt::print(logfile, "{},{},{},{},{},{},{},{}\n", update->ntimestep, ncaptured_total, vmeans[0], sigmas[0], mean_total, compute_temp->scalar, atom->mass[0], atom->type[0]);
+  }
 }
 
 /* ---------------------------------------------------------------------- */
