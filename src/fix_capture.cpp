@@ -135,9 +135,9 @@ void FixCapture::init() {
     memory->destroy(vmeans);
   }
   memory->create(vmeans, atom->ntypes, "fix_capture:vmeans");
-  if (atom->mass_setflag){
-    error->all(FLERR, "fix capture: mass is not set.");
-  }
+  // if (atom->mass_setflag){
+  //   error->all(FLERR, "fix capture: mass is not set.");
+  // }
 }
 
 /* ---------------------------------------------------------------------- */
