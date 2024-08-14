@@ -94,6 +94,10 @@ FixCapture::FixCapture(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
 
   if (xlo > xhi || ylo > yhi || zlo > zhi)
     error->all(FLERR, "No overlap of box and region for cluster/crush");
+
+  logfile = fopen("fix_capture.log", "a");
+  if (logfile == nullptr)
+    error->one(FLERR, "Cannot open fix capture log file {}: {}", "fix_capture.log", utils::getsyserror());
 }
 
 /* ---------------------------------------------------------------------- */
@@ -104,6 +108,7 @@ FixCapture::~FixCapture()
   if (sigmas != nullptr){
     memory->destroy(sigmas);
   }
+  fclose(logfile);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -142,21 +147,28 @@ void FixCapture::final_integrate()
     vmeans[i] = c_v * sigmas[i];
   }
 
-  //
   //     double sigma = std::sqrt(monomer_temperature / atom->mass[atom->type[pID]]);
   //     double v_mean = c_v * sigma;
   //     v[pID][0] = v_mean + vrandom->gaussian() * sigma;
 
   double **v = atom->v;
 
+  bigint ncaptured_local = 0;
   for (int i = 0; i < atom->nlocal; ++i){
     int atype = atom->type[i];
-    if (v[i][0] * v[i][0] + v[i][1] * v[i][1] + v[i][2] * v[i][2] > vmeans[atype] + nsigma * sigmas[atype]){
+    if (sqrt(v[i][0] * v[i][0] + v[i][1] * v[i][1] + v[i][2] * v[i][2]) > 2 * (vmeans[atype] + nsigma * sigmas[atype])){
       v[i][0] = vmeans[atype] + vrandom->gaussian() * sigmas[atype];
       v[i][1] = vmeans[atype] + vrandom->gaussian() * sigmas[atype];
       v[i][2] = vmeans[atype] + vrandom->gaussian() * sigmas[atype];
+
+      ++ncaptured_local;
     }
   }
+
+  bigint ncaptured_total = 0;
+  MPI_Allreduce(&ncaptured_local, &ncaptured_total, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+
+  fmt::print(logfile, "{},{}\n", update->ntimestep, ncaptured_total);
 }
 
 /* ---------------------------------------------------------------------- */

@@ -36,6 +36,7 @@ class FixCapture : public Fix {
   int nsigma;
   double* sigmas;
   double* vmeans;
+  FILE* logfile;
 
   double xlo, ylo, zlo, xhi, yhi, zhi;
   double lamda[3];
