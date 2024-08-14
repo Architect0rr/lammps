@@ -98,6 +98,7 @@ FixCapture::FixCapture(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
   logfile = fopen("fix_capture.log", "a");
   if (logfile == nullptr)
     error->one(FLERR, "Cannot open fix capture log file {}: {}", "fix_capture.log", utils::getsyserror());
+  fmt::print(logfile, "ts,n,vmean,sigma,mean_md\n");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -152,23 +153,29 @@ void FixCapture::final_integrate()
   //     v[pID][0] = v_mean + vrandom->gaussian() * sigma;
 
   double **v = atom->v;
+  double mean_local = 0;
 
   bigint ncaptured_local = 0;
   for (int i = 0; i < atom->nlocal; ++i){
-    int atype = atom->type[i];
-    if (sqrt(v[i][0] * v[i][0] + v[i][1] * v[i][1] + v[i][2] * v[i][2]) > 2 * (vmeans[atype] + nsigma * sigmas[atype])){
-      v[i][0] = vmeans[atype] + vrandom->gaussian() * sigmas[atype];
-      v[i][1] = vmeans[atype] + vrandom->gaussian() * sigmas[atype];
-      v[i][2] = vmeans[atype] + vrandom->gaussian() * sigmas[atype];
+    // int atype = atom->type[i];
+    mean_local += sqrt(v[i][0] * v[i][0] + v[i][1] * v[i][1] + v[i][2] * v[i][2]);
+    // if (sqrt(v[i][0] * v[i][0] + v[i][1] * v[i][1] + v[i][2] * v[i][2]) > 2 * (vmeans[atype] + nsigma * sigmas[atype])){
+    //   v[i][0] = vmeans[atype] + vrandom->gaussian() * sigmas[atype];
+    //   v[i][1] = vmeans[atype] + vrandom->gaussian() * sigmas[atype];
+    //   v[i][2] = vmeans[atype] + vrandom->gaussian() * sigmas[atype];
 
-      ++ncaptured_local;
-    }
+    //   ++ncaptured_local;
+    // }
   }
+  ncaptured_local = atom->nlocal;
 
   bigint ncaptured_total = 0;
   MPI_Allreduce(&ncaptured_local, &ncaptured_total, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  double mean_total = 0;
+  MPI_Allreduce(&mean_local, &mean_total, 1, MPI_DOUBLE, MPI_SUM, world);
+  mean_total /= ncaptured_total;
 
-  fmt::print(logfile, "{},{}\n", update->ntimestep, ncaptured_total);
+  fmt::print(logfile, "{},{},{},{},{}\n", update->ntimestep, ncaptured_total, vmeans[0], sigmas[0], mean_total);
 }
 
 /* ---------------------------------------------------------------------- */
