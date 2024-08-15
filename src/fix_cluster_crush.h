@@ -32,6 +32,7 @@ class FixClusterCrush : public Fix {
  protected:
   Region *region = nullptr;
   ComputeClusterSize *compute_cluster_size = nullptr;
+  Compute* compute_temp = nullptr;
 
   RanPark *xrandom = nullptr;
   RanPark *vrandom = nullptr;
@@ -57,6 +58,8 @@ class FixClusterCrush : public Fix {
   bigint *c2c;
   int nloc;
   int *p2m;
+  bigint invoked;
+  bool executed;
 
   bool gen_one() noexcept(true);
   void set(int) noexcept(true);

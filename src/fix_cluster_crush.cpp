@@ -47,6 +47,9 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
   velscaleflag = 0;
   velscale = 0.0;
 
+  invoked = 0;
+  executed = false;
+
   if (domain->dimension == 2) { error->all(FLERR, "cluster/crush is not compatible with 2D yet"); }
 
   if (narg < 9) utils::missing_cmd_args(FLERR, "cluster/crush", error);
@@ -190,7 +193,7 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
     error->all(FLERR, "No overlap of box and region for cluster/crush");
 
   if (comm->me == 0 && fileflag) {
-    fmt::print(fp, "ntimestep,cc,pm,p2m\n");
+    fmt::print(fp, "ntimestep,cc,pm,p2m, nc\n");
     fflush(fp);
   }
 
@@ -202,6 +205,13 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
 
   memset(xone, 0, 3 * sizeof(double));
   memset(lamda, 0, 3 * sizeof(double));
+
+  // Get temp compute
+  auto temp_computes = lmp->modify->get_compute_by_style("temp");
+  if (temp_computes.size() == 0) {
+    error->all(FLERR, "compute supersaturation: Cannot find compute with style 'temp'.");
+  }
+  compute_temp = temp_computes[0];
 }
 
 /* ---------------------------------------------------------------------- */
@@ -238,6 +248,8 @@ void FixClusterCrush::pre_exchange()
 {
   if (update->ntimestep < next_step) return;
   next_step = update->ntimestep + nevery;
+  invoked = update->ntimestep;
+  executed = true;
 
   if (compute_cluster_size->invoked_vector < update->ntimestep - (nevery / 2)) {
     compute_cluster_size->compute_vector();
@@ -289,7 +301,7 @@ void FixClusterCrush::pre_exchange()
     if (comm->me == 0) {
       if (screenflag) utils::logmesg(lmp, "No clusters with size exceeding {}\n", kmax);
       if (fileflag) {
-        fmt::print(fp, "{},{},{},{}\n", update->ntimestep, 0, 0, 0);
+        fmt::print(fp, "{},{},{},{}, {}\n", update->ntimestep, 0, 0, 0, 0);
         fflush(fp);
       }
     }
@@ -337,6 +349,31 @@ void FixClusterCrush::pre_exchange()
   bigint nmoved_total = 0;
   MPI_Allreduce(&nmoved, &nmoved_total, 1, MPI_LMP_BIGINT, MPI_SUM, world);
 
+  if (compute_temp->invoked_scalar != update->ntimestep){
+    compute_temp->compute_scalar();
+  }
+
+  constexpr long double a_v = 0.1*1.0220217810393767580226573302752L;
+  constexpr long double b_v = 0.1546370863640482533333333333333L;
+  double rl = a_v*exp(b_v*pow(compute_temp->scalar, 2.791206046910478));
+
+  bigint nclose_local = 0;
+  double **x = atom->x;
+  for (int i = 0; i < atom->nlocal; ++i){
+    for (int j = i + 1; j < atom->nghost; ++j){
+      double dx, dy, dz;
+      dx = x[i][0] - x[j][0];
+      dy = x[i][1] - x[j][1];
+      dz = x[i][2] - x[j][2];
+      if (dx*dx + dy*dy + dz*dz < rl*rl){
+        ++nclose_local;
+      }
+    }
+  }
+
+  bigint nclose_total = 0;
+  MPI_Allreduce(&nclose_local, &nclose_total, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+
   if (comm->me == 0) {
     if (natoms != atom->natoms)
       error->warning(FLERR, "Lost atoms via cluster/crush: original {} current {}", atom->natoms,
@@ -352,8 +389,7 @@ void FixClusterCrush::pre_exchange()
       utils::logmesg(lmp, "Crushed {} clusters -> moved {} atoms\n", clusters2crush_total,
                      nmoved_total);
     if (fileflag) {
-      fmt::print(fp, "{},{},{},{}\n", update->ntimestep, clusters2crush_total, nmoved_total,
-                 atoms2move_total);
+      fmt::print(fp, "{},{},{},{}, {}\n", update->ntimestep, clusters2crush_total, nmoved_total, atoms2move_total, nclose_total);
       fflush(fp);
     }
   }
