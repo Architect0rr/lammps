@@ -33,8 +33,6 @@ FixCapture::FixCapture(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
 {
 
   restart_pbc = 1;
-  sigmas = nullptr;
-  vmeans = nullptr;
 
   if (domain->dimension == 2) { error->all(FLERR, "cluster/crush is not compatible with 2D yet"); }
 
@@ -107,9 +105,6 @@ FixCapture::FixCapture(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
 FixCapture::~FixCapture()
 {
   delete vrandom;
-  if (sigmas != nullptr){
-    memory->destroy(sigmas);
-  }
   if (comm->me == 0){
     fclose(logfile);
   }
@@ -127,14 +122,16 @@ int FixCapture::setmask()
 /* ---------------------------------------------------------------------- */
 
 void FixCapture::init() {
-  if (sigmas != nullptr){
-    memory->destroy(sigmas);
+  typeids.clear();
+  typeids.reserve(atom->ntypes);
+  for (int i = 0; i < atom->nlocal; ++i){
+    typeids.emplace(atom->type[i], std::make_pair<double, double>(0.0, 0.0));
   }
-  memory->create(sigmas, atom->ntypes, "fix_capture:sigmas");
-  if (vmeans != nullptr){
-    memory->destroy(vmeans);
+  for (const auto& [k, v] : typeids){
+    if (!atom->mass_setflag[k]){
+      error->all(FLERR, "fix capture: mass is not set for atom type {}.", k);
+    }
   }
-  memory->create(vmeans, atom->ntypes, "fix_capture:vmeans");
   // if (atom->mass_setflag){
   //   error->all(FLERR, "fix capture: mass is not set.");
   // }
@@ -148,10 +145,10 @@ void FixCapture::final_integrate()
     compute_temp->compute_scalar();
   }
 
-  constexpr long double c_v = 0.7978845608028653558798921198687L;    // sqrt(2/pi)
-  for (int i = 0; i < atom->ntypes; ++i){
-    sigmas[i] = sqrt(compute_temp->scalar / atom->mass[i]);
-    vmeans[i] = c_v * sigmas[i];
+  constexpr long double c_v = 0.7978845608028653558798921198687L;  // sqrt(2/pi)
+  for (auto& [k, v] : typeids){
+    v.first = sqrt(compute_temp->scalar / atom->mass[k]);
+    v.second = c_v * v.first;
   }
 
   //     double sigma = std::sqrt(monomer_temperature / atom->mass[atom->type[pID]]);
@@ -159,30 +156,26 @@ void FixCapture::final_integrate()
   //     v[pID][0] = v_mean + vrandom->gaussian() * sigma;
 
   double **v = atom->v;
-  double mean_local = 0;
+  // double mean_local = 0;
 
   bigint ncaptured_local = 0;
   for (int i = 0; i < atom->nlocal; ++i){
-    // int atype = atom->type[i];
-    mean_local += sqrt(v[i][0] * v[i][0] + v[i][1] * v[i][1] + v[i][2] * v[i][2]);
-    // if (sqrt(v[i][0] * v[i][0] + v[i][1] * v[i][1] + v[i][2] * v[i][2]) > 2 * (vmeans[atype] + nsigma * sigmas[atype])){
-    //   v[i][0] = vmeans[atype] + vrandom->gaussian() * sigmas[atype];
-    //   v[i][1] = vmeans[atype] + vrandom->gaussian() * sigmas[atype];
-    //   v[i][2] = vmeans[atype] + vrandom->gaussian() * sigmas[atype];
+    const auto& [sigma, vmean] = typeids[atom->type[i]];
+    constexpr long double a_v = 1.7320508075688772935274463415059L;  // sqrt(3)
+    if (sqrt(v[i][0] * v[i][0] + v[i][1] * v[i][1] + v[i][2] * v[i][2]) > a_v * (vmean + nsigma * sigma)){
+      v[i][0] = vmean + vrandom->gaussian() * sigma;
+      v[i][1] = vmean + vrandom->gaussian() * sigma;
+      v[i][2] = vmean + vrandom->gaussian() * sigma;
 
-    //   ++ncaptured_local;
-    // }
+      ++ncaptured_local;
+    }
   }
-  ncaptured_local = atom->nlocal;
 
   bigint ncaptured_total = 0;
   MPI_Allreduce(&ncaptured_local, &ncaptured_total, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-  double mean_total = 0;
-  MPI_Allreduce(&mean_local, &mean_total, 1, MPI_DOUBLE, MPI_SUM, world);
-  mean_total /= ncaptured_total;
 
   if (comm->me == 0){
-    fmt::print(logfile, "{},{},{},{},{},{},{},{}\n", update->ntimestep, ncaptured_total, vmeans[0], sigmas[0], mean_total, compute_temp->scalar, atom->mass[0], atom->type[0]);
+    fmt::print(logfile, "{},{}\n", update->ntimestep, ncaptured_total);
   }
 }
 

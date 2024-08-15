@@ -18,6 +18,8 @@ FixStyle(capture,FixCapture);
 #include "random_park.h"
 #include "region.h"
 
+#include <unordered_map>
+
 namespace LAMMPS_NS {
 
 class FixCapture : public Fix {
@@ -33,9 +35,9 @@ class FixCapture : public Fix {
   RanPark *vrandom = nullptr;
   Compute* compute_temp = nullptr;
 
+  std::unordered_map<int, std::pair<double, double>> typeids;
+
   int nsigma;
-  double* sigmas;
-  double* vmeans;
   FILE* logfile;
 
   double xlo, ylo, zlo, xhi, yhi, zhi;
