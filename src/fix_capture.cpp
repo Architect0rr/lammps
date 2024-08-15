@@ -97,6 +97,7 @@ FixCapture::FixCapture(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
     if (logfile == nullptr)
       error->one(FLERR, "Cannot open fix capture log file {}: {}", "fix_capture.log", utils::getsyserror());
     fmt::print(logfile, "ts,n,vmean,sigma,mean_md\n");
+    fflush(logfile);
   }
 }
 
@@ -106,6 +107,7 @@ FixCapture::~FixCapture()
 {
   delete vrandom;
   if (comm->me == 0){
+    fflush(logfile);
     fclose(logfile);
   }
 }
@@ -145,7 +147,8 @@ void FixCapture::final_integrate()
     compute_temp->compute_scalar();
   }
 
-  constexpr long double c_v = 0.7978845608028653558798921198687L;  // sqrt(2/pi)
+  // constexpr long double c_v = 0.7978845608028653558798921198687L;  // sqrt(2/pi)
+  constexpr long double c_v = 1.4142135623730950488016887242097L;  // sqrt(2)
   for (auto& [k, v] : typeids){
     v.first = sqrt(compute_temp->scalar / atom->mass[k]);
     v.second = c_v * v.first;
@@ -162,10 +165,10 @@ void FixCapture::final_integrate()
   for (int i = 0; i < atom->nlocal; ++i){
     const auto& [sigma, vmean] = typeids[atom->type[i]];
     constexpr long double a_v = 1.7320508075688772935274463415059L;  // sqrt(3)
-    if (sqrt(v[i][0] * v[i][0] + v[i][1] * v[i][1] + v[i][2] * v[i][2]) > a_v * (vmean + nsigma * sigma)){
-      v[i][0] = vmean + vrandom->gaussian() * sigma;
-      v[i][1] = vmean + vrandom->gaussian() * sigma;
-      v[i][2] = vmean + vrandom->gaussian() * sigma;
+    if (sqrt(v[i][0] * v[i][0] + v[i][1] * v[i][1] + v[i][2] * v[i][2]) > /*a_v **/ (vmean + nsigma * sigma)){
+      v[i][0] = (vmean + vrandom->gaussian() * sigma)/2;
+      v[i][1] = (vmean + vrandom->gaussian() * sigma)/2;
+      v[i][2] = (vmean + vrandom->gaussian() * sigma)/2;
 
       ++ncaptured_local;
     }
@@ -176,6 +179,7 @@ void FixCapture::final_integrate()
 
   if (comm->me == 0){
     fmt::print(logfile, "{},{}\n", update->ntimestep, ncaptured_total);
+    fflush(logfile);
   }
 }
 
