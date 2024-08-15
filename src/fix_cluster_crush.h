@@ -63,7 +63,7 @@ class FixClusterCrush : public Fix {
 
   bool gen_one() noexcept(true);
   void set(int) noexcept(true);
-  void check_overlap() noexcept(true);
+  bigint check_overlap() noexcept(true);
 };
 
 }    // namespace LAMMPS_NS

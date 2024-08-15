@@ -349,30 +349,7 @@ void FixClusterCrush::pre_exchange()
   bigint nmoved_total = 0;
   MPI_Allreduce(&nmoved, &nmoved_total, 1, MPI_LMP_BIGINT, MPI_SUM, world);
 
-  if (compute_temp->invoked_scalar != update->ntimestep){
-    compute_temp->compute_scalar();
-  }
-
-  constexpr long double a_v = 0.1*1.0220217810393767580226573302752L;
-  constexpr long double b_v = 0.1546370863640482533333333333333L;
-  double rl = a_v*exp(b_v*pow(compute_temp->scalar, 2.791206046910478));
-
-  bigint nclose_local = 0;
-  double **x = atom->x;
-  for (int i = 0; i < atom->nlocal; ++i){
-    for (int j = i + 1; j < atom->nghost; ++j){
-      double dx, dy, dz;
-      dx = x[i][0] - x[j][0];
-      dy = x[i][1] - x[j][1];
-      dz = x[i][2] - x[j][2];
-      if (dx*dx + dy*dy + dz*dz < rl*rl){
-        ++nclose_local;
-      }
-    }
-  }
-
-  bigint nclose_total = 0;
-  MPI_Allreduce(&nclose_local, &nclose_total, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  bigint nclose_total = check_overlap();
 
   if (comm->me == 0) {
     if (natoms != atom->natoms)
@@ -398,20 +375,33 @@ void FixClusterCrush::pre_exchange()
 
 /* ---------------------------------------------------------------------- */
 
-// void FixClusterCrush::check_overlap() noexcept(true){
-//   double **x = atom->x;
+bigint FixClusterCrush::check_overlap() noexcept(true){
+  if (compute_temp->invoked_scalar != update->ntimestep){
+    compute_temp->compute_scalar();
+  }
 
-//   for (int i = 0; i < atom->nlocal; ++i){
-//     for (int j = i + 1; j < atom->nmax; ++j){
-//       double dx = x[i][0] - x[j][0];
-//       double dy = x[i][1] - x[j][1];
-//       double dz = x[i][2] - x[j][2];
-//       if (dx*dx + dy*dy + dz*dz < 0.5){
+  constexpr long double a_v = 0.8*1.0220217810393767580226573302752L;
+  constexpr long double b_v = 0.1546370863640482533333333333333L;
+  double rl = a_v*exp(b_v*pow(compute_temp->scalar, 2.791206046910478));
 
-//       }
-//     }
-//   }
-// }
+  bigint nclose_local = 0;
+  double **x = atom->x;
+  for (int i = 0; i < atom->nlocal; ++i){
+    for (int j = i + 1; j < atom->nghost; ++j){
+      double dx, dy, dz;
+      dx = x[i][0] - x[j][0];
+      dy = x[i][1] - x[j][1];
+      dz = x[i][2] - x[j][2];
+      if (dx*dx + dy*dy + dz*dz < rl*rl){
+        ++nclose_local;
+      }
+    }
+  }
+
+  bigint nclose_total = 0;
+  MPI_Allreduce(&nclose_local, &nclose_total, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  return nclose_total;
+}
 
 /* ---------------------------------------------------------------------- */
 
