@@ -154,12 +154,7 @@ void FixCapture::final_integrate()
     v.second = c_v * v.first;
   }
 
-  //     double sigma = std::sqrt(monomer_temperature / atom->mass[atom->type[pID]]);
-  //     double v_mean = c_v * sigma;
-  //     v[pID][0] = v_mean + vrandom->gaussian() * sigma;
-
   double **v = atom->v;
-  // double mean_local = 0;
 
   bigint ncaptured_local = 0;
   for (int i = 0; i < atom->nlocal; ++i){
@@ -177,8 +172,29 @@ void FixCapture::final_integrate()
   bigint ncaptured_total = 0;
   MPI_Allreduce(&ncaptured_local, &ncaptured_total, 1, MPI_LMP_BIGINT, MPI_SUM, world);
 
+  constexpr long double a_v = 0.8*1.0220217810393767580226573302752L;
+  constexpr long double b_v = 0.1546370863640482533333333333333L;
+  double rl = a_v*exp(b_v*pow(compute_temp->scalar, 2.791206046910478));
+
+  bigint nclose_local = 0;
+  double **x = atom->x;
+  for (int i = 0; i < atom->nlocal; ++i){
+    for (int j = i + 1; j < atom->nghost; ++j){
+      double dx, dy, dz;
+      dx = x[i][0] - x[j][0];
+      dy = x[i][1] - x[j][1];
+      dz = x[i][2] - x[j][2];
+      if (dx*dx + dy*dy + dz*dz < rl*rl){
+        ++nclose_local;
+      }
+    }
+  }
+
+  bigint nclose_total = 0;
+  MPI_Allreduce(&nclose_local, &nclose_total, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+
   if (comm->me == 0){
-    fmt::print(logfile, "{},{}\n", update->ntimestep, ncaptured_total);
+    fmt::print(logfile, "{},{}, {}\n", update->ntimestep, ncaptured_total, nclose_total);
     fflush(logfile);
   }
 }

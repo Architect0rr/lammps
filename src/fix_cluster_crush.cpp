@@ -235,6 +235,7 @@ int FixClusterCrush::setmask()
 {
   int mask = 0;
   mask |= PRE_EXCHANGE;
+  mask |= POST_NEIGHBOR;
   return mask;
 }
 
@@ -349,8 +350,6 @@ void FixClusterCrush::pre_exchange()
   bigint nmoved_total = 0;
   MPI_Allreduce(&nmoved, &nmoved_total, 1, MPI_LMP_BIGINT, MPI_SUM, world);
 
-  bigint nclose_total = check_overlap();
-
   if (comm->me == 0) {
     if (natoms != atom->natoms)
       error->warning(FLERR, "Lost atoms via cluster/crush: original {} current {}", atom->natoms,
@@ -366,12 +365,22 @@ void FixClusterCrush::pre_exchange()
       utils::logmesg(lmp, "Crushed {} clusters -> moved {} atoms\n", clusters2crush_total,
                      nmoved_total);
     if (fileflag) {
-      fmt::print(fp, "{},{},{},{}, {}\n", update->ntimestep, clusters2crush_total, nmoved_total, atoms2move_total, nclose_total);
+      fmt::print(fp, "{},{},{},{},", update->ntimestep, clusters2crush_total, nmoved_total, atoms2move_total);
       fflush(fp);
     }
   }
 
 }    // void FixClusterCrush::post_integrate()
+
+/* ---------------------------------------------------------------------- */
+
+void FixClusterCrush::post_neighbor()
+{
+  bigint nclose_total = check_overlap();
+  if (comm->me == 0 && fileflag) {
+      fmt::print(fp, "{}\n", nclose_total);
+  }
+}
 
 /* ---------------------------------------------------------------------- */
 

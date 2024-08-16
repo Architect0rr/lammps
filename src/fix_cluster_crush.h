@@ -28,6 +28,7 @@ class FixClusterCrush : public Fix {
   int setmask() override;
   void init() override;
   void pre_exchange() override;
+  void post_neighbor() override;
 
  protected:
   Region *region = nullptr;
