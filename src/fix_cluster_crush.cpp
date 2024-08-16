@@ -376,6 +376,8 @@ void FixClusterCrush::pre_exchange()
 
 void FixClusterCrush::post_neighbor()
 {
+  if (update->ntimestep < next_step) return;
+  
   bigint nclose_total = check_overlap();
   if (comm->me == 0 && fileflag) {
       fmt::print(fp, "{}\n", nclose_total);
