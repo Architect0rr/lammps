@@ -328,12 +328,12 @@ void FixClusterCrush::pre_exchange()
   // use remap() instead of pbc() in case atoms moved a long distance
   // use irregular() in case atoms moved a long distance
 
-  imageint *image = atom->image;
-  // for (int i = 0; i < atom->nlocal; i++) domain->remap(atom->x[i], image[i]);
-  for (int i = 0; i < nptt_rank[comm->me]; i++) {
-    int pID = p2m[i];
-    domain->remap(atom->x[pID], image[pID]);
-  }
+  // imageint *image = atom->image;
+  // // for (int i = 0; i < atom->nlocal; i++) domain->remap(atom->x[i], image[i]);
+  // for (int i = 0; i < nptt_rank[comm->me]; i++) {
+  //   int pID = p2m[i];
+  //   domain->remap(atom->x[pID], image[pID]);
+  // }
 
   if (domain->triclinic) domain->x2lamda(atom->nlocal);
   domain->reset_box();
@@ -377,7 +377,7 @@ void FixClusterCrush::pre_exchange()
 void FixClusterCrush::post_neighbor()
 {
   if (update->ntimestep < next_step) return;
-  
+
   bigint nclose_total = check_overlap();
   if (comm->me == 0 && fileflag) {
       fmt::print(fp, "{}\n", nclose_total);
