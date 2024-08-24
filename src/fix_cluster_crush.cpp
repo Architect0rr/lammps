@@ -47,9 +47,6 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
   velscaleflag = 0;
   velscale = 0.0;
 
-  invoked = 0;
-  executed = false;
-
   if (domain->dimension == 2) { error->all(FLERR, "cluster/crush is not compatible with 2D yet"); }
 
   if (narg < 9) utils::missing_cmd_args(FLERR, "cluster/crush", error);
@@ -193,7 +190,7 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
     error->all(FLERR, "No overlap of box and region for cluster/crush");
 
   if (comm->me == 0 && fileflag) {
-    fmt::print(fp, "ntimestep,cc,pm,p2m, nc\n");
+    fmt::print(fp, "ntimestep,cc,pm,p2m\n");
     fflush(fp);
   }
 
@@ -235,7 +232,7 @@ int FixClusterCrush::setmask()
 {
   int mask = 0;
   mask |= PRE_EXCHANGE;
-  mask |= POST_NEIGHBOR;
+  // mask |= POST_NEIGHBOR;
   return mask;
 }
 
@@ -249,14 +246,12 @@ void FixClusterCrush::pre_exchange()
 {
   if (update->ntimestep < next_step) return;
   next_step = update->ntimestep + nevery;
-  invoked = update->ntimestep;
-  executed = true;
 
   if (compute_cluster_size->invoked_vector < update->ntimestep - (nevery / 2)) {
     compute_cluster_size->compute_vector();
   }
-  auto cIDs_by_size = compute_cluster_size->cIDs_by_size;
-  auto atoms_by_cID = compute_cluster_size->atoms_by_cID;
+  std::unordered_map<tagint, std::vector<tagint>> cIDs_by_size = compute_cluster_size->cIDs_by_size;
+  std::unordered_map<tagint, std::vector<tagint>> atoms_by_cID = compute_cluster_size->atoms_by_cID;
 
   if (nloc < atom->nlocal && p2m != nullptr){
     memory->destroy(p2m);
@@ -302,7 +297,7 @@ void FixClusterCrush::pre_exchange()
     if (comm->me == 0) {
       if (screenflag) utils::logmesg(lmp, "No clusters with size exceeding {}\n", kmax);
       if (fileflag) {
-        fmt::print(fp, "{},{},{},{}, {}\n", update->ntimestep, 0, 0, 0, 0);
+        fmt::print(fp, "{},{},{},{}\n", update->ntimestep, 0, 0, 0);
         fflush(fp);
       }
     }
@@ -328,12 +323,12 @@ void FixClusterCrush::pre_exchange()
   // use remap() instead of pbc() in case atoms moved a long distance
   // use irregular() in case atoms moved a long distance
 
-  // imageint *image = atom->image;
-  // // for (int i = 0; i < atom->nlocal; i++) domain->remap(atom->x[i], image[i]);
-  // for (int i = 0; i < nptt_rank[comm->me]; i++) {
-  //   int pID = p2m[i];
-  //   domain->remap(atom->x[pID], image[pID]);
-  // }
+  imageint *image = atom->image;
+  // for (int i = 0; i < atom->nlocal; i++) domain->remap(atom->x[i], image[i]);
+  for (int i = 0; i < nptt_rank[comm->me]; i++) {
+    int pID = p2m[i];
+    domain->remap(atom->x[pID], image[pID]);
+  }
 
   if (domain->triclinic) domain->x2lamda(atom->nlocal);
   domain->reset_box();
@@ -365,7 +360,7 @@ void FixClusterCrush::pre_exchange()
       utils::logmesg(lmp, "Crushed {} clusters -> moved {} atoms\n", clusters2crush_total,
                      nmoved_total);
     if (fileflag) {
-      fmt::print(fp, "{},{},{},{},", update->ntimestep, clusters2crush_total, nmoved_total, atoms2move_total);
+      fmt::print(fp, "{},{},{},{}\n", update->ntimestep, clusters2crush_total, nmoved_total, atoms2move_total);
       fflush(fp);
     }
   }

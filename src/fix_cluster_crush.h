@@ -59,8 +59,6 @@ class FixClusterCrush : public Fix {
   bigint *c2c;
   int nloc;
   int *p2m;
-  bigint invoked;
-  bool executed;
 
   bool gen_one() noexcept(true);
   void set(int) noexcept(true);
