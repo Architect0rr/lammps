@@ -282,6 +282,7 @@ void FixClusterCrush::pre_exchange()
   memset(c2c, 0, nprocs * sizeof(int));
   c2c[comm->me] = clusters2crush_local;
   MPI_Allgather(&clusters2crush_local, 1, MPI_LMP_BIGINT, c2c, 1, MPI_LMP_BIGINT, world);
+
   memset(nptt_rank, 0, nprocs * sizeof(int));
   nptt_rank[comm->me] = atoms2move_local;
   MPI_Allgather(&atoms2move_local, 1, MPI_INT, nptt_rank, 1, MPI_INT, world);
@@ -306,16 +307,11 @@ void FixClusterCrush::pre_exchange()
 
   bigint nmoved = 0;
   for (int nproc = 0; nproc < nprocs; ++nproc) {
-    if (nproc == comm->me) {
-      for (int i = 0; i < nptt_rank[nproc]; ++i) {
-        if (gen_one()) {    // if success new coords will be already in xone[]
-          set(p2m[i]);
-          ++nmoved;
-        }
+    for (int i = 0; i < nptt_rank[nproc]; ++i) {
+      if (gen_one() && nproc == comm->me) {    // if success new coords will be already in xone[]
+        set(p2m[i]);
+        ++nmoved;
       }
-    } else {
-      // if it is not me, just keep random gen synchronized and check for overlap
-      for (int i = 0; i < nptt_rank[nproc]; ++i) { gen_one(); }
     }
   }
 
@@ -365,7 +361,7 @@ void FixClusterCrush::pre_exchange()
     }
   }
 
-}    // void FixClusterCrush::post_integrate()
+}    // void FixClusterCrush::pre_exchange()
 
 /* ---------------------------------------------------------------------- */
 
