@@ -190,7 +190,7 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
     error->all(FLERR, "No overlap of box and region for cluster/crush");
 
   if (comm->me == 0 && fileflag) {
-    fmt::print(fp, "ntimestep,cc,pm,p2m\n");
+    fmt::print(fp, "ntimestep,cc,p2m,pm,nm\n");
     fflush(fp);
   }
 
@@ -298,13 +298,15 @@ void FixClusterCrush::pre_exchange()
     if (comm->me == 0) {
       if (screenflag) utils::logmesg(lmp, "No clusters with size exceeding {}\n", kmax);
       if (fileflag) {
-        fmt::print(fp, "{},{},{},{}\n", update->ntimestep, 0, 0, 0);
+        fmt::print(fp, "{},{},{},{},{}\n", update->ntimestep, 0, 0, 0, 0);
         fflush(fp);
       }
     }
     return;
   }
 
+  unsucc = 0;
+  bigint not_moved = 0;
   bigint nmoved = 0;
   for (int nproc = 0; nproc < nprocs; ++nproc) {
     for (int i = 0; i < nptt_rank[nproc]; ++i) {
@@ -313,6 +315,8 @@ void FixClusterCrush::pre_exchange()
         if (nproc == comm->me){
           set(p2m[i]);
         }
+      } else {
+        ++not_moved;
       }
     }
   }
@@ -353,12 +357,15 @@ void FixClusterCrush::pre_exchange()
       error->warning(FLERR, "Only moved {} atoms out of {} ({}%)", nmoved_total, atoms2move_total,
                      (100 * nmoved_total) / atoms2move_total);
 
+    // error->warning(FLERR, "Only moved {} atoms out of {} ({}%)", nmoved_total, atoms2move_total,
+    //                   (100 * nmoved_total) / atoms2move_total);
+
     // print status
     if (screenflag)
       utils::logmesg(lmp, "Crushed {} clusters -> moved {} atoms\n", clusters2crush_total,
                      nmoved_total);
     if (fileflag) {
-      fmt::print(fp, "{},{},{},{}\n", update->ntimestep, clusters2crush_total, nmoved_total, atoms2move_total);
+      fmt::print(fp, "{},{},{},{},{}\n", update->ntimestep, clusters2crush_total, atoms2move_total, nmoved_total, not_moved);
       fflush(fp);
     }
   }

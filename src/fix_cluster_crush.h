@@ -60,6 +60,8 @@ class FixClusterCrush : public Fix {
   int nloc;
   int *p2m;
 
+  int unsucc;
+
   bool gen_one() noexcept(true);
   void set(int) noexcept(true);
   bigint check_overlap() noexcept(true);
