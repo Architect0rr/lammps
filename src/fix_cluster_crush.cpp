@@ -308,9 +308,11 @@ void FixClusterCrush::pre_exchange()
   bigint nmoved = 0;
   for (int nproc = 0; nproc < nprocs; ++nproc) {
     for (int i = 0; i < nptt_rank[nproc]; ++i) {
-      if (gen_one() && nproc == comm->me) {    // if success new coords will be already in xone[]
-        set(p2m[i]);
+      if (gen_one()) {    // if success new coords will be already in xone[]
         ++nmoved;
+        if (nproc == comm->me){
+          set(p2m[i]);
+        }
       }
     }
   }
@@ -338,8 +340,8 @@ void FixClusterCrush::pre_exchange()
   bigint natoms = 0;
   MPI_Allreduce(&nblocal, &natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
 
-  bigint nmoved_total = 0;
-  MPI_Allreduce(&nmoved, &nmoved_total, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  bigint nmoved_total = nmoved;
+  // MPI_Allreduce(&nmoved, &nmoved_total, 1, MPI_LMP_BIGINT, MPI_SUM, world);
 
   if (comm->me == 0) {
     if (natoms != atom->natoms)
