@@ -433,10 +433,11 @@ bool FixSupersaturation::gen_one() noexcept(true)
       }
     }
 
-    // gather reject flags from all of the procs
-    int reject_any;
-    MPI_Allreduce(&reject, &reject_any, 1, MPI_INT, MPI_MAX, world);
-    if (reject_any) continue;
+    // // gather reject flags from all of the procs
+    // int reject_any;
+    // MPI_Allreduce(&reject, &reject_any, 1, MPI_INT, MPI_MAX, world);
+    // if (reject_any) continue;
+    if (reject) continue;
 
     // all tests passed
 
