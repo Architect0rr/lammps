@@ -6,7 +6,7 @@
 ------------------------------------------------------------------------- */
 
 #include "fix_supersaturation.h"
-#include <compute_supersaturation_mono.h>
+#include "compute_supersaturation_mono.h"
 
 #include "atom.h"
 #include "atom_vec.h"
@@ -19,16 +19,15 @@
 #include "error.h"
 #include "fix.h"
 #include "fmt/core.h"
-#include "irregular.h"
 #include "lattice.h"
 #include "memory.h"
 #include "modify.h"
 #include "update.h"
 
-#include <time.h>
+#include <bits/std_abs.h>
 #include <cmath>
 #include <cstring>
-#include <unordered_set>
+#include <ctime>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -36,7 +35,6 @@ using namespace FixConst;
 constexpr int DEFAULT_MAXTRY = 1000;
 constexpr int DEFAULT_MAXTRY_CALL = 5;
 // constexpr double DEFAULT_DELTA = 0.01;
-
 
 /* ---------------------------------------------------------------------- */
 
@@ -63,8 +61,13 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) : Fix(
   if (region == nullptr) { error->all(FLERR, "Cannot find target region {}", arg[3]); }
 
   // Get compute supersaturation/mono
-  compute_supersaturation_mono = static_cast<ComputeSupersaturationMono*>(modify->get_compute_by_id(arg[4]));
-  if (compute_supersaturation_mono == nullptr) error->all(FLERR, "fix supersaturation: cannot find compute of style 'supersaturation/mono' with given id: {}", arg[4]);
+  compute_supersaturation_mono =
+      static_cast<ComputeSupersaturationMono *>(modify->get_compute_by_id(arg[4]));
+  if (compute_supersaturation_mono == nullptr)
+    error->all(FLERR,
+               "fix supersaturation: cannot find compute of style 'supersaturation/mono' with "
+               "given id: {}",
+               arg[4]);
 
   // Minimum distance to other atoms from the place atom teleports to
   double overlap = utils::numeric(FLERR, arg[5], true, lmp);
@@ -74,7 +77,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) : Fix(
   odistsq = overlap * overlap;
 
   // # of type of atoms to insert
-  int ntype = utils::inumeric(FLERR, arg[6], true, lmp);
+  ntype = utils::inumeric(FLERR, arg[6], true, lmp);
 
   // Get the seed for coordinate generator
   int xseed = utils::inumeric(FLERR, arg[7], true, lmp);
@@ -245,14 +248,18 @@ void FixSupersaturation::pre_exchange()
   if (update->ntimestep < next_step) return;
   next_step = update->ntimestep + nevery;
 
-  if (compute_supersaturation_mono->invoked_scalar != update->ntimestep) {compute_supersaturation_mono->compute_scalar(); }
+  if (compute_supersaturation_mono->invoked_scalar != update->ntimestep) {
+    compute_supersaturation_mono->compute_scalar();
+  }
   double previous_supersaturation = compute_supersaturation_mono->scalar;
 
-  bigint delta = static_cast<bigint>(round(compute_supersaturation_mono->execute_func() * domain->volume() * supersaturation - compute_supersaturation_mono->global_monomers));
+  bigint delta = static_cast<bigint>(
+      round(compute_supersaturation_mono->execute_func() * domain->volume() * supersaturation -
+            compute_supersaturation_mono->global_monomers));
   int delflag = delta > 0;
-  delta = abs(delta);
+  delta = std::abs(delta);
 
-  if (delta != 0){
+  if (delta != 0) {
     bigint natoms_previous = atom->natoms;
     int nlocal_previous = atom->nlocal;
 
@@ -261,10 +268,11 @@ void FixSupersaturation::pre_exchange()
     int __ntry = maxtry_call;
 
     do {
-      pproc[comm->me] = comm->me == rand() % comm->nprocs ? sum / comm->nprocs + sum % comm->nprocs : sum / comm->nprocs;
+      pproc[comm->me] = comm->me == rand() % comm->nprocs ? sum / comm->nprocs + sum % comm->nprocs
+                                                          : sum / comm->nprocs;
 
       if (pproc[comm->me] > 0) {
-        if (delflag){
+        if (delflag) {
           delete_monomers();
         } else {
           add_monomers();
@@ -279,7 +287,7 @@ void FixSupersaturation::pre_exchange()
       --__ntry;
     } while (sum > 0 && __ntry > 0);
 
-    if (delflag){
+    if (delflag) {
       if (atom->molecular == Atom::ATOMIC) {
         tagint *tag = atom->tag;
         int nlocal = atom->nlocal;
@@ -353,25 +361,17 @@ void FixSupersaturation::pre_exchange()
     }
 
     double newsupersaturation = compute_supersaturation_mono->compute_scalar();
-    if (comm->me == 0){
-      bigint atom_delta = abs(natoms_previous - atom->natoms);
-      if (screenflag) fmt::print(fp, "fix SS: {} {} atoms. Previous SS: {:.3f}, new SS: {:.3f}, delta: {:.3f}",
-        delflag ? "deleted" : "added",
-        atom_delta,
-        previous_supersaturation,
-        newsupersaturation,
-        newsupersaturation - previous_supersaturation);
+    if (comm->me == 0) {
+      bigint atom_delta = std::abs(natoms_previous - atom->natoms);
+      if (screenflag)
+        fmt::print(fp, "fix SS: {} {} atoms. Previous SS: {:.3f}, new SS: {:.3f}, delta: {:.3f}",
+                   delflag ? "deleted" : "added", atom_delta, previous_supersaturation,
+                   newsupersaturation, newsupersaturation - previous_supersaturation);
       if (fileflag) {
-        fmt::print(fp, "{},{},{},{},{},{:.3f},{:.3f},{:.3f}\n",
-            update->ntimestep,
-             delflag ? delta : 0,
-            !delflag ? delta : 0,
-             delflag ? atom_delta : 0,
-            !delflag ? atom_delta : 0,
-            previous_supersaturation,
-            newsupersaturation,
-            newsupersaturation - previous_supersaturation
-          );
+        fmt::print(fp, "{},{},{},{},{},{:.3f},{:.3f},{:.3f}\n", update->ntimestep,
+                   delflag ? delta : 0, !delflag ? delta : 0, delflag ? atom_delta : 0,
+                   !delflag ? atom_delta : 0, previous_supersaturation, newsupersaturation,
+                   newsupersaturation - previous_supersaturation);
         fflush(fp);
       }
     }
@@ -380,7 +380,8 @@ void FixSupersaturation::pre_exchange()
 
 /* ---------------------------------------------------------------------- */
 
-void FixSupersaturation::delete_monomers() noexcept(true) {
+void FixSupersaturation::delete_monomers() noexcept(true)
+{
   // delete local atoms flagged in dlist
   // reset nlocal
   int nlocal = atom->nlocal;
@@ -403,9 +404,10 @@ void FixSupersaturation::delete_monomers() noexcept(true) {
 
 /* ---------------------------------------------------------------------- */
 
-void FixSupersaturation::add_monomers() noexcept(true) {
+void FixSupersaturation::add_monomers() noexcept(true)
+{
   int ninsert = 0;
-  for (int i = 0; i < pproc[comm->me]; ++i){
+  for (int i = 0; i < pproc[comm->me]; ++i) {
     if (gen_one()) {
       atom->avec->create_atom(ntype, xone);
 

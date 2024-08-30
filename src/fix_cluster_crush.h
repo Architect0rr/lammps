@@ -13,6 +13,7 @@ FixStyle(cluster/crush,FixClusterCrush);
 #ifndef LAMMPS_FIX_CLUSTER_CRUSH_H
 #define LAMMPS_FIX_CLUSTER_CRUSH_H
 
+#include "compute.h"
 #include "compute_cluster_size.h"
 
 #include "fix.h"
@@ -33,7 +34,7 @@ class FixClusterCrush : public Fix {
  protected:
   Region *region = nullptr;
   ComputeClusterSize *compute_cluster_size = nullptr;
-  Compute* compute_temp = nullptr;
+  Compute *compute_temp = nullptr;
 
   RanPark *xrandom = nullptr;
   RanPark *vrandom = nullptr;

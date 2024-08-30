@@ -24,7 +24,6 @@
 #include "modify.h"
 #include "update.h"
 
-#include <time.h>
 #include <cmath>
 #include <cstring>
 #include <unordered_map>
@@ -84,7 +83,8 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
   if (teleportflag) {
     // Minimum distance to other atoms from the place atom teleports to
     double overlap = utils::numeric(FLERR, arg[7], true, lmp);
-    if (overlap < 0) error->all(FLERR, "Minimum distance for fix cluster/crush must be non-negative");
+    if (overlap < 0)
+      error->all(FLERR, "Minimum distance for fix cluster/crush must be non-negative");
 
     // apply scaling factor for styles that use distance-dependent factors
     overlap *= domain->lattice->xlattice;
@@ -94,7 +94,6 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
     int xseed = utils::inumeric(FLERR, arg[8], true, lmp);
     xrandom = new RanPark(lmp, xseed);
   }
-
 
   // Parse optional keywords
   int iarg = teleportflag ? 9 : 7;
@@ -235,10 +234,7 @@ FixClusterCrush::~FixClusterCrush()
   if (fp && (comm->me == 0)) fclose(fp);
   memory->destroy(nptt_rank);
   memory->destroy(c2c);
-  if (p2m != nullptr){
-    memory->destroy(p2m);
-  }
-
+  if (p2m != nullptr) { memory->destroy(p2m); }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -268,10 +264,8 @@ void FixClusterCrush::pre_exchange()
   std::unordered_map<tagint, std::vector<tagint>> cIDs_by_size = compute_cluster_size->cIDs_by_size;
   std::unordered_map<tagint, std::vector<tagint>> atoms_by_cID = compute_cluster_size->atoms_by_cID;
 
-  if (nloc < atom->nlocal && p2m != nullptr){
-    memory->destroy(p2m);
-  }
-  if (nloc < atom->nlocal || p2m == nullptr){
+  if (nloc < atom->nlocal && p2m != nullptr) { memory->destroy(p2m); }
+  if (nloc < atom->nlocal || p2m == nullptr) {
     nloc = atom->nlocal;
     memory->create(p2m, nloc, "cluster/crush:p2m");
     memset(p2m, 0, nloc);
@@ -286,7 +280,7 @@ void FixClusterCrush::pre_exchange()
     if (size > kmax) {
       clusters2crush_local += cIDs.size();
       for (const int cID : cIDs) {
-        for (const int pID : atoms_by_cID[cID]){
+        for (const int pID : atoms_by_cID[cID]) {
           p2m[atoms2move_local] = pID;
           ++atoms2move_local;
         }
@@ -330,9 +324,7 @@ void FixClusterCrush::pre_exchange()
       for (int i = 0; i < nptt_rank[nproc]; ++i) {
         if (gen_one()) {    // if success new coords will be already in xone[]
           ++nmoved;
-          if (nproc == comm->me){
-            set(p2m[i]);
-          }
+          if (nproc == comm->me) { set(p2m[i]); }
         } else {
           ++not_moved;
         }
@@ -366,12 +358,12 @@ void FixClusterCrush::pre_exchange()
 
       if (natoms != atom->natoms)
         error->warning(FLERR, "Lost atoms via cluster/crush: original {} current {}", atom->natoms,
-                      natoms);
+                       natoms);
 
       // warn if did not successfully moved all atoms
       if (nmoved < atoms2move_total)
         error->warning(FLERR, "Only moved {} atoms out of {} ({}%)", nmoved, atoms2move_total,
-                      (100 * nmoved) / atoms2move_total);
+                       (100 * nmoved) / atoms2move_total);
     }
 
   } else {
@@ -426,22 +418,14 @@ void FixClusterCrush::pre_exchange()
   if (comm->me == 0) {
     // print status
     if (screenflag) {
-      utils::logmesg(lmp, "Crushed {} clusters -> {} {} atoms\n",
-        clusters2crush_total,
-        teleportflag ? "moved" : "deleted",
-        teleportflag ? nmoved : atoms2move_total);
+      utils::logmesg(lmp, "Crushed {} clusters -> {} {} atoms\n", clusters2crush_total,
+                     teleportflag ? "moved" : "deleted", teleportflag ? nmoved : atoms2move_total);
     }
     if (fileflag) {
-      fmt::print(fp, "{},{},{},{},{},{}\n",
-        update->ntimestep,
-        clusters2crush_total,
-        atoms2move_total,
-        nmoved,
-        not_moved,
-        teleportflag ? 0 : atoms2move_total);
+      fmt::print(fp, "{},{},{},{},{},{}\n", update->ntimestep, clusters2crush_total,
+                 atoms2move_total, nmoved, not_moved, teleportflag ? 0 : atoms2move_total);
       fflush(fp);
     }
-
   }
 
 }    // void FixClusterCrush::pre_exchange()
@@ -453,33 +437,28 @@ void FixClusterCrush::post_neighbor()
   if (update->ntimestep < next_step) return;
 
   bigint nclose_total = check_overlap();
-  if (comm->me == 0 && fileflag) {
-      fmt::print(fp, "{}\n", nclose_total);
-  }
+  if (comm->me == 0 && fileflag) { fmt::print(fp, "{}\n", nclose_total); }
 }    // void FixClusterCrush::post_neighbor()
 
 /* ---------------------------------------------------------------------- */
 
-bigint FixClusterCrush::check_overlap() noexcept(true){
-  if (compute_temp->invoked_scalar != update->ntimestep){
-    compute_temp->compute_scalar();
-  }
+bigint FixClusterCrush::check_overlap() noexcept(true)
+{
+  if (compute_temp->invoked_scalar != update->ntimestep) { compute_temp->compute_scalar(); }
 
-  constexpr long double a_v = 0.8*1.0220217810393767580226573302752L;
+  constexpr long double a_v = 0.8 * 1.0220217810393767580226573302752L;
   constexpr long double b_v = 0.1546370863640482533333333333333L;
-  double rl = a_v*exp(b_v*pow(compute_temp->scalar, 2.791206046910478));
+  double rl = a_v * exp(b_v * pow(compute_temp->scalar, 2.791206046910478));
 
   bigint nclose_local = 0;
   double **x = atom->x;
-  for (int i = 0; i < atom->nlocal; ++i){
-    for (int j = i + 1; j < atom->nghost; ++j){
+  for (int i = 0; i < atom->nlocal; ++i) {
+    for (int j = i + 1; j < atom->nghost; ++j) {
       double dx, dy, dz;
       dx = x[i][0] - x[j][0];
       dy = x[i][1] - x[j][1];
       dz = x[i][2] - x[j][2];
-      if (dx*dx + dy*dy + dz*dz < rl*rl){
-        ++nclose_local;
-      }
+      if (dx * dx + dy * dy + dz * dz < rl * rl) { ++nclose_local; }
     }
   }
 
@@ -499,7 +478,7 @@ void FixClusterCrush::set(int pID) noexcept(true)
   x[pID][1] = xone[1];
   x[pID][2] = xone[2];
 
-  if (velscaleflag){
+  if (velscaleflag) {
     v[pID][0] *= velscale;
     v[pID][1] *= velscale;
     v[pID][2] *= velscale;
@@ -583,11 +562,12 @@ bool FixClusterCrush::gen_one() noexcept(true)
 
 /* ---------------------------------------------------------------------- */
 
-void FixClusterCrush::delete_monomers(int atoms2move_local) noexcept(true) {
+void FixClusterCrush::delete_monomers(int atoms2move_local) noexcept(true)
+{
   // delete local atoms
   // reset nlocal
 
-  for (int i = atoms2move_local - 1; i >= 0; --i){
+  for (int i = atoms2move_local - 1; i >= 0; --i) {
     atom->avec->copy(atom->nlocal - atoms2move_local + i, p2m[i], 1);
   }
 

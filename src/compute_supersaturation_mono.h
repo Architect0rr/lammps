@@ -40,7 +40,7 @@ class ComputeSupersaturationMono : public Compute {
   bigint local_monomers;
   bigint global_monomers;
   double execute_func();
-  int* mono_idx;
+  int *mono_idx;
 
  private:
   double xlo, ylo, zlo, xhi, yhi, zhi;

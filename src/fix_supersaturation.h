@@ -50,7 +50,7 @@ class FixSupersaturation : public Fix {
   double *boxlo, *boxhi;
   double xone[3];
 
-  int* pproc;
+  int *pproc;
   int maxtry_call, ntype;
 
   void delete_monomers() noexcept(true);
