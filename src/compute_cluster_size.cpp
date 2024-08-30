@@ -21,7 +21,7 @@
 #include "modify.h"
 #include "update.h"
 
-#include <string.h>
+#include <cstring>
 
 using namespace LAMMPS_NS;
 
@@ -35,7 +35,7 @@ ComputeClusterSize::ComputeClusterSize(LAMMPS *lmp, int narg, char **arg) :
   size_vector = 0;
   size_vector_variable = 1;
 
-  if (narg < 5) utils::missing_cmd_args(FLERR, "compute cluster/size", error);
+  if (narg < 5) { utils::missing_cmd_args(FLERR, "compute cluster/size", error); }
 
   // Parse arguments //
 
@@ -66,8 +66,9 @@ ComputeClusterSize::~ComputeClusterSize()
 
 void ComputeClusterSize::init()
 {
-  if (modify->get_compute_by_style(style).size() > 1)
-    if (comm->me == 0) error->warning(FLERR, "More than one compute {}", style);
+  if (modify->get_compute_by_style(style).size() > 1) {
+    if (comm->me == 0) { error->warning(FLERR, "More than one compute {}", style); }
+  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -103,8 +104,8 @@ void ComputeClusterSize::compute_vector()
 
   // Sort atom IDs by cluster IDs
   for (int i = 0; i < atom->nlocal; ++i) {
-    if (atom->mask[i] & groupbit) {
-      tagint cid = static_cast<tagint>(cluster_ids[i]);
+    if ((atom->mask[i] & groupbit) != 0) {
+      auto const cid = static_cast<tagint>(cluster_ids[i]);
       // unique_cIDs.emplace(cid);
       atoms_by_cID[cid].emplace_back(i);
     }

@@ -12,12 +12,13 @@
 ------------------------------------------------------------------------- */
 
 #include "compute_supersaturation_mono.h"
+#include <cstring>
 
 #include "atom.h"
 #include "comm.h"
-#include "memory.h"
 #include "domain.h"
 #include "error.h"
+#include "memory.h"
 #include "modify.h"
 #include "update.h"
 
@@ -35,7 +36,7 @@ ComputeSupersaturationMono::ComputeSupersaturationMono(LAMMPS *lmp, int narg, ch
   extscalar = 0;
   local_flag = 1;
 
-  if (narg < 7) utils::missing_cmd_args(FLERR, "compute supersaturation", error);
+  if (narg < 7) { utils::missing_cmd_args(FLERR, "compute supersaturation", error); }
 
   // Parse arguments //
 
@@ -54,7 +55,7 @@ ComputeSupersaturationMono::ComputeSupersaturationMono(LAMMPS *lmp, int narg, ch
   }
 
   auto temp_computes = lmp->modify->get_compute_by_style("temp");
-  if (temp_computes.size() == 0) {
+  if (temp_computes.empty()) {
     error->all(FLERR, "compute supersaturation: Cannot find compute with style 'temp'.");
   }
   compute_temp = temp_computes[0];
@@ -66,18 +67,18 @@ ComputeSupersaturationMono::ComputeSupersaturationMono(LAMMPS *lmp, int narg, ch
 
 /* ---------------------------------------------------------------------- */
 
-ComputeSupersaturationMono::~ComputeSupersaturationMono() {
-  if (mono_idx != nullptr) {
-    memory->destroy(mono_idx);
-  }
+ComputeSupersaturationMono::~ComputeSupersaturationMono()
+{
+  if (mono_idx != nullptr) { memory->destroy(mono_idx); }
 }
 
 /* ---------------------------------------------------------------------- */
 
 void ComputeSupersaturationMono::init()
 {
-  if (modify->get_compute_by_style(style).size() > 1)
-    if (comm->me == 0) error->warning(FLERR, "More than one compute {}", style);
+  if (modify->get_compute_by_style(style).size() > 1) {
+    if (comm->me == 0) { error->warning(FLERR, "More than one compute {}", style); }
+  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -99,10 +100,8 @@ void ComputeSupersaturationMono::compute_local()
 {
   invoked_local = update->ntimestep;
 
-  if (nloc < atom->nlocal && mono_idx != nullptr){
-    memory->destroy(mono_idx);
-  }
-  if (nloc < atom->nlocal && mono_idx == nullptr){
+  if (nloc < atom->nlocal && mono_idx != nullptr) { memory->destroy(mono_idx); }
+  if (nloc < atom->nlocal && mono_idx == nullptr) {
     nloc = atom->nlocal;
     memory->create(mono_idx, nloc * sizeof(int), "fix_supersaturation:mono_idx");
   }
@@ -113,7 +112,7 @@ void ComputeSupersaturationMono::compute_local()
   if (compute_neighs->invoked_peratom != update->ntimestep) { compute_neighs->compute_peratom(); }
   if (compute_temp->invoked_scalar != update->ntimestep) { compute_temp->compute_scalar(); }
   for (int i = 0; i < atom->nlocal; ++i) {
-    if (atom->mask[i] & groupbit) {
+    if ((atom->mask[i] & groupbit) != 0) {
       if (compute_neighs->vector_atom[i] == 0) {
         ++local_monomers;
         mono_idx[local_monomers] = 1;
@@ -137,6 +136,6 @@ double ComputeSupersaturationMono::execute_func()
 
 double ComputeSupersaturationMono::memory_usage()
 {
-  double bytes = 0;
+  double const bytes = 0;
   return bytes;
 }

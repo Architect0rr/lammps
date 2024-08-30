@@ -45,10 +45,10 @@ class ComputeClusterSize : public Compute {
   // std::unordered_set<tagint> unique_cIDs;
 
  private:
-  double xlo, ylo, zlo, xhi, yhi, zhi;
-  double lamda[3];
-  double *boxlo, *boxhi;
-  double sublo[3], subhi[3];    // epsilon-extended proc sub-box for adding atoms
+  double xlo{}, ylo{}, zlo{}, xhi{}, yhi{}, zhi{};
+  double lamda[3]{};
+  double *boxlo{}, *boxhi{};
+  double sublo[3]{}, subhi[3]{};    // epsilon-extended proc sub-box for adding atoms
 
   //   myalloc alloc;
   int nloc;

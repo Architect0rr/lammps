@@ -22,15 +22,14 @@
 #include "modify.h"
 #include "update.h"
 
-#include <string.h>
+#include <cstring>
 #include <unordered_map>
 
 using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-ComputeClusterTemp::ComputeClusterTemp(LAMMPS *lmp, int narg, char **arg) :
-    Compute(lmp, narg, arg), temp(nullptr)
+ComputeClusterTemp::ComputeClusterTemp(LAMMPS *lmp, int narg, char **arg) : Compute(lmp, narg, arg)
 {
 
   vector_flag = 1;
@@ -41,12 +40,12 @@ ComputeClusterTemp::ComputeClusterTemp(LAMMPS *lmp, int narg, char **arg) :
   size_local_rows = 0;
   size_local_cols = 0;
 
-  if (narg < 4) utils::missing_cmd_args(FLERR, "compute cluster/temp", error);
+  if (narg < 4) { utils::missing_cmd_args(FLERR, "compute cluster/temp", error); }
 
   // Parse arguments //
 
   // Get cluster/size compute
-  compute_cluster_size = static_cast<ComputeClusterSize *>(lmp->modify->get_compute_by_id(arg[3]));
+  compute_cluster_size = dynamic_cast<ComputeClusterSize *>(lmp->modify->get_compute_by_id(arg[3]));
   if (compute_cluster_size == nullptr) {
     error->all(FLERR,
                "compute cluster/temp: Cannot find compute with style 'cluster/size' with id: {}",
@@ -55,7 +54,7 @@ ComputeClusterTemp::ComputeClusterTemp(LAMMPS *lmp, int narg, char **arg) :
 
   // Get ke/atom compute
   auto computes = lmp->modify->get_compute_by_style("ke/atom");
-  if (computes.size() < 1) {
+  if (computes.empty()) {
     error->all(FLERR, "compute cluster/temp: Cannot find compute with style 'ke/atom'");
   }
   compute_ke_atom = computes[0];
@@ -73,8 +72,9 @@ ComputeClusterTemp::~ComputeClusterTemp()
 
 void ComputeClusterTemp::init()
 {
-  if (modify->get_compute_by_style(style).size() > 1)
-    if (comm->me == 0) error->warning(FLERR, "More than one compute {}", style);
+  if (modify->get_compute_by_style(style).size() > 1) {
+    if (comm->me == 0) { error->warning(FLERR, "More than one compute {}", style); }
+  }
 }
 
 /* ---------------------------------------------------------------------- */
