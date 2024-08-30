@@ -51,9 +51,9 @@ class FixClusterCrush : public Fix {
   double monomer_temperature, odistsq;
 
   double xlo, ylo, zlo, xhi, yhi, zhi;
-  double lamda[3];
+  double lamda[3]{};
   double *boxlo, *boxhi;
-  double xone[3];
+  double xone[3]{};
 
   int nprocs;
   int *nptt_rank;    // number of atoms to move per rank
@@ -62,8 +62,6 @@ class FixClusterCrush : public Fix {
   int *p2m;
 
   int teleportflag;
-
-  int unsucc;
 
   bool gen_one() noexcept(true);
   void set(int) noexcept(true);

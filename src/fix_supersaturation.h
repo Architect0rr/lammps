@@ -43,14 +43,14 @@ class FixSupersaturation : public Fix {
 
   int maxtry, triclinic, scaleflag, fix_temp;
   double monomer_temperature, odistsq;
-  double supersaturation;
+  double supersaturation{};
 
   double xlo, ylo, zlo, xhi, yhi, zhi;
-  double lamda[3];
+  double lamda[3]{};
   double *boxlo, *boxhi;
-  double xone[3];
+  double xone[3]{};
 
-  int *pproc;
+  int *pproc{};
   int maxtry_call, ntype;
 
   void delete_monomers() noexcept(true);

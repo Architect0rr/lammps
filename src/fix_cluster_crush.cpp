@@ -7,6 +7,8 @@
 
 #include "fix_cluster_crush.h"
 
+#include <cmath>
+
 #include "atom.h"
 #include "atom_vec.h"
 #include "atom_vec_body.h"
@@ -24,7 +26,6 @@
 #include "modify.h"
 #include "update.h"
 
-#include <cmath>
 #include <cstring>
 #include <unordered_map>
 
@@ -35,23 +36,16 @@ constexpr int DEFAULT_MAXTRY = 1000;
 
 /* ---------------------------------------------------------------------- */
 
-FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
+FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) :
+    Fix(lmp, narg, arg), screenflag(1), fileflag(0), velscaleflag(0), velscale(0.0), next_step(0),
+    maxtry(DEFAULT_MAXTRY), scaleflag(0), fix_temp(0), nloc(0), p2m(nullptr)
 {
 
   restart_pbc = 1;
-  fix_temp = 0;
-  scaleflag = 0;
-  screenflag = 1;
-  fileflag = 0;
-  maxtry = DEFAULT_MAXTRY;
-  next_step = 0;
-  nevery = 1;
-  nloc = 0;
-  p2m = nullptr;
-  velscaleflag = 0;
-  velscale = 0.0;
 
-  if (narg < 6) utils::missing_cmd_args(FLERR, "cluster/crush", error);
+  nevery = 1;
+
+  if (narg < 6) { utils::missing_cmd_args(FLERR, "cluster/crush", error); }
 
   // Parse arguments //
 
@@ -61,42 +55,43 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
 
   // Get the critical size
   kmax = utils::inumeric(FLERR, arg[4], true, lmp);
-  if (kmax < 2) error->all(FLERR, "kmax for cluster/crush cannot be less than 2");
+  if (kmax < 2) { error->all(FLERR, "kmax for cluster/crush cannot be less than 2"); }
 
   if (strcmp(arg[5], "delete") == 0) {
     teleportflag = 0;
   } else if (strcmp(arg[5], "teleport") == 0) {
     teleportflag = 1;
-    if (narg < 9) utils::missing_cmd_args(FLERR, "cluster/crush", error);
+    if (narg < 9) { utils::missing_cmd_args(FLERR, "cluster/crush", error); }
   } else {
     error->all(FLERR, "Illegal fix cluster/crush keyword: {}", arg[5]);
   }
 
   // Get cluster/size compute
   // compute_cluster_size = lmp->modify->get_compute_by_id(arg[7]);
-  compute_cluster_size = static_cast<ComputeClusterSize *>(lmp->modify->get_compute_by_id(arg[6]));
+  compute_cluster_size = dynamic_cast<ComputeClusterSize *>(lmp->modify->get_compute_by_id(arg[6]));
   if (compute_cluster_size == nullptr) {
     error->all(FLERR, "cluster/crush: Cannot find compute of style 'cluster/size' with id: {}",
                arg[8]);
   }
 
-  if (teleportflag) {
+  if (teleportflag != 0) {
     // Minimum distance to other atoms from the place atom teleports to
     double overlap = utils::numeric(FLERR, arg[7], true, lmp);
-    if (overlap < 0)
+    if (overlap < 0) {
       error->all(FLERR, "Minimum distance for fix cluster/crush must be non-negative");
+    }
 
     // apply scaling factor for styles that use distance-dependent factors
     overlap *= domain->lattice->xlattice;
     odistsq = overlap * overlap;
 
     // Get the seed for coordinate generator
-    int xseed = utils::inumeric(FLERR, arg[8], true, lmp);
+    int const xseed = utils::inumeric(FLERR, arg[8], true, lmp);
     xrandom = new RanPark(lmp, xseed);
   }
 
   // Parse optional keywords
-  int iarg = teleportflag ? 9 : 7;
+  int iarg = teleportflag != 0 ? 9 : 7;
 
   fp = nullptr;
 
@@ -104,18 +99,19 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
     if (strcmp(arg[iarg], "maxtry") == 0) {
       // Max attempts to search for a new suitable location
       maxtry = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);
-      if (maxtry < 1) error->all(FLERR, "maxtry for cluster/crush cannot be less than 1");
+      if (maxtry < 1) { error->all(FLERR, "maxtry for cluster/crush cannot be less than 1"); }
       iarg += 2;
 
     } else if (strcmp(arg[iarg], "temp") == 0) {
       // Monomer temperature
       fix_temp = 1;
       monomer_temperature = utils::numeric(FLERR, arg[iarg + 1], true, lmp);
-      if (monomer_temperature < 0)
+      if (monomer_temperature < 0) {
         error->all(FLERR, "Monomer temperature for cluster/crush cannot be negative");
+      }
 
       // Get the seed for velocity generator
-      int vseed = utils::inumeric(FLERR, arg[iarg + 2], true, lmp);
+      int const vseed = utils::inumeric(FLERR, arg[iarg + 2], true, lmp);
       vrandom = new RanPark(lmp, vseed);
       iarg += 3;
 
@@ -129,9 +125,10 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
         // Write output to new file
         fileflag = 1;
         fp = fopen(arg[iarg + 1], "w");
-        if (fp == nullptr)
+        if (fp == nullptr) {
           error->one(FLERR, "Cannot open cluster/crush stats file {}: {}", arg[iarg + 1],
                      utils::getsyserror());
+        }
       }
       iarg += 2;
 
@@ -140,9 +137,10 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
         // Append output to file
         fileflag = 1;
         fp = fopen(arg[iarg + 1], "a");
-        if (fp == nullptr)
+        if (fp == nullptr) {
           error->one(FLERR, "Cannot open cluster/crush stats file {}: {}", arg[iarg + 1],
                      utils::getsyserror());
+        }
       }
       iarg += 2;
 
@@ -152,12 +150,13 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
       iarg += 2;
 
     } else if (strcmp(arg[iarg], "units") == 0) {
-      if (strcmp(arg[iarg + 1], "box") == 0)
+      if (strcmp(arg[iarg + 1], "box") == 0) {
         scaleflag = 0;
-      else if (strcmp(arg[iarg + 1], "lattice") == 0)
+      } else if (strcmp(arg[iarg + 1], "lattice") == 0) {
         scaleflag = 1;
-      else
+      } else {
         error->all(FLERR, "Unknown cluster/crush units option {}", arg[iarg + 1]);
+      }
       iarg += 2;
     } else if (strcmp(arg[iarg], "velscale") == 0) {
       velscaleflag = 1;
@@ -191,7 +190,7 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
     boxhi = domain->boxhi_lamda;
   }
 
-  if (region && region->bboxflag) {
+  if ((region != nullptr) && (region->bboxflag != 0)) {
     xlo = MAX(xlo, region->extent_xlo);
     xhi = MIN(xhi, region->extent_xhi);
     ylo = MAX(ylo, region->extent_ylo);
@@ -200,10 +199,11 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
     zhi = MIN(zhi, region->extent_zhi);
   }
 
-  if (xlo > xhi || ylo > yhi || zlo > zhi)
+  if (xlo > xhi || ylo > yhi || zlo > zhi) {
     error->all(FLERR, "No overlap of box and region for cluster/crush");
+  }
 
-  if (comm->me == 0 && fileflag) {
+  if (comm->me == 0 && (fileflag != 0)) {
     fmt::print(fp, "ntimestep,cc,a2m,am,nm,ad\n");
     fflush(fp);
   }
@@ -211,15 +211,15 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
   next_step = update->ntimestep - (update->ntimestep % nevery);
 
   nprocs = comm->nprocs;
-  memory->create(nptt_rank, nprocs * sizeof(int), "cluster/crush:nptt_rank");
-  memory->create(c2c, nprocs * sizeof(int), "cluster/crush:c2c");
+  nptt_rank = memory->create(nptt_rank, nprocs * sizeof(int), "cluster/crush:nptt_rank");
+  c2c = memory->create(c2c, nprocs * sizeof(int), "cluster/crush:c2c");
 
   memset(xone, 0, 3 * sizeof(double));
   memset(lamda, 0, 3 * sizeof(double));
 
   // Get temp compute
   auto temp_computes = lmp->modify->get_compute_by_style("temp");
-  if (temp_computes.size() == 0) {
+  if (temp_computes.empty()) {
     error->all(FLERR, "compute supersaturation: Cannot find compute with style 'temp'.");
   }
   compute_temp = temp_computes[0];
@@ -230,8 +230,8 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
 FixClusterCrush::~FixClusterCrush()
 {
   delete xrandom;
-  if (vrandom) delete vrandom;
-  if (fp && (comm->me == 0)) fclose(fp);
+  delete vrandom;
+  if ((fp != nullptr) && (comm->me == 0)) { fclose(fp); }
   memory->destroy(nptt_rank);
   memory->destroy(c2c);
   if (p2m != nullptr) { memory->destroy(p2m); }
@@ -255,13 +255,14 @@ void FixClusterCrush::init() {}
 
 void FixClusterCrush::pre_exchange()
 {
-  if (update->ntimestep < next_step) return;
+  if (update->ntimestep < next_step) { return; }
   next_step = update->ntimestep + nevery;
 
   if (compute_cluster_size->invoked_vector < update->ntimestep - (nevery / 2)) {
     compute_cluster_size->compute_vector();
   }
-  std::unordered_map<tagint, std::vector<tagint>> cIDs_by_size = compute_cluster_size->cIDs_by_size;
+  std::unordered_map<tagint, std::vector<tagint>> const cIDs_by_size =
+      compute_cluster_size->cIDs_by_size;
   std::unordered_map<tagint, std::vector<tagint>> atoms_by_cID = compute_cluster_size->atoms_by_cID;
 
   if (nloc < atom->nlocal && p2m != nullptr) { memory->destroy(p2m); }
@@ -305,8 +306,8 @@ void FixClusterCrush::pre_exchange()
 
   if (clusters2crush_total == 0) {
     if (comm->me == 0) {
-      if (screenflag) utils::logmesg(lmp, "No clusters with size exceeding {}\n", kmax);
-      if (fileflag) {
+      if (screenflag != 0) { utils::logmesg(lmp, "No clusters with size exceeding {}\n", kmax); }
+      if (fileflag != 0) {
         fmt::print(fp, "{},0,0,0,0,0\n", update->ntimestep);
         fflush(fp);
       }
@@ -317,9 +318,8 @@ void FixClusterCrush::pre_exchange()
   bigint not_moved = 0;
   bigint nmoved = 0;
 
-  if (teleportflag) {
+  if (teleportflag != 0) {
 
-    unsucc = 0;
     for (int nproc = 0; nproc < nprocs; ++nproc) {
       for (int i = 0; i < nptt_rank[nproc]; ++i) {
         if (gen_one()) {    // if success new coords will be already in xone[]
@@ -336,18 +336,18 @@ void FixClusterCrush::pre_exchange()
     // use irregular() in case atoms moved a long distance
 
     imageint *image = atom->image;
-    for (int i = 0; i < atom->nlocal; i++) domain->remap(atom->x[i], image[i]);
+    for (int i = 0; i < atom->nlocal; i++) { domain->remap(atom->x[i], image[i]); }
     // for (int i = 0; i < nptt_rank[comm->me]; i++) {
     //   int pID = p2m[i];
     //   domain->remap(atom->x[pID], image[pID]);
     // }
 
-    if (domain->triclinic) domain->x2lamda(atom->nlocal);
+    if (domain->triclinic != 0) { domain->x2lamda(atom->nlocal); }
     domain->reset_box();
-    auto irregular = new Irregular(lmp);
+    auto *irregular = new Irregular(lmp);
     irregular->migrate_atoms(1);
     delete irregular;
-    if (domain->triclinic) domain->lamda2x(atom->nlocal);
+    if (domain->triclinic != 0) { domain->lamda2x(atom->nlocal); }
 
     // check if any atoms were lost
     bigint nblocal = atom->nlocal;
@@ -356,22 +356,24 @@ void FixClusterCrush::pre_exchange()
 
     if (comm->me == 0) {
 
-      if (natoms != atom->natoms)
+      if (natoms != atom->natoms) {
         error->warning(FLERR, "Lost atoms via cluster/crush: original {} current {}", atom->natoms,
                        natoms);
+      }
 
       // warn if did not successfully moved all atoms
-      if (nmoved < atoms2move_total)
+      if (nmoved < atoms2move_total) {
         error->warning(FLERR, "Only moved {} atoms out of {} ({}%)", nmoved, atoms2move_total,
                        (100 * nmoved) / atoms2move_total);
+      }
     }
 
   } else {
     delete_monomers(atoms2move_local);
     if (atom->molecular == Atom::ATOMIC) {
       tagint *tag = atom->tag;
-      int nlocal = atom->nlocal;
-      for (int i = 0; i < nlocal; i++) tag[i] = 0;
+      int const nlocal = atom->nlocal;
+      for (int i = 0; i < nlocal; i++) { tag[i] = 0; }
       atom->tag_extend();
     }
 
@@ -382,11 +384,11 @@ void FixClusterCrush::pre_exchange()
 
     // reset bonus data counts
 
-    auto avec_ellipsoid = dynamic_cast<AtomVecEllipsoid *>(atom->style_match("ellipsoid"));
-    auto avec_line = dynamic_cast<AtomVecLine *>(atom->style_match("line"));
-    auto avec_tri = dynamic_cast<AtomVecTri *>(atom->style_match("tri"));
-    auto avec_body = dynamic_cast<AtomVecBody *>(atom->style_match("body"));
-    bigint nlocal_bonus;
+    auto *avec_ellipsoid = dynamic_cast<AtomVecEllipsoid *>(atom->style_match("ellipsoid"));
+    auto *avec_line = dynamic_cast<AtomVecLine *>(atom->style_match("line"));
+    auto *avec_tri = dynamic_cast<AtomVecTri *>(atom->style_match("tri"));
+    auto *avec_body = dynamic_cast<AtomVecBody *>(atom->style_match("body"));
+    bigint nlocal_bonus = 0;
 
     if (atom->nellipsoids > 0) {
       nlocal_bonus = avec_ellipsoid->nlocal_bonus;
@@ -417,13 +419,14 @@ void FixClusterCrush::pre_exchange()
 
   if (comm->me == 0) {
     // print status
-    if (screenflag) {
+    if (screenflag != 0) {
       utils::logmesg(lmp, "Crushed {} clusters -> {} {} atoms\n", clusters2crush_total,
-                     teleportflag ? "moved" : "deleted", teleportflag ? nmoved : atoms2move_total);
+                     teleportflag != 0 ? "moved" : "deleted",
+                     teleportflag != 0 ? nmoved : atoms2move_total);
     }
-    if (fileflag) {
+    if (fileflag != 0) {
       fmt::print(fp, "{},{},{},{},{},{}\n", update->ntimestep, clusters2crush_total,
-                 atoms2move_total, nmoved, not_moved, teleportflag ? 0 : atoms2move_total);
+                 atoms2move_total, nmoved, not_moved, teleportflag != 0 ? 0 : atoms2move_total);
       fflush(fp);
     }
   }
@@ -434,10 +437,10 @@ void FixClusterCrush::pre_exchange()
 
 void FixClusterCrush::post_neighbor()
 {
-  if (update->ntimestep < next_step) return;
+  if (update->ntimestep < next_step) { return; }
 
   bigint nclose_total = check_overlap();
-  if (comm->me == 0 && fileflag) { fmt::print(fp, "{}\n", nclose_total); }
+  if (comm->me == 0 && (fileflag != 0)) { fmt::print(fp, "{}\n", nclose_total); }
 }    // void FixClusterCrush::post_neighbor()
 
 /* ---------------------------------------------------------------------- */
@@ -448,7 +451,7 @@ bigint FixClusterCrush::check_overlap() noexcept(true)
 
   constexpr long double a_v = 0.8 * 1.0220217810393767580226573302752L;
   constexpr long double b_v = 0.1546370863640482533333333333333L;
-  double rl = a_v * exp(b_v * pow(compute_temp->scalar, 2.791206046910478));
+  double const rl = a_v * exp(b_v * pow(compute_temp->scalar, 2.791206046910478));
 
   bigint nclose_local = 0;
   double **x = atom->x;
@@ -478,17 +481,17 @@ void FixClusterCrush::set(int pID) noexcept(true)
   x[pID][1] = xone[1];
   x[pID][2] = xone[2];
 
-  if (velscaleflag) {
+  if (velscaleflag != 0) {
     v[pID][0] *= velscale;
     v[pID][1] *= velscale;
     v[pID][2] *= velscale;
   }
 
-  if (fix_temp) {
+  if (fix_temp != 0) {
     // generate velocities
     constexpr long double c_v = 0.7978845608028653558798921198687L;    // sqrt(2/pi)
-    double sigma = std::sqrt(monomer_temperature / atom->mass[atom->type[pID]]);
-    double v_mean = c_v * sigma;
+    double const sigma = std::sqrt(monomer_temperature / atom->mass[atom->type[pID]]);
+    double const v_mean = c_v * sigma;
     v[pID][0] = v_mean + vrandom->gaussian() * sigma;
     v[pID][1] = v_mean + vrandom->gaussian() * sigma;
     if (domain->dimension == 3) { v[pID][2] = v_mean + vrandom->gaussian() * sigma; }
@@ -514,13 +517,14 @@ bool FixClusterCrush::gen_one() noexcept(true)
     xone[1] = ylo + xrandom->uniform() * (yhi - ylo);
     xone[2] = zlo + xrandom->uniform() * (zhi - zlo);
 
-    if (region && (region->match(xone[0], xone[1], xone[2]) == 0)) continue;
+    if ((region != nullptr) && (region->match(xone[0], xone[1], xone[2]) == 0)) { continue; }
 
-    if (triclinic) {
+    if (triclinic != 0) {
       domain->x2lamda(xone, lamda);
       if (lamda[0] < boxlo[0] || lamda[0] >= boxhi[0] || lamda[1] < boxlo[1] ||
-          lamda[1] >= boxhi[1] || lamda[2] < boxlo[2] || lamda[2] >= boxhi[2])
+          lamda[1] >= boxhi[1] || lamda[2] < boxlo[2] || lamda[2] >= boxhi[2]) {
         continue;
+      }
     }
 
     // check for overlap of new atom/mol with all other atoms
@@ -546,9 +550,9 @@ bool FixClusterCrush::gen_one() noexcept(true)
     }
 
     // gather reject flags from all of the procs
-    int reject_any;
+    int reject_any = 0;
     MPI_Allreduce(&reject, &reject_any, 1, MPI_INT, MPI_MAX, world);
-    if (reject_any) continue;
+    if (reject_any != 0) { continue; }
 
     // all tests passed
 
