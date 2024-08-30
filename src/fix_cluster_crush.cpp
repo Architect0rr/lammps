@@ -57,7 +57,7 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
   if (region == nullptr) { error->all(FLERR, "Cannot find target region {}", arg[3]); }
 
   // Get the critical size
-  kmax = utils::numeric(FLERR, arg[4], true, lmp);
+  kmax = utils::inumeric(FLERR, arg[4], true, lmp);
   if (kmax < 2) error->all(FLERR, "kmax for cluster/crush cannot be less than 2");
 
   if (strcmp(arg[5], "delete") == 0) {
@@ -87,7 +87,7 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
     odistsq = overlap * overlap;
 
     // Get the seed for coordinate generator
-    int xseed = utils::numeric(FLERR, arg[8], true, lmp);
+    int xseed = utils::inumeric(FLERR, arg[8], true, lmp);
     xrandom = new RanPark(lmp, xseed);
   }
 
@@ -112,7 +112,7 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
         error->all(FLERR, "Monomer temperature for cluster/crush cannot be negative");
 
       // Get the seed for velocity generator
-      int vseed = utils::numeric(FLERR, arg[iarg + 2], true, lmp);
+      int vseed = utils::inumeric(FLERR, arg[iarg + 2], true, lmp);
       vrandom = new RanPark(lmp, vseed);
       iarg += 3;
 
@@ -145,7 +145,7 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
 
     } else if (strcmp(arg[iarg], "nevery") == 0) {
       // Get execution period
-      nevery = utils::numeric(FLERR, arg[iarg + 1], true, lmp);
+      nevery = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);
       iarg += 2;
 
     } else if (strcmp(arg[iarg], "units") == 0) {

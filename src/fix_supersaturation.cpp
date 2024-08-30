@@ -73,7 +73,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) : Fix(
   int ntype = utils::inumeric(FLERR, arg[6], true, lmp);
 
   // Get the seed for coordinate generator
-  int xseed = utils::numeric(FLERR, arg[7], true, lmp);
+  int xseed = utils::inumeric(FLERR, arg[7], true, lmp);
   xrandom = new RanPark(lmp, xseed);
 
   // Parse optional keywords
@@ -105,7 +105,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) : Fix(
         error->all(FLERR, "Monomer temperature for cluster/crush cannot be negative");
 
       // Get the seed for velocity generator
-      int vseed = utils::numeric(FLERR, arg[iarg + 2], true, lmp);
+      int vseed = utils::inumeric(FLERR, arg[iarg + 2], true, lmp);
       vrandom = new RanPark(lmp, vseed);
       iarg += 3;
 
@@ -142,7 +142,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) : Fix(
     } else if (strcmp(arg[iarg], "nevery") == 0) {
 
       // Get execution period
-      nevery = utils::numeric(FLERR, arg[iarg + 1], true, lmp);
+      nevery = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);
       iarg += 2;
 
     } else if (strcmp(arg[iarg], "units") == 0) {
