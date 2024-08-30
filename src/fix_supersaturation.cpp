@@ -10,6 +10,10 @@
 
 #include "atom.h"
 #include "atom_vec.h"
+#include "atom_vec_body.h"
+#include "atom_vec_ellipsoid.h"
+#include "atom_vec_line.h"
+#include "atom_vec_tri.h"
 #include "comm.h"
 #include "domain.h"
 #include "error.h"
@@ -282,6 +286,46 @@ void FixSupersaturation::pre_exchange()
         for (int i = 0; i < nlocal; i++) tag[i] = 0;
         atom->tag_extend();
       }
+
+      // reset atom->natoms and also topology counts
+
+      bigint nblocal = atom->nlocal;
+      MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+
+      // reset bonus data counts
+
+      auto avec_ellipsoid = dynamic_cast<AtomVecEllipsoid *>(atom->style_match("ellipsoid"));
+      auto avec_line = dynamic_cast<AtomVecLine *>(atom->style_match("line"));
+      auto avec_tri = dynamic_cast<AtomVecTri *>(atom->style_match("tri"));
+      auto avec_body = dynamic_cast<AtomVecBody *>(atom->style_match("body"));
+      bigint nlocal_bonus;
+
+      if (atom->nellipsoids > 0) {
+        nlocal_bonus = avec_ellipsoid->nlocal_bonus;
+        MPI_Allreduce(&nlocal_bonus, &atom->nellipsoids, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+      }
+      if (atom->nlines > 0) {
+        nlocal_bonus = avec_line->nlocal_bonus;
+        MPI_Allreduce(&nlocal_bonus, &atom->nlines, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+      }
+      if (atom->ntris > 0) {
+        nlocal_bonus = avec_tri->nlocal_bonus;
+        MPI_Allreduce(&nlocal_bonus, &atom->ntris, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+      }
+      if (atom->nbodies > 0) {
+        nlocal_bonus = avec_body->nlocal_bonus;
+        MPI_Allreduce(&nlocal_bonus, &atom->nbodies, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+      }
+
+      // reset atom->map if it exists
+      // set nghost to 0 so old ghosts of deleted atoms won't be mapped
+
+      if (atom->map_style != Atom::MAP_NONE) {
+        atom->nghost = 0;
+        atom->map_init();
+        atom->map_set();
+      }
+
     } else {
       // init per-atom fix/compute/variable values for created atoms
 
