@@ -6,14 +6,14 @@
 
 #ifdef FIX_CLASS
 // clang-format off
-FixStyle(cluster/crush,FixClusterCrush);
+FixStyle(supersaturation,FixSupersaturation);
 // clang-format on
 #else
 
-#ifndef LAMMPS_FIX_CLUSTER_CRUSH_H
-#define LAMMPS_FIX_CLUSTER_CRUSH_H
+#ifndef LAMMPS_FIX_SUPERSATURATION_H
+#define LAMMPS_FIX_SUPERSATURATION_H
 
-#include "compute_cluster_size.h"
+#include "compute_supersaturation_mono.h"
 
 #include "fix.h"
 #include "random_park.h"
@@ -21,53 +21,41 @@ FixStyle(cluster/crush,FixClusterCrush);
 
 namespace LAMMPS_NS {
 
-class FixClusterCrush : public Fix {
+class FixSupersaturation : public Fix {
  public:
-  FixClusterCrush(class LAMMPS *, int, char **);
-  ~FixClusterCrush() override;
+  FixSupersaturation(class LAMMPS *, int, char **);
+  ~FixSupersaturation() override;
   int setmask() override;
   void init() override;
   void pre_exchange() override;
-  void post_neighbor() override;
 
  protected:
   Region *region = nullptr;
-  ComputeClusterSize *compute_cluster_size = nullptr;
-  Compute* compute_temp = nullptr;
+  ComputeSupersaturationMono *compute_supersaturation_mono = nullptr;
 
   RanPark *xrandom = nullptr;
   RanPark *vrandom = nullptr;
 
   FILE *fp;
   int screenflag, fileflag;
-  int velscaleflag;
-  double velscale;
 
   bigint next_step;
 
   int maxtry, triclinic, scaleflag, fix_temp;
-  int kmax;
   double monomer_temperature, odistsq;
+  double supersaturation;
 
   double xlo, ylo, zlo, xhi, yhi, zhi;
   double lamda[3];
   double *boxlo, *boxhi;
   double xone[3];
 
-  int nprocs;
-  int *nptt_rank;    // number of atoms to move per rank
-  bigint *c2c;
-  int nloc;
-  int *p2m;
+  int* pproc;
+  int maxtry_call, ntype;
 
-  int teleportflag;
-
-  int unsucc;
-
+  void delete_monomers() noexcept(true);
+  void add_monomers() noexcept(true);
   bool gen_one() noexcept(true);
-  void set(int) noexcept(true);
-  bigint check_overlap() noexcept(true);
-  void delete_monomers(int) noexcept(true);
 };
 
 }    // namespace LAMMPS_NS

@@ -2429,7 +2429,7 @@ double Domain::subvolume() {
       double yhi = subhi_lamda[1];
       double xy = this->xy;
 
-      return fabs((xhi - xlo) * (yhi - ylo));
+      return fabs((xhi - xlo) * prd[0] * (yhi - ylo) * prd[1]);
     } else {
       // Calculate subarea for orthogonal box
       return (subhi[0] - sublo[0]) * (subhi[1] - sublo[1]);

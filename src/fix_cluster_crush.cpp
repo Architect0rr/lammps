@@ -8,6 +8,7 @@
 #include "fix_cluster_crush.h"
 
 #include "atom.h"
+#include "atom_vec.h"
 #include "comm.h"
 #include "domain.h"
 #include "error.h"
@@ -47,9 +48,7 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
   velscaleflag = 0;
   velscale = 0.0;
 
-  if (domain->dimension == 2) { error->all(FLERR, "cluster/crush is not compatible with 2D yet"); }
-
-  if (narg < 9) utils::missing_cmd_args(FLERR, "cluster/crush", error);
+  if (narg < 6) utils::missing_cmd_args(FLERR, "cluster/crush", error);
 
   // Parse arguments //
 
@@ -57,33 +56,45 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
   region = domain->get_region_by_id(arg[3]);
   if (region == nullptr) { error->all(FLERR, "Cannot find target region {}", arg[3]); }
 
-  // Minimum distance to other atoms from the place atom teleports to
-  double overlap = utils::numeric(FLERR, arg[4], true, lmp);
-  if (overlap < 0) error->all(FLERR, "Minimum distance for fix cluster/crush must be non-negative");
-
-  // apply scaling factor for styles that use distance-dependent factors
-  overlap *= domain->lattice->xlattice;
-  odistsq = overlap * overlap;
-
   // Get the critical size
-  kmax = utils::numeric(FLERR, arg[5], true, lmp);
+  kmax = utils::numeric(FLERR, arg[4], true, lmp);
   if (kmax < 2) error->all(FLERR, "kmax for cluster/crush cannot be less than 2");
 
-  // Get the seed for coordinate generator
-  int xseed = utils::numeric(FLERR, arg[6], true, lmp);
-  xrandom = new RanPark(lmp, xseed);
+  if (strcmp(arg[5], "delete") == 0) {
+    teleportflag = 0;
+  } else if (strcmp(arg[5], "teleport") == 0) {
+    teleportflag = 1;
+    if (narg < 9) utils::missing_cmd_args(FLERR, "cluster/crush", error);
+  } else {
+    error->all(FLERR, "Illegal fix cluster/crush keyword: {}", arg[5]);
+  }
 
   // Get cluster/size compute
   // compute_cluster_size = lmp->modify->get_compute_by_id(arg[7]);
-  compute_cluster_size = static_cast<ComputeClusterSize *>(lmp->modify->get_compute_by_id(arg[7]));
+  compute_cluster_size = static_cast<ComputeClusterSize *>(lmp->modify->get_compute_by_id(arg[6]));
   if (compute_cluster_size == nullptr) {
     error->all(FLERR, "cluster/crush: Cannot find compute of style 'cluster/size' with id: {}",
-               arg[7]);
+               arg[8]);
   }
 
-  // Parse optional keywords
+  if (teleportflag) {
+    // Minimum distance to other atoms from the place atom teleports to
+    double overlap = utils::numeric(FLERR, arg[7], true, lmp);
+    if (overlap < 0) error->all(FLERR, "Minimum distance for fix cluster/crush must be non-negative");
 
-  int iarg = 8;
+    // apply scaling factor for styles that use distance-dependent factors
+    overlap *= domain->lattice->xlattice;
+    odistsq = overlap * overlap;
+
+    // Get the seed for coordinate generator
+    int xseed = utils::numeric(FLERR, arg[8], true, lmp);
+    xrandom = new RanPark(lmp, xseed);
+  }
+
+
+  // Parse optional keywords
+  int iarg = teleportflag ? 9 : 7;
+
   fp = nullptr;
 
   while (iarg < narg) {
@@ -190,7 +201,7 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, n
     error->all(FLERR, "No overlap of box and region for cluster/crush");
 
   if (comm->me == 0 && fileflag) {
-    fmt::print(fp, "ntimestep,cc,p2m,pm,nm\n");
+    fmt::print(fp, "ntimestep,cc,a2m,am,nm,ad\n");
     fflush(fp);
   }
 
@@ -298,76 +309,90 @@ void FixClusterCrush::pre_exchange()
     if (comm->me == 0) {
       if (screenflag) utils::logmesg(lmp, "No clusters with size exceeding {}\n", kmax);
       if (fileflag) {
-        fmt::print(fp, "{},{},{},{},{}\n", update->ntimestep, 0, 0, 0, 0);
+        fmt::print(fp, "{},0,0,0,0,0\n", update->ntimestep);
         fflush(fp);
       }
     }
     return;
   }
 
-  unsucc = 0;
   bigint not_moved = 0;
   bigint nmoved = 0;
-  for (int nproc = 0; nproc < nprocs; ++nproc) {
-    for (int i = 0; i < nptt_rank[nproc]; ++i) {
-      if (gen_one()) {    // if success new coords will be already in xone[]
-        ++nmoved;
-        if (nproc == comm->me){
-          set(p2m[i]);
+
+  if (teleportflag) {
+
+    unsucc = 0;
+    for (int nproc = 0; nproc < nprocs; ++nproc) {
+      for (int i = 0; i < nptt_rank[nproc]; ++i) {
+        if (gen_one()) {    // if success new coords will be already in xone[]
+          ++nmoved;
+          if (nproc == comm->me){
+            set(p2m[i]);
+          }
+        } else {
+          ++not_moved;
         }
-      } else {
-        ++not_moved;
       }
     }
+
+    // move atoms back inside simulation box and to new processors
+    // use remap() instead of pbc() in case atoms moved a long distance
+    // use irregular() in case atoms moved a long distance
+
+    imageint *image = atom->image;
+    for (int i = 0; i < atom->nlocal; i++) domain->remap(atom->x[i], image[i]);
+    // for (int i = 0; i < nptt_rank[comm->me]; i++) {
+    //   int pID = p2m[i];
+    //   domain->remap(atom->x[pID], image[pID]);
+    // }
+
+    if (domain->triclinic) domain->x2lamda(atom->nlocal);
+    domain->reset_box();
+    auto irregular = new Irregular(lmp);
+    irregular->migrate_atoms(1);
+    delete irregular;
+    if (domain->triclinic) domain->lamda2x(atom->nlocal);
+
+    // check if any atoms were lost
+    bigint nblocal = atom->nlocal;
+    bigint natoms = 0;
+    MPI_Allreduce(&nblocal, &natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+
+    if (comm->me == 0) {
+
+      if (natoms != atom->natoms)
+        error->warning(FLERR, "Lost atoms via cluster/crush: original {} current {}", atom->natoms,
+                      natoms);
+
+      // warn if did not successfully moved all atoms
+      if (nmoved < atoms2move_total)
+        error->warning(FLERR, "Only moved {} atoms out of {} ({}%)", nmoved, atoms2move_total,
+                      (100 * nmoved) / atoms2move_total);
+    }
+
+  } else {
+    delete_monomers(atoms2move_local);
   }
 
-  // move atoms back inside simulation box and to new processors
-  // use remap() instead of pbc() in case atoms moved a long distance
-  // use irregular() in case atoms moved a long distance
-
-  imageint *image = atom->image;
-  for (int i = 0; i < atom->nlocal; i++) domain->remap(atom->x[i], image[i]);
-  // for (int i = 0; i < nptt_rank[comm->me]; i++) {
-  //   int pID = p2m[i];
-  //   domain->remap(atom->x[pID], image[pID]);
-  // }
-
-  if (domain->triclinic) domain->x2lamda(atom->nlocal);
-  domain->reset_box();
-  auto irregular = new Irregular(lmp);
-  irregular->migrate_atoms(1);
-  delete irregular;
-  if (domain->triclinic) domain->lamda2x(atom->nlocal);
-
-  // check if any atoms were lost
-  bigint nblocal = atom->nlocal;
-  bigint natoms = 0;
-  MPI_Allreduce(&nblocal, &natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-
-  bigint nmoved_total = nmoved;
-  // MPI_Allreduce(&nmoved, &nmoved_total, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-
   if (comm->me == 0) {
-    if (natoms != atom->natoms)
-      error->warning(FLERR, "Lost atoms via cluster/crush: original {} current {}", atom->natoms,
-                     natoms);
-
-    // warn if did not successfully moved all atoms
-    if (nmoved_total < atoms2move_total)
-      error->warning(FLERR, "Only moved {} atoms out of {} ({}%)", nmoved_total, atoms2move_total,
-                     (100 * nmoved_total) / atoms2move_total);
-
-    // error->warning(FLERR, "Only moved {} atoms out of {} ({}%)", nmoved_total, atoms2move_total,
-    //                   (100 * nmoved_total) / atoms2move_total);
-
     // print status
-    if (screenflag)
-      utils::logmesg(lmp, "Crushed {} clusters -> moved {} atoms\n", clusters2crush_total,
-                     nmoved_total);
+    if (screenflag) {
+      utils::logmesg(lmp, "Crushed {} clusters -> {} {} atoms\n",
+        clusters2crush_total,
+        teleportflag ? "moved" : "deleted",
+        teleportflag ? nmoved : atoms2move_total);
+    }
     if (fileflag) {
-      fmt::print(fp, "{},{},{},{},{}\n", update->ntimestep, clusters2crush_total, atoms2move_total, nmoved_total, not_moved);
+      fmt::print(fp, "{},{},{},{},{},{}\n",
+        update->ntimestep,
+        clusters2crush_total,
+        atoms2move_total,
+        nmoved,
+        not_moved,
+        teleportflag ? 0 : atoms2move_total);
       fflush(fp);
     }
+
   }
 
 }    // void FixClusterCrush::pre_exchange()
@@ -382,7 +407,7 @@ void FixClusterCrush::post_neighbor()
   if (comm->me == 0 && fileflag) {
       fmt::print(fp, "{}\n", nclose_total);
   }
-}
+}    // void FixClusterCrush::post_neighbor()
 
 /* ---------------------------------------------------------------------- */
 
@@ -412,7 +437,7 @@ bigint FixClusterCrush::check_overlap() noexcept(true){
   bigint nclose_total = 0;
   MPI_Allreduce(&nclose_local, &nclose_total, 1, MPI_LMP_BIGINT, MPI_SUM, world);
   return nclose_total;
-}
+}    // bigint FixClusterCrush::check_overlap()
 
 /* ---------------------------------------------------------------------- */
 
@@ -440,7 +465,7 @@ void FixClusterCrush::set(int pID) noexcept(true)
     v[pID][1] = v_mean + vrandom->gaussian() * sigma;
     if (domain->dimension == 3) { v[pID][2] = v_mean + vrandom->gaussian() * sigma; }
   }
-}
+}    // void FixClusterCrush::set(int)
 
 /* ----------------------------------------------------------------------
   attempts to create coords up to maxtry times
@@ -505,6 +530,19 @@ bool FixClusterCrush::gen_one() noexcept(true)
 
   return success;
 
-}    // void FixClusterCrush::gen_one()
+}    // bool FixClusterCrush::gen_one()
+
+/* ---------------------------------------------------------------------- */
+
+void FixClusterCrush::delete_monomers(int atoms2move_local) noexcept(true) {
+  // delete local atoms
+  // reset nlocal
+
+  for (int i = atoms2move_local - 1; i >= 0; --i){
+    atom->avec->copy(atom->nlocal - atoms2move_local + i, p2m[i], 1);
+  }
+
+  atom->nlocal -= atoms2move_local;
+}    // void FixClusterCrush::delete_monomers(int)
 
 /* ---------------------------------------------------------------------- */

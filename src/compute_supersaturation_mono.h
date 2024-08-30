@@ -23,6 +23,8 @@ ComputeStyle(supersaturation/mono,ComputeSupersaturationMono);
 #include "compute.h"
 #include "region.h"
 
+#include <unordered_set>
+
 namespace LAMMPS_NS {
 
 class ComputeSupersaturationMono : public Compute {
@@ -35,6 +37,10 @@ class ComputeSupersaturationMono : public Compute {
   double memory_usage() override;
 
   double local_scalar;
+  bigint local_monomers;
+  bigint global_monomers;
+  double execute_func();
+  int* mono_idx;
 
  private:
   double xlo, ylo, zlo, xhi, yhi, zhi;
@@ -46,10 +52,8 @@ class ComputeSupersaturationMono : public Compute {
   double coeffs[2];
   Compute *compute_neighs = nullptr;
   Compute *compute_temp = nullptr;
-  bigint local_monomers;
-  bigint global_monomers;
 
-  double execute_func();
+  int nloc;
 };
 
 }    // namespace LAMMPS_NS

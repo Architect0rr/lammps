@@ -15,6 +15,7 @@
 
 #include "atom.h"
 #include "comm.h"
+#include "memory.h"
 #include "domain.h"
 #include "error.h"
 #include "modify.h"
@@ -65,7 +66,11 @@ ComputeSupersaturationMono::ComputeSupersaturationMono(LAMMPS *lmp, int narg, ch
 
 /* ---------------------------------------------------------------------- */
 
-ComputeSupersaturationMono::~ComputeSupersaturationMono() {}
+ComputeSupersaturationMono::~ComputeSupersaturationMono() {
+  if (mono_idx != nullptr) {
+    memory->destroy(mono_idx);
+  }
+}
 
 /* ---------------------------------------------------------------------- */
 
@@ -94,12 +99,25 @@ void ComputeSupersaturationMono::compute_local()
 {
   invoked_local = update->ntimestep;
 
+  if (nloc < atom->nlocal && mono_idx != nullptr){
+    memory->destroy(mono_idx);
+  }
+  if (nloc < atom->nlocal && mono_idx == nullptr){
+    nloc = atom->nlocal;
+    memory->create(mono_idx, nloc * sizeof(int), "fix_supersaturation:mono_idx");
+  }
+
+  memset(mono_idx, 0, nloc * sizeof(int));
+
   local_monomers = 0;
   if (compute_neighs->invoked_peratom != update->ntimestep) { compute_neighs->compute_peratom(); }
   if (compute_temp->invoked_scalar != update->ntimestep) { compute_temp->compute_scalar(); }
   for (int i = 0; i < atom->nlocal; ++i) {
     if (atom->mask[i] & groupbit) {
-      if (compute_neighs->vector_atom[i] == 0) { ++local_monomers; }
+      if (compute_neighs->vector_atom[i] == 0) {
+        ++local_monomers;
+        mono_idx[local_monomers] = 1;
+      }
     }
   }
 
