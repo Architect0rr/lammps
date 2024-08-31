@@ -312,23 +312,72 @@ void FixSupersaturation::pre_exchange()
     }
 
     do {
-      pproc[comm->me] = comm->me == rand() % comm->nprocs ? sum / comm->nprocs + sum % comm->nprocs
-                                                          : sum / comm->nprocs;
+      if (comm->me == 0) {
+        fmt::print(log, "\n");
+        fflush(log);
+      }
+
+      int additional_proc = rand() % comm->nprocs;
+      int for_every = sum / comm->nprocs;
+      pproc[comm->me] = comm->me == additional_proc ? for_every + sum % comm->nprocs : for_every;
+
+      if (comm->me == 0) {
+        fmt::print(log, "Sum: {}\n", sum);
+        fmt::print(log, "__ntry: {}\n", __ntry);
+        fmt::print(log, "Additional proc: {}\n", additional_proc);
+        for (int i = 0; i < comm->nprocs - 1; ++i) {
+          if (i == additional_proc) {
+            fmt::print(log, "{} ", for_every + sum % comm->nprocs);
+          } else {
+            fmt::print(log, "{} ", for_every);
+          }
+        }
+        fmt::print(log, "\n", for_every);
+
+        fflush(log);
+      }
 
       if (pproc[comm->me] > 0) {
         if (delflag) {
+          if (comm->me == 0) {
+            fmt::print(log, "Deleting\n");
+            fflush(log);
+          }
           delete_monomers();
         } else {
+          if (comm->me == 0) {
+            fmt::print(log, "Adding\n");
+            fflush(log);
+          }
           add_monomers();
         }
+      }
+
+      if (comm->me == 0) {
+        fmt::print(log, "After modification\n");
+        fflush(log);
       }
 
       int temp = pproc[comm->me];
       memset(pproc, 0, comm->nprocs * sizeof(int));
       MPI_Allgather(&temp, 1, MPI_INT, pproc, 1, MPI_INT, world);
 
+      if (comm->me == 0) {
+        for (int i = 0; i < comm->nprocs - 1; ++i) {
+          fmt::print(log, "{} ", pproc[i]);
+        }
+        fmt::print(log, "\n", for_every);
+
+        fflush(log);
+      }
+
       for (int i = 0; i < comm->nprocs; ++i) { sum += pproc[i]; }
       --__ntry;
+      
+      if (comm->me == 0) {
+        fmt::print(log, "\n");
+        fflush(log);
+      }
     } while (sum > 0 && __ntry > 0);
 
     if (comm->me == 0) {
