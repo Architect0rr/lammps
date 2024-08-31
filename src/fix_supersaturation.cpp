@@ -45,7 +45,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
   restart_pbc = 1;
   nevery = 1;
 
-  if (narg < 9) { utils::missing_cmd_args(FLERR, "cluster/crush", error); }
+  if (narg < 10) { utils::missing_cmd_args(FLERR, "cluster/crush", error); }
 
   // Parse arguments //
 
@@ -85,9 +85,15 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
     error->all(FLERR, "Supersaturation for fix supersaturation must be positive");
   }
 
+  // Get dampfing parameter
+  damp = utils::numeric(FLERR, arg[9], true, lmp);
+  if (damp <= 0 || damp > 1) {
+    error->all(FLERR, "Dampfing parameter for fix supersaturation must be in range (0,1]");
+  }
+
   // Parse optional keywords
 
-  int iarg = 9;
+  int iarg = 10;
   fp = nullptr;
 
   while (iarg < narg) {
@@ -293,9 +299,9 @@ void FixSupersaturation::pre_exchange()
     fflush(log);
   }
   const bool delflag = delta < 0;
-  delta = std::abs(delta);
+  delta = damp*std::abs(delta);
   if (comm->me == 0) {
-    fmt::print(log, "delflag: {}, abs(delta)={}\n", delflag ? "true" : "false", delta);
+    fmt::print(log, "delflag: {}, damp*abs(delta)={}\n", delflag ? "true" : "false", delta);
     fflush(log);
   }
 
@@ -509,17 +515,17 @@ void FixSupersaturation::add_monomers() noexcept(true)
 {
   int ninsert = 0;
   for (int i = 0; i < pproc[comm->me]; ++i) {
-    if (comm->me == 0){
+    if (comm->me == 0) {
       fmt::print(log, "Generating...");
       fflush(log);
     }
     if (gen_one()) {
-      if (comm->me == 0){
+      if (comm->me == 0) {
         fmt::print(log, "Creating...");
         fflush(log);
       }
       atom->avec->create_atom(ntype, xone);
-      if (comm->me == 0){
+      if (comm->me == 0) {
         fmt::print(log, "Created\n");
         fflush(log);
       }
@@ -538,7 +544,7 @@ void FixSupersaturation::add_monomers() noexcept(true)
 
       ++ninsert;
     } else {
-      if (comm->me == 0){
+      if (comm->me == 0) {
         fmt::print(log, "Unsuccesful\n");
         fflush(log);
       }
