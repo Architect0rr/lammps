@@ -45,7 +45,7 @@ ComputeClusterTemp::ComputeClusterTemp(LAMMPS *lmp, int narg, char **arg) : Comp
   // Parse arguments //
 
   // Get cluster/size compute
-  compute_cluster_size = dynamic_cast<ComputeClusterSize *>(lmp->modify->get_compute_by_id(arg[3]));
+  compute_cluster_size = static_cast<ComputeClusterSize *>(lmp->modify->get_compute_by_id(arg[3]));
   if (compute_cluster_size == nullptr) {
     error->all(FLERR,
                "compute cluster/temp: Cannot find compute with style 'cluster/size' with id: {}",

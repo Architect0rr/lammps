@@ -68,7 +68,7 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) :
 
   // Get cluster/size compute
   // compute_cluster_size = lmp->modify->get_compute_by_id(arg[7]);
-  compute_cluster_size = dynamic_cast<ComputeClusterSize *>(lmp->modify->get_compute_by_id(arg[6]));
+  compute_cluster_size = static_cast<ComputeClusterSize *>(lmp->modify->get_compute_by_id(arg[6]));
   if (compute_cluster_size == nullptr) {
     error->all(FLERR, "cluster/crush: Cannot find compute of style 'cluster/size' with id: {}",
                arg[8]);
@@ -384,10 +384,10 @@ void FixClusterCrush::pre_exchange()
 
     // reset bonus data counts
 
-    auto *avec_ellipsoid = dynamic_cast<AtomVecEllipsoid *>(atom->style_match("ellipsoid"));
-    auto *avec_line = dynamic_cast<AtomVecLine *>(atom->style_match("line"));
-    auto *avec_tri = dynamic_cast<AtomVecTri *>(atom->style_match("tri"));
-    auto *avec_body = dynamic_cast<AtomVecBody *>(atom->style_match("body"));
+    auto *avec_ellipsoid = static_cast<AtomVecEllipsoid *>(atom->style_match("ellipsoid"));
+    auto *avec_line = static_cast<AtomVecLine *>(atom->style_match("line"));
+    auto *avec_tri = static_cast<AtomVecTri *>(atom->style_match("tri"));
+    auto *avec_body = static_cast<AtomVecBody *>(atom->style_match("body"));
     bigint nlocal_bonus = 0;
 
     if (atom->nellipsoids > 0) {

@@ -56,7 +56,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
 
   // Get compute supersaturation/mono
   compute_supersaturation_mono =
-      dynamic_cast<ComputeSupersaturationMono *>(modify->get_compute_by_id(arg[4]));
+      static_cast<ComputeSupersaturationMono *>(modify->get_compute_by_id(arg[4]));
   if (compute_supersaturation_mono == nullptr) {
     error->all(FLERR,
                "fix supersaturation: cannot find compute of style 'supersaturation/mono' with "
@@ -306,10 +306,10 @@ void FixSupersaturation::pre_exchange()
 
       // reset bonus data counts
 
-      auto *avec_ellipsoid = dynamic_cast<AtomVecEllipsoid *>(atom->style_match("ellipsoid"));
-      auto *avec_line = dynamic_cast<AtomVecLine *>(atom->style_match("line"));
-      auto *avec_tri = dynamic_cast<AtomVecTri *>(atom->style_match("tri"));
-      auto *avec_body = dynamic_cast<AtomVecBody *>(atom->style_match("body"));
+      auto *avec_ellipsoid = static_cast<AtomVecEllipsoid *>(atom->style_match("ellipsoid"));
+      auto *avec_line = static_cast<AtomVecLine *>(atom->style_match("line"));
+      auto *avec_tri = static_cast<AtomVecTri *>(atom->style_match("tri"));
+      auto *avec_body = static_cast<AtomVecBody *>(atom->style_match("body"));
       bigint nlocal_bonus = 0;
 
       if (atom->nellipsoids > 0) {
