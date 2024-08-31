@@ -509,22 +509,39 @@ void FixSupersaturation::add_monomers() noexcept(true)
 {
   int ninsert = 0;
   for (int i = 0; i < pproc[comm->me]; ++i) {
+    if (comm->me == 0){
+      fmt::print(log, "Generating...");
+      fflush(log);
+    }
     if (gen_one()) {
+      if (comm->me == 0){
+        fmt::print(log, "Creating...");
+        fflush(log);
+      }
       atom->avec->create_atom(ntype, xone);
+      if (comm->me == 0){
+        fmt::print(log, "Created\n");
+        fflush(log);
+      }
 
       if (fix_temp != 0) {
         double **v = atom->v;
-        int const pID = atom->nlocal - 1;
+        const int pID = atom->nlocal - 1;
         // generate velocities
         constexpr long double c_v = 0.7978845608028653558798921198687L;    // sqrt(2/pi)
-        double const sigma = std::sqrt(monomer_temperature / atom->mass[ntype]);
-        double const v_mean = c_v * sigma;
+        const double sigma = std::sqrt(monomer_temperature / atom->mass[ntype]);
+        const double v_mean = c_v * sigma;
         v[pID][0] = v_mean + vrandom->gaussian() * sigma;
         v[pID][1] = v_mean + vrandom->gaussian() * sigma;
         if (domain->dimension == 3) { v[pID][2] = v_mean + vrandom->gaussian() * sigma; }
       }
 
       ++ninsert;
+    } else {
+      if (comm->me == 0){
+        fmt::print(log, "Unsuccesful\n");
+        fflush(log);
+      }
     }
   }
   pproc[comm->me] -= ninsert;
