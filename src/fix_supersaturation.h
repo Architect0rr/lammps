@@ -13,6 +13,8 @@ FixStyle(supersaturation,FixSupersaturation);
 #ifndef LAMMPS_FIX_SUPERSATURATION_H
 #define LAMMPS_FIX_SUPERSATURATION_H
 
+#include <bits/types/struct_FILE.h>
+#include <bits/types/struct_FILE.h>
 #include "compute_supersaturation_mono.h"
 
 #include "fix.h"
@@ -38,6 +40,7 @@ class FixSupersaturation : public Fix {
 
   FILE *fp;
   int screenflag, fileflag;
+  FILE log;
 
   bigint next_step;
 

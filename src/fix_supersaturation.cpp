@@ -6,7 +6,6 @@
 ------------------------------------------------------------------------- */
 
 #include "fix_supersaturation.h"
-#include "compute.h"
 #include "compute_supersaturation_mono.h"
 
 #include "atom.h"
@@ -219,6 +218,8 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
   memset(lamda, 0, 3 * sizeof(double));
 
   srand(time(nullptr));
+
+  if (comm->me == 0) { log = fopen("fix_super.log", "a"); }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -227,8 +228,15 @@ FixSupersaturation::~FixSupersaturation()
 {
   delete xrandom;
   delete vrandom;
-  if ((fp != nullptr) && (comm->me == 0)) { fclose(fp); }
+  if ((fp != nullptr) && (comm->me == 0)) {
+    fflush(fp);
+    fclose(fp);
+  }
   memory->destroy(pproc);
+  if (comm->me == 0) {
+    fflush(log);
+    fclose(log);
+  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -249,8 +257,18 @@ void FixSupersaturation::init() {}
 
 void FixSupersaturation::pre_exchange()
 {
-  if (update->ntimestep < next_step) { return; }
+  if (update->ntimestep < next_step) {
+    if (comm->me == 0) {
+      fmt::print(log, "{}, returned\n", update->ntimestep);
+      fflush(log);
+    }
+    return;
+  }
   next_step = update->ntimestep + nevery;
+  if (comm->me == 0) {
+    fmt::print(log, "{}, not returned\n", update->ntimestep);
+    fflush(log);
+  }
 
   if (compute_supersaturation_mono->invoked_scalar != update->ntimestep) {
     compute_supersaturation_mono->compute_scalar();
