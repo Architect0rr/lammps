@@ -45,7 +45,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
   restart_pbc = 1;
   nevery = 1;
 
-  if (narg < 8) { utils::missing_cmd_args(FLERR, "cluster/crush", error); }
+  if (narg < 9) { utils::missing_cmd_args(FLERR, "cluster/crush", error); }
 
   // Parse arguments //
 
@@ -79,9 +79,15 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
   int const xseed = utils::inumeric(FLERR, arg[7], true, lmp);
   xrandom = new RanPark(lmp, xseed);
 
+  // Get needed supersaturation
+  supersaturation = utils::numeric(FLERR, arg[8], true, lmp);
+  if (supersaturation <= 0) {
+    error->all(FLERR, "Supersaturation for fix supersaturation must be positive");
+  }
+
   // Parse optional keywords
 
-  int iarg = 8;
+  int iarg = 9;
   fp = nullptr;
 
   while (iarg < narg) {
@@ -274,6 +280,10 @@ void FixSupersaturation::pre_exchange()
     compute_supersaturation_mono->compute_scalar();
   }
   double previous_supersaturation = compute_supersaturation_mono->scalar;
+  // if (comm->me == 0) {
+  //   fmt::print(log, "{}, not returned\n", update->ntimestep);
+  //   fflush(log);
+  // }
 
   auto delta = static_cast<bigint>(
       round(compute_supersaturation_mono->execute_func() * domain->volume() * supersaturation -
