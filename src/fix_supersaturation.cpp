@@ -280,16 +280,20 @@ void FixSupersaturation::pre_exchange()
     compute_supersaturation_mono->compute_scalar();
   }
   double previous_supersaturation = compute_supersaturation_mono->scalar;
-  // if (comm->me == 0) {
-  //   fmt::print(log, "{}, not returned\n", update->ntimestep);
-  //   fflush(log);
-  // }
+  if (comm->me == 0) {
+    fmt::print(log, "sat\n");
+    fflush(log);
+  }
 
   auto delta = static_cast<bigint>(
       round(compute_supersaturation_mono->execute_func() * domain->volume() * supersaturation -
             compute_supersaturation_mono->global_monomers));
   int const delflag = static_cast<int>(delta > 0);
   delta = std::abs(delta);
+  if (comm->me == 0) {
+    fmt::print(log, "delta\n");
+    fflush(log);
+  }
 
   if (delta != 0) {
     bigint const natoms_previous = atom->natoms;
@@ -298,6 +302,10 @@ void FixSupersaturation::pre_exchange()
     bigint sum = delta;
     memset(pproc, 0, comm->nprocs * sizeof(int));
     int __ntry = maxtry_call;
+    if (comm->me == 0) {
+      fmt::print(log, "loop\n");
+      fflush(log);
+    }
 
     do {
       pproc[comm->me] = comm->me == rand() % comm->nprocs ? sum / comm->nprocs + sum % comm->nprocs
@@ -318,6 +326,11 @@ void FixSupersaturation::pre_exchange()
       for (int i = 0; i < comm->nprocs; ++i) { sum += pproc[i]; }
       --__ntry;
     } while (sum > 0 && __ntry > 0);
+
+    if (comm->me == 0) {
+      fmt::print(log, "after loop\n");
+      fflush(log);
+    }
 
     if (delflag != 0) {
       if (atom->molecular == Atom::ATOMIC) {
