@@ -281,17 +281,21 @@ void FixSupersaturation::pre_exchange()
   }
   double previous_supersaturation = compute_supersaturation_mono->scalar;
   if (comm->me == 0) {
-    fmt::print(log, "sat\n");
+    fmt::print(log, "Previous supersaturation: {}\n", previous_supersaturation);
     fflush(log);
   }
 
   auto delta = static_cast<bigint>(
       round(compute_supersaturation_mono->execute_func() * domain->volume() * supersaturation -
             compute_supersaturation_mono->global_monomers));
-  int const delflag = static_cast<int>(delta > 0);
+  if (comm->me == 0) {
+    fmt::print(log, "delta: {}\n", delta);
+    fflush(log);
+  }
+  const bool delflag = delta < 0;
   delta = std::abs(delta);
   if (comm->me == 0) {
-    fmt::print(log, "delta\n");
+    fmt::print(log, "delflag: {}, abs(delta)={}\n", delflag ? "true" : "false", delta);
     fflush(log);
   }
 
@@ -303,7 +307,7 @@ void FixSupersaturation::pre_exchange()
     memset(pproc, 0, comm->nprocs * sizeof(int));
     int __ntry = maxtry_call;
     if (comm->me == 0) {
-      fmt::print(log, "loop\n");
+      fmt::print(log, "Starting loop\n");
       fflush(log);
     }
 
@@ -312,7 +316,7 @@ void FixSupersaturation::pre_exchange()
                                                           : sum / comm->nprocs;
 
       if (pproc[comm->me] > 0) {
-        if (delflag != 0) {
+        if (delflag) {
           delete_monomers();
         } else {
           add_monomers();
@@ -332,7 +336,7 @@ void FixSupersaturation::pre_exchange()
       fflush(log);
     }
 
-    if (delflag != 0) {
+    if (delflag) {
       if (atom->molecular == Atom::ATOMIC) {
         tagint *tag = atom->tag;
         int const nlocal = atom->nlocal;
@@ -412,14 +416,13 @@ void FixSupersaturation::pre_exchange()
       bigint atom_delta = std::abs(natoms_previous - atom->natoms);
       if (screenflag != 0) {
         fmt::print(fp, "fix SS: {} {} atoms. Previous SS: {:.3f}, new SS: {:.3f}, delta: {:.3f}",
-                   delflag != 0 ? "deleted" : "added", atom_delta, previous_supersaturation,
+                   delflag ? "deleted" : "added", atom_delta, previous_supersaturation,
                    newsupersaturation, newsupersaturation - previous_supersaturation);
       }
       if (fileflag != 0) {
         fmt::print(fp, "{},{},{},{},{},{:.3f},{:.3f},{:.3f}\n", update->ntimestep,
-                   delflag != 0 ? delta : 0, delflag == 0 ? delta : 0,
-                   delflag != 0 ? atom_delta : 0, delflag == 0 ? atom_delta : 0,
-                   previous_supersaturation, newsupersaturation,
+                   delflag ? delta : 0, !delflag ? delta : 0, delflag ? atom_delta : 0,
+                   !delflag ? atom_delta : 0, previous_supersaturation, newsupersaturation,
                    newsupersaturation - previous_supersaturation);
         fflush(fp);
       }
