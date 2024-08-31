@@ -38,7 +38,7 @@ class FixSupersaturation : public Fix {
 
   FILE *fp;
   int screenflag, fileflag;
-  FILE log;
+  FILE *log;
 
   bigint next_step;
 
