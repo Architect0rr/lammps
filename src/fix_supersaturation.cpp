@@ -363,18 +363,18 @@ void FixSupersaturation::pre_exchange()
       MPI_Allgather(&temp, 1, MPI_INT, pproc, 1, MPI_INT, world);
 
       if (comm->me == 0) {
-        for (int i = 0; i < comm->nprocs - 1; ++i) {
-          fmt::print(log, "{} ", pproc[i]);
-        }
+        for (int i = 0; i < comm->nprocs - 1; ++i) { fmt::print(log, "{} ", pproc[i]); }
         fmt::print(log, "\n", for_every);
 
         fflush(log);
       }
 
+      sum = 0;
       for (int i = 0; i < comm->nprocs; ++i) { sum += pproc[i]; }
       --__ntry;
-      
+
       if (comm->me == 0) {
+        fmt::print(log, "Sum: {}\n", sum);
         fmt::print(log, "\n");
         fflush(log);
       }
