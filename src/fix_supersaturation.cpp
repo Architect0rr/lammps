@@ -299,7 +299,7 @@ void FixSupersaturation::pre_exchange()
     fflush(log);
   }
   const bool delflag = delta < 0;
-  delta = damp*std::abs(delta);
+  delta = damp * std::abs(delta);
   if (comm->me == 0) {
     fmt::print(log, "delflag: {}, damp*abs(delta)={}\n", delflag ? "true" : "false", delta);
     fflush(log);
@@ -514,12 +514,14 @@ void FixSupersaturation::delete_monomers() noexcept(true)
 void FixSupersaturation::add_monomers() noexcept(true)
 {
   int ninsert = 0;
+  int unsucc = 0;
   for (int i = 0; i < pproc[comm->me]; ++i) {
     if (comm->me == 0) {
       fmt::print(log, "Generating...");
       fflush(log);
     }
     if (gen_one()) {
+      unsucc = 0;
       if (comm->me == 0) {
         fmt::print(log, "Creating...");
         fflush(log);
@@ -544,9 +546,17 @@ void FixSupersaturation::add_monomers() noexcept(true)
 
       ++ninsert;
     } else {
+      ++unsucc;
       if (comm->me == 0) {
         fmt::print(log, "Unsuccesful\n");
         fflush(log);
+      }
+      if (unsucc > 10) {
+        if (comm->me == 0) {
+          fmt::print(log, "Skipping...\n");
+          fflush(log);
+        }
+        break;
       }
     }
   }
