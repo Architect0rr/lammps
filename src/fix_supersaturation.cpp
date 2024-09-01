@@ -39,7 +39,7 @@ constexpr int DEFAULT_MAXTRY_CALL = 5;
 
 FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
     Fix(lmp, narg, arg), screenflag(1), fileflag(0), next_step(0), maxtry(DEFAULT_MAXTRY),
-    scaleflag(0), fix_temp(0), maxtry_call(DEFAULT_MAXTRY_CALL)
+    scaleflag(0), fix_temp(0), maxtry_call(DEFAULT_MAXTRY_CALL), offflag(0)
 {
 
   restart_pbc = 1;
@@ -164,6 +164,15 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
       // Get execution period
       nevery = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);
       iarg += 2;
+    } else if (strcmp(arg[iarg], "offset") == 0) {
+
+      // Get start offset
+      start_offset = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);
+      if (start_offset < 0) {
+        error->all(FLERR, "start_offset for cluster/crush cannot be less than 0");
+      }
+      offflag = 1;
+      iarg += 2;
 
     } else if (strcmp(arg[iarg], "units") == 0) {
 
@@ -223,6 +232,9 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
   }
 
   next_step = update->ntimestep - (update->ntimestep % nevery);
+  if (offflag) {
+    next_step = update->ntimestep + start_offset;
+  }
 
   memory->create(pproc, comm->nprocs * sizeof(int), "fix_supersaturation:pproc");
 
@@ -299,7 +311,7 @@ void FixSupersaturation::pre_exchange()
     fflush(log);
   }
   const bool delflag = delta < 0;
-  delta = damp * std::abs(delta);
+  delta = static_cast<bigint>(round(damp * std::abs(delta)));
   if (comm->me == 0) {
     fmt::print(log, "delflag: {}, damp*abs(delta)={}\n", delflag ? "true" : "false", delta);
     fflush(log);
