@@ -43,7 +43,7 @@ class FixSupersaturation : public Fix {
   bigint next_step;
 
   int maxtry, triclinic, scaleflag, fix_temp;
-  double monomer_temperature, odistsq;
+  double monomer_temperature, odistsq, overlap;
   double supersaturation, damp;
   int offflag, start_offset;
 

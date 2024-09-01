@@ -64,7 +64,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
   }
 
   // Minimum distance to other atoms from the place atom teleports to
-  double overlap = utils::numeric(FLERR, arg[5], true, lmp);
+  overlap = utils::numeric(FLERR, arg[5], true, lmp);
   if (overlap < 0) {
     error->all(FLERR, "Minimum distance for fix cluster/crush must be non-negative");
   }
@@ -232,9 +232,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
   }
 
   next_step = update->ntimestep - (update->ntimestep % nevery);
-  if (offflag) {
-    next_step = update->ntimestep + start_offset;
-  }
+  if (offflag != 0) { next_step = update->ntimestep + start_offset; }
 
   memory->create(pproc, comm->nprocs * sizeof(int), "fix_supersaturation:pproc");
 
@@ -482,9 +480,10 @@ void FixSupersaturation::pre_exchange()
     if (comm->me == 0) {
       bigint atom_delta = std::abs(natoms_previous - atom->natoms);
       if (screenflag != 0) {
-        fmt::print(fp, "fix SS: {} {} atoms. Previous SS: {:.3f}, new SS: {:.3f}, delta: {:.3f}",
-                   delflag ? "deleted" : "added", atom_delta, previous_supersaturation,
-                   newsupersaturation, newsupersaturation - previous_supersaturation);
+        utils::logmesg(lmp,
+                       "fix SS: {} {} atoms. Previous SS: {:.3f}, new SS: {:.3f}, delta: {:.3f}",
+                       delflag ? "deleted" : "added", atom_delta, previous_supersaturation,
+                       newsupersaturation, newsupersaturation - previous_supersaturation);
       }
       if (fileflag != 0) {
         fmt::print(fp, "{},{},{},{},{},{:.3f},{:.3f},{:.3f}\n", update->ntimestep,
@@ -567,21 +566,22 @@ void FixSupersaturation::add_monomers() noexcept(true)
 
 void FixSupersaturation::add_monomers2() noexcept(true)
 {
-  int ninsert = 0;
-  int unsucc = 0;
-  for (int i = 0; i < pproc[comm->me]; ++i) {
-    if (gen_one(xlo + odistsq * i, ylo + odistsq * i, zlo + odistsq * i, odistsq, odistsq,
-                odistsq)) {
-      unsucc = 0;
-      atom->avec->create_atom(ntype, xone);
-      if (fix_temp != 0) { set_speed(); }
-      ++ninsert;
-    } else {
-      ++unsucc;
-      if (unsucc > 10) { break; }
+  auto const nx = static_cast<bigint>(floor((xhi - xlo) / overlap));
+  auto const ny = static_cast<bigint>(floor((yhi - ylo) / overlap));
+  auto const nz = static_cast<bigint>(floor((zhi - zlo) / overlap));
+  for (bigint i = 0; i < nx && pproc[comm->me] > 0; ++i) {
+    for (bigint j = 0; j < ny && pproc[comm->me] > 0; ++j) {
+      for (bigint k = 0; k < nz && pproc[comm->me] > 0; ++k) {
+        if (gen_one(xlo + overlap * i, ylo + overlap * j, zlo + overlap * k, overlap, overlap,
+                    overlap)) {
+          atom->avec->create_atom(ntype, xone);
+          if (fix_temp != 0) { set_speed(); }
+          --pproc[comm->me];
+        }
+      }
     }
   }
-  pproc[comm->me] -= ninsert;
+
   add_monomers();
 }
 
@@ -674,7 +674,7 @@ bool FixSupersaturation::gen_one(double _x, double _y, double _z, double _dx, do
     // generate new random position
     xone[0] = _x + xrandom->uniform() * _dx;
     xone[1] = _y + xrandom->uniform() * _dy;
-    xone[2] = _x + xrandom->uniform() * _dz;
+    xone[2] = _z + xrandom->uniform() * _dz;
 
     if ((region != nullptr) && (region->match(xone[0], xone[1], xone[2]) == 0)) { continue; }
 
