@@ -56,7 +56,10 @@ class FixSupersaturation : public Fix {
 
   void delete_monomers() noexcept(true);
   void add_monomers() noexcept(true);
+  void add_monomers2() noexcept(true);
   bool gen_one() noexcept(true);
+  bool gen_one(double, double, double, double, double, double) noexcept(true);
+  void set_speed() noexcept(true);
 };
 
 }    // namespace LAMMPS_NS

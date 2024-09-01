@@ -355,7 +355,7 @@ void FixSupersaturation::pre_exchange()
             fmt::print(log, "Adding\n");
             fflush(log);
           }
-          add_monomers();
+          add_monomers2();
         }
       }
 
@@ -532,17 +532,7 @@ void FixSupersaturation::add_monomers() noexcept(true)
         fflush(log);
       }
 
-      if (fix_temp != 0) {
-        double **v = atom->v;
-        const int pID = atom->nlocal - 1;
-        // generate velocities
-        constexpr long double c_v = 0.7978845608028653558798921198687L;    // sqrt(2/pi)
-        const double sigma = std::sqrt(monomer_temperature / atom->mass[ntype]);
-        const double v_mean = c_v * sigma;
-        v[pID][0] = v_mean + vrandom->gaussian() * sigma;
-        v[pID][1] = v_mean + vrandom->gaussian() * sigma;
-        if (domain->dimension == 3) { v[pID][2] = v_mean + vrandom->gaussian() * sigma; }
-      }
+      if (fix_temp != 0) { set_speed(); }
 
       ++ninsert;
     } else {
@@ -563,6 +553,39 @@ void FixSupersaturation::add_monomers() noexcept(true)
   pproc[comm->me] -= ninsert;
 }
 
+void FixSupersaturation::add_monomers2() noexcept(true)
+{
+  int ninsert = 0;
+  int unsucc = 0;
+  for (int i = 0; i < pproc[comm->me]; ++i) {
+    if (gen_one(xlo + odistsq * i, ylo + odistsq * i, zlo + odistsq * i, odistsq, odistsq,
+                odistsq)) {
+      unsucc = 0;
+      atom->avec->create_atom(ntype, xone);
+      if (fix_temp != 0) { set_speed(); }
+      ++ninsert;
+    } else {
+      ++unsucc;
+      if (unsucc > 10) { break; }
+    }
+  }
+  pproc[comm->me] -= ninsert;
+  add_monomers();
+}
+
+void FixSupersaturation::set_speed() noexcept(true)
+{
+  double **v = atom->v;
+  const int pID = atom->nlocal - 1;
+  // generate velocities
+  constexpr long double c_v = 0.7978845608028653558798921198687L;    // sqrt(2/pi)
+  const double sigma = std::sqrt(monomer_temperature / atom->mass[ntype]);
+  const double v_mean = c_v * sigma;
+  v[pID][0] = v_mean + vrandom->gaussian() * sigma;
+  v[pID][1] = v_mean + vrandom->gaussian() * sigma;
+  if (domain->dimension == 3) { v[pID][2] = v_mean + vrandom->gaussian() * sigma; }
+}
+
 /* ----------------------------------------------------------------------
   attempts to create coords up to maxtry times
   criteria for insertion: region, triclinic box, overlap
@@ -581,6 +604,65 @@ bool FixSupersaturation::gen_one() noexcept(true)
     xone[0] = xlo + xrandom->uniform() * (xhi - xlo);
     xone[1] = ylo + xrandom->uniform() * (yhi - ylo);
     xone[2] = zlo + xrandom->uniform() * (zhi - zlo);
+
+    if ((region != nullptr) && (region->match(xone[0], xone[1], xone[2]) == 0)) { continue; }
+
+    if (triclinic != 0) {
+      domain->x2lamda(xone, lamda);
+      if (lamda[0] < boxlo[0] || lamda[0] >= boxhi[0] || lamda[1] < boxlo[1] ||
+          lamda[1] >= boxhi[1] || lamda[2] < boxlo[2] || lamda[2] >= boxhi[2]) {
+        continue;
+      }
+    }
+
+    // check for overlap of new atom/mol with all other atoms
+    // minimum_image() needed to account for distances across PBC
+
+    double **x = atom->x;
+    int reject = 0;
+
+    // check new position for overlapping with all local atoms
+    for (int i = 0; i < atom->nmax; i++) {
+      double delx, dely, delz, distsq, distsq1;
+
+      delx = xone[0] - x[i][0];
+      dely = xone[1] - x[i][1];
+      delz = xone[2] - x[i][2];
+      distsq1 = delx * delx + dely * dely + delz * delz;
+      domain->minimum_image(delx, dely, delz);
+      distsq = delx * delx + dely * dely + delz * delz;
+      if (distsq < odistsq || distsq1 < odistsq) {
+        reject = 1;
+        break;
+      }
+    }
+
+    if (reject != 0) { continue; }
+
+    // all tests passed
+
+    success = true;
+    break;
+  }
+
+  return success;
+
+}    // void FixSupersaturation::gen_one()
+
+bool FixSupersaturation::gen_one(double _x, double _y, double _z, double _dx, double _dy,
+                                 double _dz) noexcept(true)
+{
+
+  int ntry = 0;
+  bool success = false;
+
+  while (ntry < 9) {
+    ++ntry;
+
+    // generate new random position
+    xone[0] = _x + xrandom->uniform() * _dx;
+    xone[1] = _y + xrandom->uniform() * _dy;
+    xone[2] = _x + xrandom->uniform() * _dz;
 
     if ((region != nullptr) && (region->match(xone[0], xone[1], xone[2]) == 0)) { continue; }
 
