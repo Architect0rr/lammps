@@ -227,7 +227,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
   }
 
   if (comm->me == 0 && (fileflag != 0)) {
-    fmt::print(fp, "ntimestep,a2d,a2a,ad,aa,ssb,ssa,del\n");
+    fmt::print(fp, "ntimestep,ntotal,a2d,a2a,ad,aa,ssb,ssa,del\n");
     fflush(fp);
   }
 
@@ -481,12 +481,14 @@ void FixSupersaturation::pre_exchange()
       bigint atom_delta = std::abs(natoms_previous - atom->natoms);
       if (screenflag != 0) {
         utils::logmesg(lmp,
-                       "fix SS: {} {} atoms. Previous SS: {:.3f}, new SS: {:.3f}, delta: {:.3f}",
+                       "fix SS: {} {} atoms. Previous SS: {:.3f}, new SS: {:.3f}, delta: {:.3f}. "
+                       "Total atoms: {}",
                        delflag ? "deleted" : "added", atom_delta, previous_supersaturation,
-                       newsupersaturation, newsupersaturation - previous_supersaturation);
+                       newsupersaturation, newsupersaturation - previous_supersaturation,
+                       atom->natoms);
       }
       if (fileflag != 0) {
-        fmt::print(fp, "{},{},{},{},{},{:.3f},{:.3f},{:.3f}\n", update->ntimestep,
+        fmt::print(fp, "{},{},{},{},{},{},{:.3f},{:.3f},{:.3f}\n", update->ntimestep, atom->natoms,
                    delflag ? delta : 0, !delflag ? delta : 0, delflag ? atom_delta : 0,
                    !delflag ? atom_delta : 0, previous_supersaturation, newsupersaturation,
                    newsupersaturation - previous_supersaturation);
@@ -505,9 +507,9 @@ void FixSupersaturation::delete_monomers() noexcept(true)
   int nlocal = atom->nlocal;
 
   int local_monomers = compute_supersaturation_mono->local_monomers;
-  int *mono_idx = compute_supersaturation_mono->mono_idx;
+  const int *mono_idx = compute_supersaturation_mono->mono_idx;
 
-  int *mx = pproc[comm->me] > local_monomers ? &local_monomers : pproc + comm->me;
+  const int *mx = pproc[comm->me] > local_monomers ? &local_monomers : pproc + comm->me;
 
   while (*mx > 0) {
     atom->avec->copy(nlocal - 1, mono_idx[local_monomers - 1], 1);
