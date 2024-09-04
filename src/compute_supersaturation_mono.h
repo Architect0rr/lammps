@@ -28,23 +28,30 @@ namespace LAMMPS_NS {
 class ComputeSupersaturationMono : public Compute {
  public:
   ComputeSupersaturationMono(class LAMMPS *, int, char **);
-  ~ComputeSupersaturationMono() override;
+  ~ComputeSupersaturationMono() noexcept(true) override;
   void init() override;
   double compute_scalar() override;
   void compute_local() override;
   double memory_usage() override;
 
   double local_scalar;
-  bigint local_monomers;
+  int local_monomers;
   bigint global_monomers{};
-  double execute_func();
+  double execute_func() const;
   int *mono_idx{};
 
  private:
-  double xlo{}, ylo{}, zlo{}, xhi{}, yhi{}, zhi{};
+  double xlo{};
+  double ylo{};
+  double zlo{};
+  double xhi{};
+  double yhi{};
+  double zhi{};
   double lamda[3]{};
-  double *boxlo{}, *boxhi{};
-  double sublo[3]{}, subhi[3]{};    // epsilon-extended proc sub-box for adding atoms
+  double *boxlo{};
+  double *boxhi{};
+  double sublo[3]{};
+  double subhi[3]{};    // epsilon-extended proc sub-box for adding atoms
 
   Region *region = nullptr;
   double coeffs[2]{};

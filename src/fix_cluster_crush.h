@@ -25,7 +25,7 @@ namespace LAMMPS_NS {
 class FixClusterCrush : public Fix {
  public:
   FixClusterCrush(class LAMMPS *, int, char **);
-  ~FixClusterCrush() override;
+  ~FixClusterCrush() noexcept(true) override;
   int setmask() override;
   void init() override;
   void pre_exchange() override;
@@ -40,19 +40,30 @@ class FixClusterCrush : public Fix {
   RanPark *vrandom = nullptr;
 
   FILE *fp;
-  int screenflag, fileflag;
+  int screenflag;
+  int fileflag;
   int velscaleflag;
   double velscale;
 
   bigint next_step;
 
-  int maxtry, triclinic, scaleflag, fix_temp;
+  int maxtry;
+  int triclinic;
+  int scaleflag;
+  int fix_temp;
   int kmax;
-  double monomer_temperature, odistsq;
+  double monomer_temperature;
+  double odistsq;
 
-  double xlo, ylo, zlo, xhi, yhi, zhi;
+  double xlo;
+  double ylo;
+  double zlo;
+  double xhi;
+  double yhi;
+  double zhi;
   double lamda[3]{};
-  double *boxlo, *boxhi;
+  double *boxlo;
+  double *boxhi;
   double xone[3]{};
 
   int nprocs;

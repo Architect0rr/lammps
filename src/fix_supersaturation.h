@@ -19,41 +19,57 @@ FixStyle(supersaturation,FixSupersaturation);
 #include "random_park.h"
 #include "region.h"
 
+#include <random>
+
 namespace LAMMPS_NS {
 
 class FixSupersaturation : public Fix {
  public:
   FixSupersaturation(class LAMMPS *, int, char **);
-  ~FixSupersaturation() override;
+  ~FixSupersaturation() noexcept(true) override;
   int setmask() override;
-  void init() override;
   void pre_exchange() override;
 
  protected:
   Region *region = nullptr;
   ComputeSupersaturationMono *compute_supersaturation_mono = nullptr;
 
-  RanPark *xrandom = nullptr;
-  RanPark *vrandom = nullptr;
+  RanPark* xrandom;
+  RanPark* vrandom;
 
   FILE *fp;
-  int screenflag, fileflag;
+  int screenflag;
+  int fileflag;
   FILE *log;
 
   bigint next_step;
 
-  int maxtry, triclinic, scaleflag, fix_temp;
-  double monomer_temperature, odistsq, overlap;
-  double supersaturation, damp;
-  int offflag, start_offset;
+  int maxtry;
+  int triclinic;
+  int scaleflag;
+  int fix_temp;
+  double monomer_temperature;
+  double odistsq;
+  double overlap;
+  double supersaturation;
+  double damp;
+  int offflag;
+  int start_offset;
 
-  double xlo, ylo, zlo, xhi, yhi, zhi;
+  double xlo;
+  double ylo;
+  double zlo;
+  double xhi;
+  double yhi;
+  double zhi;
   double lamda[3]{};
-  double *boxlo, *boxhi;
+  double *boxlo;
+  double *boxhi;
   double xone[3]{};
 
   int *pproc{};
-  int maxtry_call, ntype;
+  int maxtry_call;
+  int ntype;
 
   void delete_monomers() noexcept(true);
   void add_monomers() noexcept(true);

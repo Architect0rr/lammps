@@ -39,7 +39,7 @@ constexpr int DEFAULT_MAXTRY_CALL = 5;
 
 FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
     Fix(lmp, narg, arg), screenflag(1), fileflag(0), next_step(0), maxtry(DEFAULT_MAXTRY),
-    scaleflag(0), fix_temp(0), maxtry_call(DEFAULT_MAXTRY_CALL), offflag(0)
+    scaleflag(0), fix_temp(0), offflag(0), maxtry_call(DEFAULT_MAXTRY_CALL)
 {
 
   restart_pbc = 1;
@@ -239,14 +239,12 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
   memset(xone, 0, 3 * sizeof(double));
   memset(lamda, 0, 3 * sizeof(double));
 
-  srand(time(nullptr));
-
   if (comm->me == 0) { log = fopen("fix_super.log", "a"); }
 }
 
 /* ---------------------------------------------------------------------- */
 
-FixSupersaturation::~FixSupersaturation()
+FixSupersaturation::~FixSupersaturation() noexcept(true)
 {
   delete xrandom;
   delete vrandom;
@@ -267,13 +265,8 @@ int FixSupersaturation::setmask()
 {
   int mask = 0;
   mask |= PRE_EXCHANGE;
-  // mask |= POST_NEIGHBOR;
   return mask;
 }
-
-/* ---------------------------------------------------------------------- */
-
-void FixSupersaturation::init() {}
 
 /* ---------------------------------------------------------------------- */
 
@@ -301,15 +294,17 @@ void FixSupersaturation::pre_exchange()
     fflush(log);
   }
 
-  auto delta = static_cast<bigint>(
-      round(compute_supersaturation_mono->execute_func() * domain->volume() * supersaturation -
-            compute_supersaturation_mono->global_monomers));
+  auto delta = static_cast<bigint>(std::floor(
+      static_cast<long double>(compute_supersaturation_mono->execute_func()) *
+          static_cast<long double>(domain->volume()) * static_cast<long double>(supersaturation) -
+      compute_supersaturation_mono->global_monomers));
   if (comm->me == 0) {
     fmt::print(log, "delta: {}\n", delta);
     fflush(log);
   }
   const bool delflag = delta < 0;
-  delta = static_cast<bigint>(round(damp * std::abs(delta)));
+  delta = static_cast<bigint>(
+      std::floor(static_cast<long double>(damp) * static_cast<long double>(std::abs(delta))));
   if (comm->me == 0) {
     fmt::print(log, "delflag: {}, damp*abs(delta)={}\n", delflag ? "true" : "false", delta);
     fflush(log);
@@ -333,8 +328,12 @@ void FixSupersaturation::pre_exchange()
         fflush(log);
       }
 
-      int additional_proc = rand() % comm->nprocs;
-      int for_every = sum / comm->nprocs;
+      std::random_device dev;
+      std::mt19937 rng(dev());
+      std::uniform_int_distribution<std::mt19937::result_type> dist(0, comm->nprocs);
+
+      int additional_proc = static_cast<int>(dist(rng));
+      auto for_every = static_cast<int>(sum / comm->nprocs);
       pproc[comm->me] = comm->me == additional_proc ? for_every + sum % comm->nprocs : for_every;
 
       if (comm->me == 0) {
@@ -416,10 +415,10 @@ void FixSupersaturation::pre_exchange()
 
       // reset bonus data counts
 
-      auto *avec_ellipsoid = static_cast<AtomVecEllipsoid *>(atom->style_match("ellipsoid"));
-      auto *avec_line = static_cast<AtomVecLine *>(atom->style_match("line"));
-      auto *avec_tri = static_cast<AtomVecTri *>(atom->style_match("tri"));
-      auto *avec_body = static_cast<AtomVecBody *>(atom->style_match("body"));
+      const auto *avec_ellipsoid = static_cast<AtomVecEllipsoid *>(atom->style_match("ellipsoid"));
+      const auto *avec_line = static_cast<AtomVecLine *>(atom->style_match("line"));
+      const auto *avec_tri = static_cast<AtomVecTri *>(atom->style_match("tri"));
+      const auto *avec_body = static_cast<AtomVecBody *>(atom->style_match("body"));
       bigint nlocal_bonus = 0;
 
       if (atom->nellipsoids > 0) {
@@ -594,7 +593,7 @@ void FixSupersaturation::set_speed() noexcept(true)
   // generate velocities
   constexpr long double c_v = 0.7978845608028653558798921198687L;    // sqrt(2/pi)
   const double sigma = std::sqrt(monomer_temperature / atom->mass[ntype]);
-  const double v_mean = c_v * sigma;
+  const double v_mean = static_cast<double>(c_v) * sigma;
   v[pID][0] = v_mean + vrandom->gaussian() * sigma;
   v[pID][1] = v_mean + vrandom->gaussian() * sigma;
   if (domain->dimension == 3) { v[pID][2] = v_mean + vrandom->gaussian() * sigma; }
@@ -637,14 +636,13 @@ bool FixSupersaturation::gen_one() noexcept(true)
 
     // check new position for overlapping with all local atoms
     for (int i = 0; i < atom->nmax; i++) {
-      double delx, dely, delz, distsq, distsq1;
+      double delx = xone[0] - x[i][0];
+      double dely = xone[1] - x[i][1];
+      double delz = xone[2] - x[i][2];
+      const double distsq1 = delx * delx + dely * dely + delz * delz;
 
-      delx = xone[0] - x[i][0];
-      dely = xone[1] - x[i][1];
-      delz = xone[2] - x[i][2];
-      distsq1 = delx * delx + dely * dely + delz * delz;
       domain->minimum_image(delx, dely, delz);
-      distsq = delx * delx + dely * dely + delz * delz;
+      const double distsq = delx * delx + dely * dely + delz * delz;
       if (distsq < odistsq || distsq1 < odistsq) {
         reject = 1;
         break;
@@ -696,14 +694,13 @@ bool FixSupersaturation::gen_one(double _x, double _y, double _z, double _dx, do
 
     // check new position for overlapping with all local atoms
     for (int i = 0; i < atom->nmax; i++) {
-      double delx, dely, delz, distsq, distsq1;
+      double delx = xone[0] - x[i][0];
+      double dely = xone[1] - x[i][1];
+      double delz = xone[2] - x[i][2];
+      double const distsq1 = delx * delx + dely * dely + delz * delz;
 
-      delx = xone[0] - x[i][0];
-      dely = xone[1] - x[i][1];
-      delz = xone[2] - x[i][2];
-      distsq1 = delx * delx + dely * dely + delz * delz;
       domain->minimum_image(delx, dely, delz);
-      distsq = delx * delx + dely * dely + delz * delz;
+      double const distsq = delx * delx + dely * dely + delz * delz;
       if (distsq < odistsq || distsq1 < odistsq) {
         reject = 1;
         break;

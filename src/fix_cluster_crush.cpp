@@ -227,7 +227,7 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) :
 
 /* ---------------------------------------------------------------------- */
 
-FixClusterCrush::~FixClusterCrush()
+FixClusterCrush::~FixClusterCrush() noexcept(true)
 {
   delete xrandom;
   delete vrandom;
@@ -243,7 +243,6 @@ int FixClusterCrush::setmask()
 {
   int mask = 0;
   mask |= PRE_EXCHANGE;
-  // mask |= POST_NEIGHBOR;
   return mask;
 }
 
@@ -337,10 +336,10 @@ void FixClusterCrush::pre_exchange()
 
     imageint *image = atom->image;
     for (int i = 0; i < atom->nlocal; i++) { domain->remap(atom->x[i], image[i]); }
-    // for (int i = 0; i < nptt_rank[comm->me]; i++) {
-    //   int pID = p2m[i];
-    //   domain->remap(atom->x[pID], image[pID]);
-    // }
+    for (int i = 0; i < nptt_rank[comm->me]; i++) {
+      int pID = p2m[i];
+      domain->remap(atom->x[pID], image[pID]);
+    }
 
     if (domain->triclinic != 0) { domain->x2lamda(atom->nlocal); }
     domain->reset_box();
@@ -384,10 +383,10 @@ void FixClusterCrush::pre_exchange()
 
     // reset bonus data counts
 
-    auto *avec_ellipsoid = static_cast<AtomVecEllipsoid *>(atom->style_match("ellipsoid"));
-    auto *avec_line = static_cast<AtomVecLine *>(atom->style_match("line"));
-    auto *avec_tri = static_cast<AtomVecTri *>(atom->style_match("tri"));
-    auto *avec_body = static_cast<AtomVecBody *>(atom->style_match("body"));
+    const auto *avec_ellipsoid = static_cast<AtomVecEllipsoid *>(atom->style_match("ellipsoid"));
+    const auto *avec_line = static_cast<AtomVecLine *>(atom->style_match("line"));
+    const auto *avec_tri = static_cast<AtomVecTri *>(atom->style_match("tri"));
+    const auto *avec_body = static_cast<AtomVecBody *>(atom->style_match("body"));
     bigint nlocal_bonus = 0;
 
     if (atom->nellipsoids > 0) {
@@ -451,16 +450,16 @@ bigint FixClusterCrush::check_overlap() noexcept(true)
 
   constexpr long double a_v = 0.8 * 1.0220217810393767580226573302752L;
   constexpr long double b_v = 0.1546370863640482533333333333333L;
-  double const rl = a_v * exp(b_v * pow(compute_temp->scalar, 2.791206046910478));
+  double const rl = static_cast<double>(a_v) *
+      exp(static_cast<double>(b_v) * pow(compute_temp->scalar, 2.791206046910478));
 
   bigint nclose_local = 0;
   double **x = atom->x;
   for (int i = 0; i < atom->nlocal; ++i) {
     for (int j = i + 1; j < atom->nghost; ++j) {
-      double dx, dy, dz;
-      dx = x[i][0] - x[j][0];
-      dy = x[i][1] - x[j][1];
-      dz = x[i][2] - x[j][2];
+      double dx = x[i][0] - x[j][0];
+      double dy = x[i][1] - x[j][1];
+      double dz = x[i][2] - x[j][2];
       if (dx * dx + dy * dy + dz * dz < rl * rl) { ++nclose_local; }
     }
   }
@@ -491,7 +490,7 @@ void FixClusterCrush::set(int pID) noexcept(true)
     // generate velocities
     constexpr long double c_v = 0.7978845608028653558798921198687L;    // sqrt(2/pi)
     double const sigma = std::sqrt(monomer_temperature / atom->mass[atom->type[pID]]);
-    double const v_mean = c_v * sigma;
+    double const v_mean = static_cast<double>(c_v) * sigma;
     v[pID][0] = v_mean + vrandom->gaussian() * sigma;
     v[pID][1] = v_mean + vrandom->gaussian() * sigma;
     if (domain->dimension == 3) { v[pID][2] = v_mean + vrandom->gaussian() * sigma; }
@@ -535,14 +534,13 @@ bool FixClusterCrush::gen_one() noexcept(true)
 
     // check new position for overlapping with all local atoms
     for (int i = 0; i < atom->nmax; i++) {
-      double delx, dely, delz, distsq, distsq1;
+      double delx = xone[0] - x[i][0];
+      double dely = xone[1] - x[i][1];
+      double delz = xone[2] - x[i][2];
 
-      delx = xone[0] - x[i][0];
-      dely = xone[1] - x[i][1];
-      delz = xone[2] - x[i][2];
-      distsq1 = delx * delx + dely * dely + delz * delz;
+      const double distsq1 = delx * delx + dely * dely + delz * delz;
       domain->minimum_image(delx, dely, delz);
-      distsq = delx * delx + dely * dely + delz * delz;
+      const double distsq = delx * delx + dely * dely + delz * delz;
       if (distsq < odistsq || distsq1 < odistsq) {
         reject = 1;
         break;

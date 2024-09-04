@@ -67,7 +67,7 @@ ComputeSupersaturationMono::ComputeSupersaturationMono(LAMMPS *lmp, int narg, ch
 
 /* ---------------------------------------------------------------------- */
 
-ComputeSupersaturationMono::~ComputeSupersaturationMono()
+ComputeSupersaturationMono::~ComputeSupersaturationMono() noexcept(true)
 {
   if (mono_idx != nullptr) { memory->destroy(mono_idx); }
 }
@@ -76,8 +76,8 @@ ComputeSupersaturationMono::~ComputeSupersaturationMono()
 
 void ComputeSupersaturationMono::init()
 {
-  if (modify->get_compute_by_style(style).size() > 1) {
-    if (comm->me == 0) { error->warning(FLERR, "More than one compute {}", style); }
+  if (modify->get_compute_by_style(style).size() > 1 && comm->me == 0) {
+    error->warning(FLERR, "More than one compute {}", style);
   }
 }
 
@@ -88,7 +88,8 @@ double ComputeSupersaturationMono::compute_scalar()
   invoked_scalar = update->ntimestep;
 
   compute_local();
-  MPI_Allreduce(&local_monomers, &global_monomers, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  bigint _local_monomers = local_monomers;
+  MPI_Allreduce(&_local_monomers, &global_monomers, 1, MPI_LMP_BIGINT, MPI_SUM, world);
 
   scalar = static_cast<double>(global_monomers) / domain->volume() / execute_func();
   return scalar;
@@ -112,11 +113,9 @@ void ComputeSupersaturationMono::compute_local()
   if (compute_neighs->invoked_peratom != update->ntimestep) { compute_neighs->compute_peratom(); }
   if (compute_temp->invoked_scalar != update->ntimestep) { compute_temp->compute_scalar(); }
   for (int i = 0; i < atom->nlocal; ++i) {
-    if ((atom->mask[i] & groupbit) != 0) {
-      if (compute_neighs->vector_atom[i] == 0) {
-        ++local_monomers;
-        mono_idx[local_monomers] = 1;
-      }
+    if ((atom->mask[i] & groupbit) != 0 && compute_neighs->vector_atom[i] == 0) {
+      ++local_monomers;
+      mono_idx[local_monomers] = 1;
     }
   }
 
@@ -125,7 +124,7 @@ void ComputeSupersaturationMono::compute_local()
 
 /* ---------------------------------------------------------------------- */
 
-double ComputeSupersaturationMono::execute_func()
+double ComputeSupersaturationMono::execute_func() const
 {
   return coeffs[0] * exp(-coeffs[1] / compute_temp->scalar);
 }
