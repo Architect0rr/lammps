@@ -19,7 +19,6 @@ FixStyle(supersaturation,FixSupersaturation);
 #include "random_park.h"
 #include "region.h"
 
-#include <random>
 
 namespace LAMMPS_NS {
 
@@ -34,13 +33,12 @@ class FixSupersaturation : public Fix {
   Region *region = nullptr;
   ComputeSupersaturationMono *compute_supersaturation_mono = nullptr;
 
-  RanPark* xrandom;
-  RanPark* vrandom;
+  RanPark *xrandom;
+  RanPark *vrandom;
 
   FILE *fp;
   int screenflag;
   int fileflag;
-  FILE *log;
 
   bigint next_step;
 
@@ -77,6 +75,8 @@ class FixSupersaturation : public Fix {
   bool gen_one() noexcept(true);
   bool gen_one(double, double, double, double, double, double) noexcept(true);
   void set_speed() noexcept(true);
+  void post_add(const int) noexcept(true);
+  void post_delete() noexcept(true);
 };
 
 }    // namespace LAMMPS_NS

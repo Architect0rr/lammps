@@ -248,10 +248,6 @@ int FixClusterCrush::setmask()
 
 /* ---------------------------------------------------------------------- */
 
-void FixClusterCrush::init() {}
-
-/* ---------------------------------------------------------------------- */
-
 void FixClusterCrush::pre_exchange()
 {
   if (update->ntimestep < next_step) { return; }
@@ -318,7 +314,6 @@ void FixClusterCrush::pre_exchange()
   bigint nmoved = 0;
 
   if (teleportflag != 0) {
-
     for (int nproc = 0; nproc < nprocs; ++nproc) {
       for (int i = 0; i < nptt_rank[nproc]; ++i) {
         if (gen_one()) {    // if success new coords will be already in xone[]
@@ -329,91 +324,15 @@ void FixClusterCrush::pre_exchange()
         }
       }
     }
-
-    // move atoms back inside simulation box and to new processors
-    // use remap() instead of pbc() in case atoms moved a long distance
-    // use irregular() in case atoms moved a long distance
-
-    imageint *image = atom->image;
-    for (int i = 0; i < atom->nlocal; i++) { domain->remap(atom->x[i], image[i]); }
-    for (int i = 0; i < nptt_rank[comm->me]; i++) {
-      int pID = p2m[i];
-      domain->remap(atom->x[pID], image[pID]);
+    // warn if did not successfully moved all atoms
+    if (nmoved < atoms2move_total) {
+      error->warning(FLERR, "Only moved {} atoms out of {} ({}%)", nmoved, atoms2move_total,
+                     (100 * nmoved) / atoms2move_total);
     }
-
-    if (domain->triclinic != 0) { domain->x2lamda(atom->nlocal); }
-    domain->reset_box();
-    auto *irregular = new Irregular(lmp);
-    irregular->migrate_atoms(1);
-    delete irregular;
-    if (domain->triclinic != 0) { domain->lamda2x(atom->nlocal); }
-
-    // check if any atoms were lost
-    bigint nblocal = atom->nlocal;
-    bigint natoms = 0;
-    MPI_Allreduce(&nblocal, &natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-
-    if (comm->me == 0) {
-
-      if (natoms != atom->natoms) {
-        error->warning(FLERR, "Lost atoms via cluster/crush: original {} current {}", atom->natoms,
-                       natoms);
-      }
-
-      // warn if did not successfully moved all atoms
-      if (nmoved < atoms2move_total) {
-        error->warning(FLERR, "Only moved {} atoms out of {} ({}%)", nmoved, atoms2move_total,
-                       (100 * nmoved) / atoms2move_total);
-      }
-    }
-
+    post_teleport();
   } else {
     delete_monomers(atoms2move_local);
-    if (atom->molecular == Atom::ATOMIC) {
-      tagint *tag = atom->tag;
-      int const nlocal = atom->nlocal;
-      for (int i = 0; i < nlocal; i++) { tag[i] = 0; }
-      atom->tag_extend();
-    }
-
-    // reset atom->natoms and also topology counts
-
-    bigint nblocal = atom->nlocal;
-    MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-
-    // reset bonus data counts
-
-    const auto *avec_ellipsoid = static_cast<AtomVecEllipsoid *>(atom->style_match("ellipsoid"));
-    const auto *avec_line = static_cast<AtomVecLine *>(atom->style_match("line"));
-    const auto *avec_tri = static_cast<AtomVecTri *>(atom->style_match("tri"));
-    const auto *avec_body = static_cast<AtomVecBody *>(atom->style_match("body"));
-    bigint nlocal_bonus = 0;
-
-    if (atom->nellipsoids > 0) {
-      nlocal_bonus = avec_ellipsoid->nlocal_bonus;
-      MPI_Allreduce(&nlocal_bonus, &atom->nellipsoids, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-    }
-    if (atom->nlines > 0) {
-      nlocal_bonus = avec_line->nlocal_bonus;
-      MPI_Allreduce(&nlocal_bonus, &atom->nlines, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-    }
-    if (atom->ntris > 0) {
-      nlocal_bonus = avec_tri->nlocal_bonus;
-      MPI_Allreduce(&nlocal_bonus, &atom->ntris, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-    }
-    if (atom->nbodies > 0) {
-      nlocal_bonus = avec_body->nlocal_bonus;
-      MPI_Allreduce(&nlocal_bonus, &atom->nbodies, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-    }
-
-    // reset atom->map if it exists
-    // set nghost to 0 so old ghosts of deleted atoms won't be mapped
-
-    if (atom->map_style != Atom::MAP_NONE) {
-      atom->nghost = 0;
-      atom->map_init();
-      atom->map_set();
-    }
+    post_delete();
   }
 
   if (comm->me == 0) {
@@ -431,43 +350,6 @@ void FixClusterCrush::pre_exchange()
   }
 
 }    // void FixClusterCrush::pre_exchange()
-
-/* ---------------------------------------------------------------------- */
-
-void FixClusterCrush::post_neighbor()
-{
-  if (update->ntimestep < next_step) { return; }
-
-  bigint nclose_total = check_overlap();
-  if (comm->me == 0 && (fileflag != 0)) { fmt::print(fp, "{}\n", nclose_total); }
-}    // void FixClusterCrush::post_neighbor()
-
-/* ---------------------------------------------------------------------- */
-
-bigint FixClusterCrush::check_overlap() noexcept(true)
-{
-  if (compute_temp->invoked_scalar != update->ntimestep) { compute_temp->compute_scalar(); }
-
-  constexpr long double a_v = 0.8 * 1.0220217810393767580226573302752L;
-  constexpr long double b_v = 0.1546370863640482533333333333333L;
-  double const rl = static_cast<double>(a_v) *
-      exp(static_cast<double>(b_v) * pow(compute_temp->scalar, 2.791206046910478));
-
-  bigint nclose_local = 0;
-  double **x = atom->x;
-  for (int i = 0; i < atom->nlocal; ++i) {
-    for (int j = i + 1; j < atom->nghost; ++j) {
-      double dx = x[i][0] - x[j][0];
-      double dy = x[i][1] - x[j][1];
-      double dz = x[i][2] - x[j][2];
-      if (dx * dx + dy * dy + dz * dz < rl * rl) { ++nclose_local; }
-    }
-  }
-
-  bigint nclose_total = 0;
-  MPI_Allreduce(&nclose_local, &nclose_total, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-  return nclose_total;
-}    // bigint FixClusterCrush::check_overlap()
 
 /* ---------------------------------------------------------------------- */
 
@@ -575,5 +457,89 @@ void FixClusterCrush::delete_monomers(int atoms2move_local) noexcept(true)
 
   atom->nlocal -= atoms2move_local;
 }    // void FixClusterCrush::delete_monomers(int)
+
+/* ---------------------------------------------------------------------- */
+
+void FixClusterCrush::post_teleport() noexcept(true)
+{
+  // move atoms back inside simulation box and to new processors
+  // use remap() instead of pbc() in case atoms moved a long distance
+  // use irregular() in case atoms moved a long distance
+
+  imageint *image = atom->image;
+  for (int i = 0; i < atom->nlocal; i++) { domain->remap(atom->x[i], image[i]); }
+  // for (int i = 0; i < nptt_rank[comm->me]; i++) {
+  //   int pID = p2m[i];
+  //   domain->remap(atom->x[pID], image[pID]);
+  // }
+
+  if (domain->triclinic != 0) { domain->x2lamda(atom->nlocal); }
+  domain->reset_box();
+  auto *irregular = new Irregular(lmp);
+  irregular->migrate_atoms(1);
+  delete irregular;
+  if (domain->triclinic != 0) { domain->lamda2x(atom->nlocal); }
+
+  // check if any atoms were lost
+  bigint nblocal = atom->nlocal;
+  bigint natoms = 0;
+  MPI_Allreduce(&nblocal, &natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+
+  if (comm->me == 0 && natoms != atom->natoms) {
+    error->warning(FLERR, "Lost atoms via cluster/crush: original {} current {}", atom->natoms,
+                   natoms);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixClusterCrush::post_delete() noexcept(true)
+{
+  if (atom->molecular == Atom::ATOMIC) {
+    tagint *tag = atom->tag;
+    int const nlocal = atom->nlocal;
+    for (int i = 0; i < nlocal; i++) { tag[i] = 0; }
+    atom->tag_extend();
+  }
+
+  // reset atom->natoms and also topology counts
+
+  bigint nblocal = atom->nlocal;
+  MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+
+  // reset bonus data counts
+
+  const auto *avec_ellipsoid = static_cast<AtomVecEllipsoid *>(atom->style_match("ellipsoid"));
+  const auto *avec_line = static_cast<AtomVecLine *>(atom->style_match("line"));
+  const auto *avec_tri = static_cast<AtomVecTri *>(atom->style_match("tri"));
+  const auto *avec_body = static_cast<AtomVecBody *>(atom->style_match("body"));
+  bigint nlocal_bonus = 0;
+
+  if (atom->nellipsoids > 0) {
+    nlocal_bonus = avec_ellipsoid->nlocal_bonus;
+    MPI_Allreduce(&nlocal_bonus, &atom->nellipsoids, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  }
+  if (atom->nlines > 0) {
+    nlocal_bonus = avec_line->nlocal_bonus;
+    MPI_Allreduce(&nlocal_bonus, &atom->nlines, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  }
+  if (atom->ntris > 0) {
+    nlocal_bonus = avec_tri->nlocal_bonus;
+    MPI_Allreduce(&nlocal_bonus, &atom->ntris, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  }
+  if (atom->nbodies > 0) {
+    nlocal_bonus = avec_body->nlocal_bonus;
+    MPI_Allreduce(&nlocal_bonus, &atom->nbodies, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  }
+
+  // reset atom->map if it exists
+  // set nghost to 0 so old ghosts of deleted atoms won't be mapped
+
+  if (atom->map_style != Atom::MAP_NONE) {
+    atom->nghost = 0;
+    atom->map_init();
+    atom->map_set();
+  }
+}
 
 /* ---------------------------------------------------------------------- */

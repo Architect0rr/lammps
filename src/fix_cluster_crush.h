@@ -27,9 +27,7 @@ class FixClusterCrush : public Fix {
   FixClusterCrush(class LAMMPS *, int, char **);
   ~FixClusterCrush() noexcept(true) override;
   int setmask() override;
-  void init() override;
   void pre_exchange() override;
-  void post_neighbor() override;
 
  protected:
   Region *region = nullptr;
@@ -76,8 +74,9 @@ class FixClusterCrush : public Fix {
 
   bool gen_one() noexcept(true);
   void set(int) noexcept(true);
-  bigint check_overlap() noexcept(true);
   void delete_monomers(int) noexcept(true);
+  void post_teleport() noexcept(true);
+  void post_delete() noexcept(true);
 };
 
 }    // namespace LAMMPS_NS

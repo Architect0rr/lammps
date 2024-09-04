@@ -27,7 +27,7 @@
 #include <bits/std_abs.h>
 #include <cmath>
 #include <cstring>
-#include <ctime>
+#include <random>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -238,8 +238,6 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
 
   memset(xone, 0, 3 * sizeof(double));
   memset(lamda, 0, 3 * sizeof(double));
-
-  if (comm->me == 0) { log = fopen("fix_super.log", "a"); }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -253,10 +251,6 @@ FixSupersaturation::~FixSupersaturation() noexcept(true)
     fclose(fp);
   }
   memory->destroy(pproc);
-  if (comm->me == 0) {
-    fflush(log);
-    fclose(log);
-  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -272,227 +266,82 @@ int FixSupersaturation::setmask()
 
 void FixSupersaturation::pre_exchange()
 {
-  if (update->ntimestep < next_step) {
-    if (comm->me == 0) {
-      fmt::print(log, "{}, returned\n", update->ntimestep);
-      fflush(log);
-    }
-    return;
-  }
+  if (update->ntimestep < next_step) { return; }
   next_step = update->ntimestep + nevery;
-  if (comm->me == 0) {
-    fmt::print(log, "{}, not returned\n", update->ntimestep);
-    fflush(log);
-  }
 
   if (compute_supersaturation_mono->invoked_scalar != update->ntimestep) {
     compute_supersaturation_mono->compute_scalar();
   }
-  double previous_supersaturation = compute_supersaturation_mono->scalar;
-  if (comm->me == 0) {
-    fmt::print(log, "Previous supersaturation: {}\n", previous_supersaturation);
-    fflush(log);
-  }
+  const double previous_supersaturation = compute_supersaturation_mono->scalar;
 
   auto delta = static_cast<bigint>(std::floor(
       static_cast<long double>(compute_supersaturation_mono->execute_func()) *
           static_cast<long double>(domain->volume()) * static_cast<long double>(supersaturation) -
       compute_supersaturation_mono->global_monomers));
-  if (comm->me == 0) {
-    fmt::print(log, "delta: {}\n", delta);
-    fflush(log);
-  }
+
   const bool delflag = delta < 0;
   delta = static_cast<bigint>(
       std::floor(static_cast<long double>(damp) * static_cast<long double>(std::abs(delta))));
-  if (comm->me == 0) {
-    fmt::print(log, "delflag: {}, damp*abs(delta)={}\n", delflag ? "true" : "false", delta);
-    fflush(log);
-  }
+
+  const bigint natoms_previous = atom->natoms;
+  const int nlocal_previous = atom->nlocal;
 
   if (delta != 0) {
-    bigint const natoms_previous = atom->natoms;
-    int const nlocal_previous = atom->nlocal;
-
     bigint sum = delta;
-    memset(pproc, 0, comm->nprocs * sizeof(int));
+    // memset(pproc, 0, comm->nprocs * sizeof(int));
     int __ntry = maxtry_call;
-    if (comm->me == 0) {
-      fmt::print(log, "Starting loop\n");
-      fflush(log);
-    }
 
     do {
-      if (comm->me == 0) {
-        fmt::print(log, "\n");
-        fflush(log);
-      }
-
       std::random_device dev;
       std::mt19937 rng(dev());
       std::uniform_int_distribution<std::mt19937::result_type> dist(0, comm->nprocs);
 
-      int additional_proc = static_cast<int>(dist(rng));
+      const int additional_proc = static_cast<int>(dist(rng));
       auto for_every = static_cast<int>(sum / comm->nprocs);
       pproc[comm->me] = comm->me == additional_proc ? for_every + sum % comm->nprocs : for_every;
 
-      if (comm->me == 0) {
-        fmt::print(log, "Sum: {}\n", sum);
-        fmt::print(log, "__ntry: {}\n", __ntry);
-        fmt::print(log, "Additional proc: {}\n", additional_proc);
-        for (int i = 0; i < comm->nprocs - 1; ++i) {
-          if (i == additional_proc) {
-            fmt::print(log, "{} ", for_every + sum % comm->nprocs);
-          } else {
-            fmt::print(log, "{} ", for_every);
-          }
-        }
-        fmt::print(log, "\n", for_every);
-
-        fflush(log);
-      }
-
       if (pproc[comm->me] > 0) {
         if (delflag) {
-          if (comm->me == 0) {
-            fmt::print(log, "Deleting\n");
-            fflush(log);
-          }
           delete_monomers();
         } else {
-          if (comm->me == 0) {
-            fmt::print(log, "Adding\n");
-            fflush(log);
-          }
           add_monomers2();
         }
-      }
-
-      if (comm->me == 0) {
-        fmt::print(log, "After modification\n");
-        fflush(log);
       }
 
       int temp = pproc[comm->me];
       memset(pproc, 0, comm->nprocs * sizeof(int));
       MPI_Allgather(&temp, 1, MPI_INT, pproc, 1, MPI_INT, world);
 
-      if (comm->me == 0) {
-        for (int i = 0; i < comm->nprocs - 1; ++i) { fmt::print(log, "{} ", pproc[i]); }
-        fmt::print(log, "\n", for_every);
-
-        fflush(log);
-      }
-
       sum = 0;
       for (int i = 0; i < comm->nprocs; ++i) { sum += pproc[i]; }
       --__ntry;
 
-      if (comm->me == 0) {
-        fmt::print(log, "Sum: {}\n", sum);
-        fmt::print(log, "\n");
-        fflush(log);
-      }
     } while (sum > 0 && __ntry > 0);
 
-    if (comm->me == 0) {
-      fmt::print(log, "after loop\n");
-      fflush(log);
-    }
-
     if (delflag) {
-      if (atom->molecular == Atom::ATOMIC) {
-        tagint *tag = atom->tag;
-        int const nlocal = atom->nlocal;
-        for (int i = 0; i < nlocal; i++) { tag[i] = 0; }
-        atom->tag_extend();
-      }
-
-      // reset atom->natoms and also topology counts
-
-      bigint nblocal = atom->nlocal;
-      MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-
-      // reset bonus data counts
-
-      const auto *avec_ellipsoid = static_cast<AtomVecEllipsoid *>(atom->style_match("ellipsoid"));
-      const auto *avec_line = static_cast<AtomVecLine *>(atom->style_match("line"));
-      const auto *avec_tri = static_cast<AtomVecTri *>(atom->style_match("tri"));
-      const auto *avec_body = static_cast<AtomVecBody *>(atom->style_match("body"));
-      bigint nlocal_bonus = 0;
-
-      if (atom->nellipsoids > 0) {
-        nlocal_bonus = avec_ellipsoid->nlocal_bonus;
-        MPI_Allreduce(&nlocal_bonus, &atom->nellipsoids, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-      }
-      if (atom->nlines > 0) {
-        nlocal_bonus = avec_line->nlocal_bonus;
-        MPI_Allreduce(&nlocal_bonus, &atom->nlines, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-      }
-      if (atom->ntris > 0) {
-        nlocal_bonus = avec_tri->nlocal_bonus;
-        MPI_Allreduce(&nlocal_bonus, &atom->ntris, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-      }
-      if (atom->nbodies > 0) {
-        nlocal_bonus = avec_body->nlocal_bonus;
-        MPI_Allreduce(&nlocal_bonus, &atom->nbodies, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-      }
-
-      // reset atom->map if it exists
-      // set nghost to 0 so old ghosts of deleted atoms won't be mapped
-
-      if (atom->map_style != Atom::MAP_NONE) {
-        atom->nghost = 0;
-        atom->map_init();
-        atom->map_set();
-      }
-
+      post_delete();
     } else {
-      // init per-atom fix/compute/variable values for created atoms
-
-      atom->data_fix_compute_variable(nlocal_previous, atom->nlocal);
-
-      // set new total # of atoms and error check
-
-      bigint nblocal = atom->nlocal;
-      MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-      if (atom->natoms < 0 || atom->natoms >= MAXBIGINT) {
-        error->all(FLERR, "Too many total atoms");
-      }
-
-      // add IDs for newly created atoms
-      // check that atom IDs are valid
-
-      if (atom->tag_enable != 0) { atom->tag_extend(); }
-      atom->tag_check();
-
-      // if global map exists, reset it
-      // invoke map_init() b/c atom count has grown
-
-      if (atom->map_style != Atom::MAP_NONE) {
-        atom->map_init();
-        atom->map_set();
-      }
+      post_add(nlocal_previous);
     }
+  }
 
-    double newsupersaturation = compute_supersaturation_mono->compute_scalar();
-    if (comm->me == 0) {
-      bigint atom_delta = std::abs(natoms_previous - atom->natoms);
-      if (screenflag != 0) {
-        utils::logmesg(lmp,
-                       "fix SS: {} {} atoms. Previous SS: {:.3f}, new SS: {:.3f}, delta: {:.3f}. "
-                       "Total atoms: {}",
-                       delflag ? "deleted" : "added", atom_delta, previous_supersaturation,
-                       newsupersaturation, newsupersaturation - previous_supersaturation,
-                       atom->natoms);
-      }
-      if (fileflag != 0) {
-        fmt::print(fp, "{},{},{},{},{},{},{:.3f},{:.3f},{:.3f}\n", update->ntimestep, atom->natoms,
-                   delflag ? delta : 0, !delflag ? delta : 0, delflag ? atom_delta : 0,
-                   !delflag ? atom_delta : 0, previous_supersaturation, newsupersaturation,
-                   newsupersaturation - previous_supersaturation);
-        fflush(fp);
-      }
+  double newsupersaturation = compute_supersaturation_mono->compute_scalar();
+  if (comm->me == 0) {
+    bigint atom_delta = std::abs(natoms_previous - atom->natoms);
+    if (screenflag != 0) {
+      utils::logmesg(lmp,
+                     "fix SS: {} {} atoms. Previous SS: {:.3f}, new SS: {:.3f}, delta: {:.3f}. "
+                     "Total atoms: {}",
+                     delflag ? "deleted" : "added", atom_delta, previous_supersaturation,
+                     newsupersaturation, newsupersaturation - previous_supersaturation,
+                     atom->natoms);
+    }
+    if (fileflag != 0) {
+      fmt::print(fp, "{},{},{},{},{},{},{:.3f},{:.3f},{:.3f}\n", update->ntimestep, atom->natoms,
+                 delflag ? delta : 0, !delflag ? delta : 0, delflag ? atom_delta : 0,
+                 !delflag ? atom_delta : 0, previous_supersaturation, newsupersaturation,
+                 newsupersaturation - previous_supersaturation);
+      fflush(fp);
     }
   }
 }
@@ -528,38 +377,16 @@ void FixSupersaturation::add_monomers() noexcept(true)
   int ninsert = 0;
   int unsucc = 0;
   for (int i = 0; i < pproc[comm->me]; ++i) {
-    if (comm->me == 0) {
-      fmt::print(log, "Generating...");
-      fflush(log);
-    }
     if (gen_one()) {
       unsucc = 0;
-      if (comm->me == 0) {
-        fmt::print(log, "Creating...");
-        fflush(log);
-      }
       atom->avec->create_atom(ntype, xone);
-      if (comm->me == 0) {
-        fmt::print(log, "Created\n");
-        fflush(log);
-      }
 
       if (fix_temp != 0) { set_speed(); }
 
       ++ninsert;
     } else {
       ++unsucc;
-      if (comm->me == 0) {
-        fmt::print(log, "Unsuccesful\n");
-        fflush(log);
-      }
-      if (unsucc > 10) {
-        if (comm->me == 0) {
-          fmt::print(log, "Skipping...\n");
-          fflush(log);
-        }
-        break;
-      }
+      if (unsucc > 10) { break; }
     }
   }
   pproc[comm->me] -= ninsert;
@@ -718,5 +545,85 @@ bool FixSupersaturation::gen_one(double _x, double _y, double _z, double _dx, do
   return success;
 
 }    // void FixSupersaturation::gen_one()
+
+/* ---------------------------------------------------------------------- */
+
+void FixSupersaturation::post_add(const int nlocal_previous) noexcept(true)
+{
+  // init per-atom fix/compute/variable values for created atoms
+
+  atom->data_fix_compute_variable(nlocal_previous, atom->nlocal);
+
+  // set new total # of atoms and error check
+
+  bigint nblocal = atom->nlocal;
+  MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  if (atom->natoms < 0 || atom->natoms >= MAXBIGINT) { error->all(FLERR, "Too many total atoms"); }
+
+  // add IDs for newly created atoms
+  // check that atom IDs are valid
+
+  if (atom->tag_enable != 0) { atom->tag_extend(); }
+  atom->tag_check();
+
+  // if global map exists, reset it
+  // invoke map_init() b/c atom count has grown
+
+  if (atom->map_style != Atom::MAP_NONE) {
+    atom->map_init();
+    atom->map_set();
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixSupersaturation::post_delete() noexcept(true)
+{
+  if (atom->molecular == Atom::ATOMIC) {
+    tagint *tag = atom->tag;
+    int const nlocal = atom->nlocal;
+    for (int i = 0; i < nlocal; i++) { tag[i] = 0; }
+    atom->tag_extend();
+  }
+
+  // reset atom->natoms and also topology counts
+
+  bigint nblocal = atom->nlocal;
+  MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+
+  // reset bonus data counts
+
+  const auto *avec_ellipsoid = static_cast<AtomVecEllipsoid *>(atom->style_match("ellipsoid"));
+  const auto *avec_line = static_cast<AtomVecLine *>(atom->style_match("line"));
+  const auto *avec_tri = static_cast<AtomVecTri *>(atom->style_match("tri"));
+  const auto *avec_body = static_cast<AtomVecBody *>(atom->style_match("body"));
+  bigint nlocal_bonus = 0;
+
+  if (atom->nellipsoids > 0) {
+    nlocal_bonus = avec_ellipsoid->nlocal_bonus;
+    MPI_Allreduce(&nlocal_bonus, &atom->nellipsoids, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  }
+  if (atom->nlines > 0) {
+    nlocal_bonus = avec_line->nlocal_bonus;
+    MPI_Allreduce(&nlocal_bonus, &atom->nlines, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  }
+  if (atom->ntris > 0) {
+    nlocal_bonus = avec_tri->nlocal_bonus;
+    MPI_Allreduce(&nlocal_bonus, &atom->ntris, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  }
+  if (atom->nbodies > 0) {
+    nlocal_bonus = avec_body->nlocal_bonus;
+    MPI_Allreduce(&nlocal_bonus, &atom->nbodies, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  }
+
+  // reset atom->map if it exists
+  // set nghost to 0 so old ghosts of deleted atoms won't be mapped
+
+  if (atom->map_style != Atom::MAP_NONE) {
+    atom->nghost = 0;
+    atom->map_init();
+    atom->map_set();
+  }
+}
 
 /* ---------------------------------------------------------------------- */
