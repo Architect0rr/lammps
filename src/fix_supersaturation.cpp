@@ -6,6 +6,7 @@
 ------------------------------------------------------------------------- */
 
 #include "fix_supersaturation.h"
+#include "compute.h"
 #include "compute_supersaturation_mono.h"
 
 #include "atom.h"
@@ -57,7 +58,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
 
   // Get compute supersaturation/mono
   compute_supersaturation_mono =
-      static_cast<ComputeSupersaturationMono *>(modify->get_compute_by_id(arg[4]));
+      dynamic_cast<ComputeSupersaturationMono *>(modify->get_compute_by_id(arg[4]));
 
   if (compute_supersaturation_mono == nullptr) {
     error->all(FLERR,
@@ -591,10 +592,10 @@ void FixSupersaturation::post_delete() noexcept(true)
 
   // reset bonus data counts
 
-  const auto *avec_ellipsoid = static_cast<AtomVecEllipsoid *>(atom->style_match("ellipsoid"));
-  const auto *avec_line = static_cast<AtomVecLine *>(atom->style_match("line"));
-  const auto *avec_tri = static_cast<AtomVecTri *>(atom->style_match("tri"));
-  const auto *avec_body = static_cast<AtomVecBody *>(atom->style_match("body"));
+  const auto *avec_ellipsoid = dynamic_cast<AtomVecEllipsoid *>(atom->style_match("ellipsoid"));
+  const auto *avec_line = dynamic_cast<AtomVecLine *>(atom->style_match("line"));
+  const auto *avec_tri = dynamic_cast<AtomVecTri *>(atom->style_match("tri"));
+  const auto *avec_body = dynamic_cast<AtomVecBody *>(atom->style_match("body"));
   bigint nlocal_bonus = 0;
 
   if (atom->nellipsoids > 0) {
