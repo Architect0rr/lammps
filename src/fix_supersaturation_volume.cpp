@@ -151,6 +151,10 @@ void FixSupersaturationVolume::init()
   for (const auto &ifix : modify->get_fix_list()) {
     if (ifix->rigid_flag != 0) { rfix.push_back(ifix); }
   }
+  if (comm->me == 0) {
+    fmt::print(fp, "initialized\n");
+    fflush(fp);
+  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -166,6 +170,10 @@ int FixSupersaturationVolume::setmask()
 
 void FixSupersaturationVolume::end_of_step()
 {
+  if (comm->me == 0) {
+    fmt::print(fp, "endoffff\n");
+    fflush(fp);
+  }
   if (update->ntimestep < next_step) { return; }
   next_step = update->ntimestep + nevery;
 
