@@ -121,7 +121,7 @@ FixSupersaturationVolume::FixSupersaturationVolume(LAMMPS *lmp, int narg, char *
   }
 
   if (comm->me == 0 && (fileflag != 0)) {
-    fmt::print(fp, "ntimestep,Vb,Va,deltaV,ssb,ssa,delta\n");
+    fmt::print(fp, "ntimestep,delta,Vb,Va,deltaV,ssb,ssa,delta\n");
     fflush(fp);
   }
 
@@ -203,10 +203,13 @@ void FixSupersaturationVolume::end_of_step()
   const double ssa = compute_supersaturation_mono->compute_scalar();
 
   if (comm->me == 0) {
-    fmt::print(fp, "{},{:.5f},{:.5f},{:.5f},{:.3f},{:.3f},{:.3f}\n", update->ntimestep,
-               volume_before, volume_after, volume_after - volume_before, previous_supersaturation,
-               ssa, ssa - previous_supersaturation);
-    fflush(fp);
+    if (screenflag != 0) { utils::logmesg(lmp, "fix ss/volume: {:.5f}", delta); }
+    if (fileflag != 0) {
+      fmt::print(fp, "{},{:.5f},{:.5f},{:.5f},{:.5f},{:.3f},{:.3f},{:.3f}\n", update->ntimestep,
+                 delta, volume_before, volume_after, volume_after - volume_before,
+                 previous_supersaturation, ssa, ssa - previous_supersaturation);
+      fflush(fp);
+    }
   }
 }
 
