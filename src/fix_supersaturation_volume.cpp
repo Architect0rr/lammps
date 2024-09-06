@@ -170,12 +170,13 @@ int FixSupersaturationVolume::setmask()
 
 void FixSupersaturationVolume::end_of_step()
 {
+  if (update->ntimestep < next_step) { return; }
+  next_step = update->ntimestep + nevery;
+  
   if (comm->me == 0) {
     fmt::print(fp, "endoffff\n");
     fflush(fp);
   }
-  if (update->ntimestep < next_step) { return; }
-  next_step = update->ntimestep + nevery;
 
   if (compute_supersaturation_mono->invoked_scalar != update->ntimestep) {
     compute_supersaturation_mono->compute_scalar();
