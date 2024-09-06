@@ -47,7 +47,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
   restart_pbc = 1;
   nevery = 1;
 
-  if (narg < 10) { utils::missing_cmd_args(FLERR, "cluster/crush", error); }
+  if (narg < 10) { utils::missing_cmd_args(FLERR, "fix supersaturation", error); }
 
   // Parse arguments //
 
@@ -66,10 +66,10 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
                arg[4]);
   }
 
-  // Minimum distance to other atoms from the place atom teleports to
+  // Minimum distance to other atoms from the place atom is inserted to
   overlap = utils::numeric(FLERR, arg[5], true, lmp);
   if (overlap < 0) {
-    error->all(FLERR, "Minimum distance for fix cluster/crush must be non-negative");
+    error->all(FLERR, "Minimum distance for fix supersaturation must be non-negative");
   }
 
   // apply scaling factor for styles that use distance-dependent factors
@@ -105,7 +105,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
 
       // Max attempts to search for a new suitable location
       maxtry = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);
-      if (maxtry < 1) { error->all(FLERR, "maxtry for cluster/crush cannot be less than 1"); }
+      if (maxtry < 1) { error->all(FLERR, "maxtry for fix supersaturation cannot be less than 1"); }
       iarg += 2;
 
     } else if (strcmp(arg[iarg], "maxtry_call") == 0) {
@@ -113,7 +113,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
       // Get max number of tries for calling delete_monomers()/add_monomers()
       maxtry_call = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);
       if (maxtry_call < 1) {
-        error->all(FLERR, "maxtry_call for cluster/crush cannot be less than 1");
+        error->all(FLERR, "maxtry_call for fix supersaturation cannot be less than 1");
       }
       iarg += 2;
 
@@ -123,7 +123,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
       fix_temp = 1;
       monomer_temperature = utils::numeric(FLERR, arg[iarg + 1], true, lmp);
       if (monomer_temperature < 0) {
-        error->all(FLERR, "Monomer temperature for cluster/crush cannot be negative");
+        error->all(FLERR, "Monomer temperature for fix supersaturation cannot be negative");
       }
 
       // Get the seed for velocity generator
@@ -144,7 +144,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
         fileflag = 1;
         fp = fopen(arg[iarg + 1], "w");
         if (fp == nullptr) {
-          error->one(FLERR, "Cannot open cluster/crush stats file {}: {}", arg[iarg + 1],
+          error->one(FLERR, "Cannot open fix supersaturation stats file {}: {}", arg[iarg + 1],
                      utils::getsyserror());
         }
       }
@@ -157,7 +157,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
         fileflag = 1;
         fp = fopen(arg[iarg + 1], "a");
         if (fp == nullptr) {
-          error->one(FLERR, "Cannot open cluster/crush stats file {}: {}", arg[iarg + 1],
+          error->one(FLERR, "Cannot open fix supersaturation stats file {}: {}", arg[iarg + 1],
                      utils::getsyserror());
         }
       }
@@ -168,12 +168,13 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
       // Get execution period
       nevery = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);
       iarg += 2;
+
     } else if (strcmp(arg[iarg], "offset") == 0) {
 
       // Get start offset
       start_offset = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);
       if (start_offset < 0) {
-        error->all(FLERR, "start_offset for cluster/crush cannot be less than 0");
+        error->all(FLERR, "start_offset for fix supersaturation cannot be less than 0");
       }
       offflag = 1;
       iarg += 2;
@@ -185,12 +186,12 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
       } else if (strcmp(arg[iarg + 1], "lattice") == 0) {
         scaleflag = 1;
       } else {
-        error->all(FLERR, "Unknown cluster/crush units option {}", arg[iarg + 1]);
+        error->all(FLERR, "Unknown fix supersaturation units option {}", arg[iarg + 1]);
       }
       iarg += 2;
 
     } else {
-      error->all(FLERR, "Illegal cluster/crush command option {}", arg[iarg]);
+      error->all(FLERR, "Illegal fix supersaturation command option {}", arg[iarg]);
     }
   }
 
