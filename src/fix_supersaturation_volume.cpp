@@ -30,7 +30,7 @@ FixSupersaturationVolume::FixSupersaturationVolume(LAMMPS *lmp, int narg, char *
     Fix(lmp, narg, arg), screenflag(1), fileflag(0), next_step(0)
 {
 
-  restart_pbc = 1;
+  no_change_box = 1;
   nevery = 1;
 
   if (narg < 6) { utils::missing_cmd_args(FLERR, "fix supersaturation", error); }

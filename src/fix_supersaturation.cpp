@@ -45,7 +45,6 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
     scaleflag(0), fix_temp(0), offflag(0), maxtry_call(DEFAULT_MAXTRY_CALL)
 {
 
-  restart_pbc = 1;
   nevery = 1;
 
   if (narg < 10) { utils::missing_cmd_args(FLERR, "fix supersaturation", error); }

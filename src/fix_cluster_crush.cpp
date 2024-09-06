@@ -42,6 +42,7 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) :
 {
 
   restart_pbc = 1;
+  pre_exchange_migrate = 1;
 
   nevery = 1;
 
