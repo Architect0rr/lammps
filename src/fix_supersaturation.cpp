@@ -19,9 +19,11 @@
 #include "error.h"
 #include "fix.h"
 #include "fmt/core.h"
+#include "force.h"
 #include "lattice.h"
 #include "memory.h"
 #include "modify.h"
+#include "pair.h"
 #include "update.h"
 
 #include <bits/std_abs.h>
@@ -56,6 +58,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
   // Get compute supersaturation/mono
   compute_supersaturation_mono =
       static_cast<ComputeSupersaturationMono *>(modify->get_compute_by_id(arg[4]));
+
   if (compute_supersaturation_mono == nullptr) {
     error->all(FLERR,
                "fix supersaturation: cannot find compute of style 'supersaturation/mono' with "
@@ -68,6 +71,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
   if (overlap < 0) {
     error->all(FLERR, "Minimum distance for fix cluster/crush must be non-negative");
   }
+
   // apply scaling factor for styles that use distance-dependent factors
   overlap *= domain->lattice->xlattice;
   odistsq = overlap * overlap;
@@ -238,6 +242,10 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
 
   memset(xone, 0, 3 * sizeof(double));
   memset(lamda, 0, 3 * sizeof(double));
+
+  std::random_device dev;
+  rng = std::mt19937(dev());
+  dist = std::uniform_int_distribution<std::mt19937::result_type>(0, comm->nprocs);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -274,10 +282,10 @@ void FixSupersaturation::pre_exchange()
   }
   const double previous_supersaturation = compute_supersaturation_mono->scalar;
 
-  auto delta = static_cast<bigint>(std::floor(
-      static_cast<long double>(compute_supersaturation_mono->execute_func()) *
-          static_cast<long double>(domain->volume()) * static_cast<long double>(supersaturation) -
-      compute_supersaturation_mono->global_monomers));
+  auto delta = static_cast<bigint>(
+      std::floor(static_cast<long double>(compute_supersaturation_mono->execute_func() *
+                                          domain->volume() * supersaturation) -
+                 compute_supersaturation_mono->global_monomers));
 
   const bool delflag = delta < 0;
   delta = static_cast<bigint>(
@@ -286,24 +294,24 @@ void FixSupersaturation::pre_exchange()
   const bigint natoms_previous = atom->natoms;
   const int nlocal_previous = atom->nlocal;
 
+  bool deleted = false;
+  bool added = false;
+
   if (delta != 0) {
     bigint sum = delta;
-    // memset(pproc, 0, comm->nprocs * sizeof(int));
     int __ntry = maxtry_call;
 
     do {
-      std::random_device dev;
-      std::mt19937 rng(dev());
-      std::uniform_int_distribution<std::mt19937::result_type> dist(0, comm->nprocs);
-
-      const int additional_proc = static_cast<int>(dist(rng));
+      const auto additional_proc = static_cast<int>(dist(rng));
       auto for_every = static_cast<int>(sum / comm->nprocs);
       pproc[comm->me] = comm->me == additional_proc ? for_every + sum % comm->nprocs : for_every;
 
       if (pproc[comm->me] > 0) {
         if (delflag) {
+          deleted = true;
           delete_monomers();
         } else {
+          added = true;
           add_monomers2();
         }
       }
@@ -319,9 +327,9 @@ void FixSupersaturation::pre_exchange()
     } while (sum > 0 && __ntry > 0);
 
     if (delflag) {
-      post_delete();
+      if (deleted) { post_delete(); }
     } else {
-      post_add(nlocal_previous);
+      if (added) { post_add(nlocal_previous); }
     }
   }
 
@@ -394,14 +402,15 @@ void FixSupersaturation::add_monomers() noexcept(true)
 
 void FixSupersaturation::add_monomers2() noexcept(true)
 {
-  auto const nx = static_cast<bigint>(floor((xhi - xlo) / overlap));
-  auto const ny = static_cast<bigint>(floor((yhi - ylo) / overlap));
-  auto const nz = static_cast<bigint>(floor((zhi - zlo) / overlap));
+  const double cutoff = lmp->force->pair->cutforce;
+  auto const nx = static_cast<bigint>(floor((xhi - xlo - 2 * cutoff) / overlap));
+  auto const ny = static_cast<bigint>(floor((yhi - ylo - 2 * cutoff) / overlap));
+  auto const nz = static_cast<bigint>(floor((zhi - zlo - 2 * cutoff) / overlap));
   for (bigint i = 0; i < nx && pproc[comm->me] > 0; ++i) {
     for (bigint j = 0; j < ny && pproc[comm->me] > 0; ++j) {
       for (bigint k = 0; k < nz && pproc[comm->me] > 0; ++k) {
-        if (gen_one(xlo + overlap * i, ylo + overlap * j, zlo + overlap * k, overlap, overlap,
-                    overlap)) {
+        if (gen_one(xlo + cutoff + overlap * i, ylo + cutoff + overlap * j,
+                    zlo + cutoff + overlap * k, overlap, overlap, overlap)) {
           atom->avec->create_atom(ntype, xone);
           if (fix_temp != 0) { set_speed(); }
           --pproc[comm->me];
@@ -433,9 +442,7 @@ void FixSupersaturation::set_speed() noexcept(true)
 
 bool FixSupersaturation::gen_one() noexcept(true)
 {
-
   int ntry = 0;
-  bool success = false;
 
   while (ntry < maxtry) {
     ++ntry;
@@ -459,7 +466,7 @@ bool FixSupersaturation::gen_one() noexcept(true)
     // minimum_image() needed to account for distances across PBC
 
     double **x = atom->x;
-    int reject = 0;
+    bool reject = false;
 
     // check new position for overlapping with all local atoms
     for (int i = 0; i < atom->nmax; i++) {
@@ -471,29 +478,23 @@ bool FixSupersaturation::gen_one() noexcept(true)
       domain->minimum_image(delx, dely, delz);
       const double distsq = delx * delx + dely * dely + delz * delz;
       if (distsq < odistsq || distsq1 < odistsq) {
-        reject = 1;
+        reject = true;
         break;
       }
     }
 
-    if (reject != 0) { continue; }
+    if (reject) { continue; }
 
-    // all tests passed
-
-    success = true;
-    break;
+    return true;
   }
 
-  return success;
-
+  return false;
 }    // void FixSupersaturation::gen_one()
 
 bool FixSupersaturation::gen_one(double _x, double _y, double _z, double _dx, double _dy,
                                  double _dz) noexcept(true)
 {
-
   int ntry = 0;
-  bool success = false;
 
   while (ntry < 9) {
     ++ntry;
@@ -517,7 +518,7 @@ bool FixSupersaturation::gen_one(double _x, double _y, double _z, double _dx, do
     // minimum_image() needed to account for distances across PBC
 
     double **x = atom->x;
-    int reject = 0;
+    bool reject = false;
 
     // check new position for overlapping with all local atoms
     for (int i = 0; i < atom->nmax; i++) {
@@ -529,21 +530,17 @@ bool FixSupersaturation::gen_one(double _x, double _y, double _z, double _dx, do
       domain->minimum_image(delx, dely, delz);
       double const distsq = delx * delx + dely * dely + delz * delz;
       if (distsq < odistsq || distsq1 < odistsq) {
-        reject = 1;
+        reject = true;
         break;
       }
     }
 
-    if (reject != 0) { continue; }
+    if (reject) { continue; }
 
-    // all tests passed
-
-    success = true;
-    break;
+    return true;
   }
 
-  return success;
-
+  return false;
 }    // void FixSupersaturation::gen_one()
 
 /* ---------------------------------------------------------------------- */

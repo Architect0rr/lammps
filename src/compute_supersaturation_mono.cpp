@@ -115,7 +115,7 @@ void ComputeSupersaturationMono::compute_local()
   for (int i = 0; i < atom->nlocal; ++i) {
     if ((atom->mask[i] & groupbit) != 0 && compute_neighs->vector_atom[i] == 0) {
       ++local_monomers;
-      mono_idx[local_monomers] = 1;
+      mono_idx[local_monomers] = i;
     }
   }
 
