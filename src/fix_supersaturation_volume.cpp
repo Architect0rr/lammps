@@ -172,7 +172,7 @@ void FixSupersaturationVolume::end_of_step()
 {
   if (update->ntimestep < next_step) { return; }
   next_step = update->ntimestep + nevery;
-  
+
   if (comm->me == 0) {
     fmt::print(fp, "endoffff\n");
     fflush(fp);
@@ -213,31 +213,34 @@ void FixSupersaturationVolume::end_of_step()
   domain->boxlo[2] -= delta;
   domain->boxhi[2] += delta;
 
-  if (comm->me == 0){
-    fmt::print(fp, "Delted\n");
-    fflush(fp);
-  }
-
-  domain->set_global_box();
-
-  if (comm->me == 0){
-    fmt::print(fp, "Global box\n");
-    fflush(fp);
-  }
-
-  domain->set_local_box();
-
-  if (comm->me == 0){
-    fmt::print(fp, "Local box\n");
-    fflush(fp);
-  }
-
   remap_after();
 
   if (comm->me == 0){
     fmt::print(fp, "Remap after\n");
     fflush(fp);
   }
+
+  // domain->set_global_box();
+
+  // if (comm->me == 0){
+  //   fmt::print(fp, "Global box\n");
+  //   fflush(fp);
+  // }
+
+  // domain->set_local_box();
+
+  domain->reset_box();
+
+  if (comm->me == 0){
+    fmt::print(fp, "Reset box\n");
+    fflush(fp);
+  }
+
+
+  // if (comm->me == 0){
+  //   fmt::print(fp, "Remap after\n");
+  //   fflush(fp);
+  // }
 
   const double volume_after = domain->volume();
   const double ssa = compute_supersaturation_mono->compute_scalar();
