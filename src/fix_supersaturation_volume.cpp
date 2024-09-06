@@ -183,7 +183,15 @@ void FixSupersaturationVolume::end_of_step()
        std::pow(domain->volume(), 1 / 3)) /
       2);
 
+  if (comm->me == 0){
+    fmt::print(fp, "delta: {}\n", delta);
+  }
+
   remap_before();
+
+  if (comm->me == 0){
+    fmt::print(fp, "remap before\n");
+  }
 
   // reset global and local box to new size/shape
 
@@ -194,10 +202,27 @@ void FixSupersaturationVolume::end_of_step()
   domain->boxlo[2] -= delta;
   domain->boxhi[2] += delta;
 
+  if (comm->me == 0){
+    fmt::print(fp, "Delted\n");
+  }
+
   domain->set_global_box();
+
+  if (comm->me == 0){
+    fmt::print(fp, "Global box\n");
+  }
+
   domain->set_local_box();
 
+  if (comm->me == 0){
+    fmt::print(fp, "Local box\n");
+  }
+
   remap_after();
+
+  if (comm->me == 0){
+    fmt::print(fp, "Remap after\n");
+  }
 
   const double volume_after = domain->volume();
   const double ssa = compute_supersaturation_mono->compute_scalar();
