@@ -60,7 +60,7 @@ FixSupersaturationVolume::FixSupersaturationVolume(LAMMPS *lmp, int narg, char *
   if (damp <= 0 || damp > 1) {
     error->all(FLERR, "Dampfing parameter for fix supersaturation must be in range (0,1]");
   }
-  damp = std::pow<double, double>(damp, 1 / 3);
+  damp = std::pow<double, double>(damp, 0.33333333333333);
 
   // Parse optional keywords
 
@@ -188,8 +188,8 @@ void FixSupersaturationVolume::pre_exchange()
   const auto global_monomers = static_cast<long double>(compute_supersaturation_mono->global_monomers);
   const long double ns1s = compute_supersaturation_mono->execute_func() * supersaturation;
   const long double needed_volume = global_monomers / ns1s;
-  const long double needed_length = std::pow<long double, long double>(needed_volume, 1 / 3);
-  const long double currenth_length = std::pow<long double, long double>(volume_before, 1 / 3);
+  const long double needed_length = std::pow<long double, long double>(needed_volume, 0.33333333333333);
+  const long double currenth_length = std::pow<long double, long double>(volume_before, 0.33333333333333);
   const auto delta = static_cast<double>(damp * (needed_length - currenth_length) / 2);
 
 
