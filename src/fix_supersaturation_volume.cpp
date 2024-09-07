@@ -60,7 +60,7 @@ FixSupersaturationVolume::FixSupersaturationVolume(LAMMPS *lmp, int narg, char *
   if (damp <= 0 || damp > 1) {
     error->all(FLERR, "Dampfing parameter for fix supersaturation must be in range (0,1]");
   }
-  damp = std::pow(damp, 1 / 3);
+  damp = std::pow<double, double>(damp, 1 / 3);
 
   // Parse optional keywords
 
@@ -152,10 +152,10 @@ void FixSupersaturationVolume::init()
   for (const auto &ifix : modify->get_fix_list()) {
     if (ifix->rigid_flag != 0) { rfix.push_back(ifix); }
   }
-  if (comm->me == 0) {
-    fmt::print(fp, "initialized\n");
-    fflush(fp);
-  }
+  // if (comm->me == 0) {
+  //   fmt::print(fp, "initialized\n");
+  //   fflush(fp);
+  // }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -174,10 +174,10 @@ void FixSupersaturationVolume::pre_exchange()
   if (update->ntimestep < next_step) { return; }
   next_step = update->ntimestep + nevery;
 
-  if (comm->me == 0) {
-    fmt::print(fp, "endoffff\n");
-    fflush(fp);
-  }
+  // if (comm->me == 0) {
+  //   fmt::print(fp, "endoffff\n");
+  //   fflush(fp);
+  // }
 
   if (compute_supersaturation_mono->invoked_scalar != update->ntimestep) {
     compute_supersaturation_mono->compute_scalar();
@@ -188,8 +188,8 @@ void FixSupersaturationVolume::pre_exchange()
   const auto global_monomers = static_cast<long double>(compute_supersaturation_mono->global_monomers);
   const long double ns1s = compute_supersaturation_mono->execute_func() * supersaturation;
   const long double needed_volume = global_monomers / ns1s;
-  const long double needed_length = std::pow(needed_volume, 1 / 3);
-  const long double currenth_length = std::pow(volume_before, 1 / 3);
+  const long double needed_length = std::pow<long double, long double>(needed_volume, 1 / 3);
+  const long double currenth_length = std::pow<long double, long double>(volume_before, 1 / 3);
   const auto delta = static_cast<double>(damp * (needed_length - currenth_length) / 2);
 
 
@@ -200,10 +200,10 @@ void FixSupersaturationVolume::pre_exchange()
 
   remap_before();
 
-  if (comm->me == 0) {
-    fmt::print(fp, "remap before\n");
-    fflush(fp);
-  }
+  // if (comm->me == 0) {
+  //   fmt::print(fp, "remap before\n");
+  //   fflush(fp);
+  // }
 
   // reset global and local box to new size/shape
 
@@ -216,10 +216,10 @@ void FixSupersaturationVolume::pre_exchange()
 
   remap_after();
 
-  if (comm->me == 0) {
-    fmt::print(fp, "Remap after\n");
-    fflush(fp);
-  }
+  // if (comm->me == 0) {
+  //   fmt::print(fp, "Remap after\n");
+  //   fflush(fp);
+  // }
 
   // domain->set_global_box();
 
@@ -246,10 +246,10 @@ void FixSupersaturationVolume::pre_exchange()
 
   //   domain->reset_box();
 
-  if (comm->me == 0) {
-    fmt::print(fp, "Reset box\n");
-    fflush(fp);
-  }
+  // if (comm->me == 0) {
+  //   fmt::print(fp, "Reset box\n");
+  //   fflush(fp);
+  // }
 
   // if (comm->me == 0){
   //   fmt::print(fp, "Remap after\n");
