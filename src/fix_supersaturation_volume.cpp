@@ -15,6 +15,7 @@
 #include "error.h"
 #include "fix.h"
 #include "fmt/core.h"
+#include "irregular.h"
 #include "modify.h"
 #include "update.h"
 
@@ -162,13 +163,13 @@ void FixSupersaturationVolume::init()
 int FixSupersaturationVolume::setmask()
 {
   int mask = 0;
-  mask |= END_OF_STEP;
+  mask |= PRE_EXCHANGE;
   return mask;
 }
 
 /* ---------------------------------------------------------------------- */
 
-void FixSupersaturationVolume::end_of_step()
+void FixSupersaturationVolume::pre_exchange()
 {
   if (update->ntimestep < next_step) { return; }
   next_step = update->ntimestep + nevery;
@@ -192,14 +193,14 @@ void FixSupersaturationVolume::end_of_step()
        std::pow(domain->volume(), 1 / 3)) /
       2);
 
-  if (comm->me == 0){
+  if (comm->me == 0) {
     fmt::print(fp, "delta: {}\n", delta);
     fflush(fp);
   }
 
   remap_before();
 
-  if (comm->me == 0){
+  if (comm->me == 0) {
     fmt::print(fp, "remap before\n");
     fflush(fp);
   }
@@ -215,7 +216,7 @@ void FixSupersaturationVolume::end_of_step()
 
   remap_after();
 
-  if (comm->me == 0){
+  if (comm->me == 0) {
     fmt::print(fp, "Remap after\n");
     fflush(fp);
   }
@@ -229,13 +230,26 @@ void FixSupersaturationVolume::end_of_step()
 
   // domain->set_local_box();
 
-  domain->reset_box();
+  imageint *image = atom->image;
+  for (int i = 0; i < atom->nlocal; i++) { domain->remap(atom->x[i], image[i]); }
+  // for (int i = 0; i < nptt_rank[comm->me]; i++) {
+  //   int pID = p2m[i];
+  //   domain->remap(atom->x[pID], image[pID]);
+  // }
 
-  if (comm->me == 0){
+  if (domain->triclinic != 0) { domain->x2lamda(atom->nlocal); }
+  domain->reset_box();
+  auto *irregular = new Irregular(lmp);
+  irregular->migrate_atoms(1);
+  delete irregular;
+  if (domain->triclinic != 0) { domain->lamda2x(atom->nlocal); }
+
+  //   domain->reset_box();
+
+  if (comm->me == 0) {
     fmt::print(fp, "Reset box\n");
     fflush(fp);
   }
-
 
   // if (comm->me == 0){
   //   fmt::print(fp, "Remap after\n");

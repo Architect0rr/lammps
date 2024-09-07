@@ -25,7 +25,7 @@ class FixSupersaturationVolume : public Fix {
   ~FixSupersaturationVolume() noexcept(true) override;
   int setmask() override;
   void init() override;
-  void end_of_step() override;
+  void pre_exchange() override;
 
  protected:
   ComputeSupersaturationMono *compute_supersaturation_mono = nullptr;
