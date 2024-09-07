@@ -185,16 +185,16 @@ void FixSupersaturationVolume::pre_exchange()
   const double previous_supersaturation = compute_supersaturation_mono->scalar;
   const double volume_before = domain->volume();
 
-  const auto delta = static_cast<double>(
-      damp *
-      (std::pow(static_cast<long double>(compute_supersaturation_mono->global_monomers) /
-                    (compute_supersaturation_mono->execute_func() * supersaturation),
-                1 / 3) -
-       std::pow(domain->volume(), 1 / 3)) /
-      2);
+  const auto global_monomers = static_cast<long double>(compute_supersaturation_mono->global_monomers);
+  const long double ns1s = compute_supersaturation_mono->execute_func() * supersaturation;
+  const long double needed_volume = global_monomers / ns1s;
+  const long double needed_length = std::pow(needed_volume, 1 / 3);
+  const long double currenth_length = std::pow(volume_before, 1 / 3);
+  const auto delta = static_cast<double>(damp * (needed_length - currenth_length) / 2);
+
 
   if (comm->me == 0) {
-    fmt::print(fp, "delta: {}\n", delta);
+    fmt::print(fp, "damp: {}, global_mono: {}, ns1s: {}, need_V: {}, need_L: {}, curr_V: {} curr_L: {}, delta: {}\n", damp, global_monomers, ns1s, needed_volume, needed_length, volume_before, currenth_length, delta);
     fflush(fp);
   }
 
