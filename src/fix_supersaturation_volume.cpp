@@ -32,6 +32,8 @@ FixSupersaturationVolume::FixSupersaturationVolume(LAMMPS *lmp, int narg, char *
 {
 
   no_change_box = 1;
+  restart_pbc = 1;
+  pre_exchange_migrate = 1;
   nevery = 1;
 
   if (narg < 6) { utils::missing_cmd_args(FLERR, "fix supersaturation", error); }
@@ -200,11 +202,6 @@ void FixSupersaturationVolume::pre_exchange()
 
   remap_before();
 
-  // if (comm->me == 0) {
-  //   fmt::print(fp, "remap before\n");
-  //   fflush(fp);
-  // }
-
   // reset global and local box to new size/shape
 
   domain->boxlo[0] -= delta;
@@ -216,26 +213,14 @@ void FixSupersaturationVolume::pre_exchange()
 
   remap_after();
 
-  // if (comm->me == 0) {
-  //   fmt::print(fp, "Remap after\n");
-  //   fflush(fp);
-  // }
-
   // domain->set_global_box();
-
-  // if (comm->me == 0){
-  //   fmt::print(fp, "Global box\n");
-  //   fflush(fp);
-  // }
-
   // domain->set_local_box();
 
-  imageint *image = atom->image;
-  for (int i = 0; i < atom->nlocal; i++) { domain->remap(atom->x[i], image[i]); }
-  // for (int i = 0; i < nptt_rank[comm->me]; i++) {
-  //   int pID = p2m[i];
-  //   domain->remap(atom->x[pID], image[pID]);
-  // }
+  if (domain->triclinic != 0) { domain->x2lamda(atom->nlocal); }
+  domain->reset_box();
+  if (domain->triclinic != 0) { domain->lamda2x(atom->nlocal); }
+
+  for (int i = 0; i < atom->nlocal; i++) { domain->remap(atom->x[i], atom->image[i]); }
 
   if (domain->triclinic != 0) { domain->x2lamda(atom->nlocal); }
   domain->reset_box();
