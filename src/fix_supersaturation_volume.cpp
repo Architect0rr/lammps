@@ -10,6 +10,7 @@
 #include "compute_supersaturation_mono.h"
 
 #include "atom.h"
+#include "atom_vec.h"
 #include "comm.h"
 #include "domain.h"
 #include "error.h"
@@ -18,6 +19,8 @@
 #include "irregular.h"
 #include "modify.h"
 #include "update.h"
+#include "neigh_list.h"
+#include "neighbor.h"
 
 #include <cmath>
 #include <cstring>
@@ -35,6 +38,7 @@ FixSupersaturationVolume::FixSupersaturationVolume(LAMMPS *lmp, int narg, char *
   restart_pbc = 1;
   pre_exchange_migrate = 1;
   nevery = 1;
+  box_change = BOX_CHANGE_ANY;
 
   if (narg < 6) { utils::missing_cmd_args(FLERR, "fix supersaturation", error); }
 
@@ -130,6 +134,7 @@ FixSupersaturationVolume::FixSupersaturationVolume(LAMMPS *lmp, int narg, char *
 
   next_step = update->ntimestep - (update->ntimestep % nevery);
   if (offflag != 0) { next_step = update->ntimestep + start_offset; }
+  need_exchange = false;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -146,6 +151,8 @@ FixSupersaturationVolume::~FixSupersaturationVolume() noexcept(true)
 
 void FixSupersaturationVolume::init()
 {
+  neighbor->add_request(this, NeighConst::REQ_FULL | NeighConst::REQ_OCCASIONAL);
+
   // detect if any rigid fixes exist so rigid bodies can be rescaled
   // rfix[] = vector with pointers to each fix rigid
 
@@ -162,10 +169,18 @@ void FixSupersaturationVolume::init()
 
 /* ---------------------------------------------------------------------- */
 
+void FixSupersaturationVolume::init_list(int /*id*/, NeighList *ptr)
+{
+  list = ptr;
+}
+
+/* ---------------------------------------------------------------------- */
+
 int FixSupersaturationVolume::setmask()
 {
   int mask = 0;
   mask |= PRE_EXCHANGE;
+  // mask |= END_OF_STEP;
   return mask;
 }
 
@@ -175,6 +190,8 @@ void FixSupersaturationVolume::pre_exchange()
 {
   if (update->ntimestep < next_step) { return; }
   next_step = update->ntimestep + nevery;
+  need_exchange = true;
+  force_reneighbor = update->ntimestep + 1;
 
   // if (comm->me == 0) {
   //   fmt::print(fp, "endoffff\n");
@@ -211,16 +228,20 @@ void FixSupersaturationVolume::pre_exchange()
   domain->boxlo[2] -= delta;
   domain->boxhi[2] += delta;
 
-  remap_after();
-
   // domain->set_global_box();
   // domain->set_local_box();
+  domain->reset_box();
+
+  remap_after();
+
+  neighbor->reset_timestep(update->ntimestep);
+
 
   if (domain->triclinic != 0) { domain->x2lamda(atom->nlocal); }
   domain->reset_box();
   if (domain->triclinic != 0) { domain->lamda2x(atom->nlocal); }
 
-  for (int i = 0; i < atom->nlocal; i++) { domain->remap(atom->x[i], atom->image[i]); }
+  bigint _nlocal = atom->nlocal;
 
   if (domain->triclinic != 0) { domain->x2lamda(atom->nlocal); }
   domain->reset_box();
@@ -229,17 +250,15 @@ void FixSupersaturationVolume::pre_exchange()
   delete irregular;
   if (domain->triclinic != 0) { domain->lamda2x(atom->nlocal); }
 
-  //   domain->reset_box();
+  bigint delta_atom = _nlocal - atom->nlocal;
+  _nlocal = delta_atom > 0 ? delta_atom : 0;
+  MPI_Allreduce(&_nlocal, &delta_atom, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  if (comm->me == 0){
+    fmt::print(fp, "Transferred: {} atoms\n", delta_atom);
+    fflush(fp);
+  }
 
-  // if (comm->me == 0) {
-  //   fmt::print(fp, "Reset box\n");
-  //   fflush(fp);
-  // }
-
-  // if (comm->me == 0){
-  //   fmt::print(fp, "Remap after\n");
-  //   fflush(fp);
-  // }
+  // neighbor->build_one(list);
 
   const double volume_after = domain->volume();
   const double ssa = compute_supersaturation_mono->compute_scalar();
@@ -254,6 +273,34 @@ void FixSupersaturationVolume::pre_exchange()
     }
   }
 }
+
+/* ---------------------------------------------------------------------- */
+
+// void FixSupersaturationVolume::pre_exchange() {
+//   if (!need_exchange) {return;}
+//   need_exchange = false;
+
+//   if (domain->triclinic != 0) { domain->x2lamda(atom->nlocal); }
+//   domain->reset_box();
+//   if (domain->triclinic != 0) { domain->lamda2x(atom->nlocal); }
+
+//   bigint _nlocal = atom->nlocal;
+
+//   if (domain->triclinic != 0) { domain->x2lamda(atom->nlocal); }
+//   domain->reset_box();
+//   auto *irregular = new Irregular(lmp);
+//   irregular->migrate_atoms(1);
+//   delete irregular;
+//   if (domain->triclinic != 0) { domain->lamda2x(atom->nlocal); }
+
+//   bigint delta_atom = _nlocal - atom->nlocal;
+//   _nlocal = delta_atom > 0 ? delta_atom : 0;
+//   MPI_Allreduce(&_nlocal, &delta_atom, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+//   if (comm->me == 0){
+//     fmt::print(fp, "Transferred: {} atoms\n", delta_atom);
+//     fflush(fp);
+//   }
+// }
 
 /* ---------------------------------------------------------------------- */
 
@@ -287,6 +334,120 @@ void FixSupersaturationVolume::remap_after() noexcept(true)
   }
 
   for (auto &ifix : rfix) { ifix->deform(1); }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixSupersaturationVolume::calculate_out(){
+  bigint out_of_box = 0;
+  double **x = atom->x;
+  for (int i = 0; i < atom->nlocal; i++) {
+    if (x[i][0] < domain->boxlo[0] || x[i][0] > domain->boxhi[0] || x[i][1] < domain->boxlo[1] || x[i][1] > domain->boxhi[1] || x[i][2] < domain->boxlo[2] || x[i][2] > domain->boxhi[2]) ++out_of_box;
+  }
+
+  bigint total_out = 0;
+  MPI_Allreduce(&out_of_box, &total_out, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  if (comm->me == 0){
+    fmt::print(fp, "Out of box: {}\n", total_out);
+    fflush(fp);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixSupersaturationVolume::print_box(){
+    if (comm->me != 0) return;
+
+  // Output all members of Domain class, excluding those derived from Pointers
+  utils::logmesg(lmp, "box_exist: {} \n", domain->box_exist);
+  utils::logmesg(lmp, "dimension: {} \n", domain->dimension);
+  utils::logmesg(lmp, "nonperiodic: {} \n", domain->nonperiodic);
+  utils::logmesg(lmp, "xperiodic: {} \n", domain->xperiodic);
+  utils::logmesg(lmp, "yperiodic: {} \n", domain->yperiodic);
+  utils::logmesg(lmp, "zperiodic: {} \n", domain->zperiodic);
+  for (int i = 0; i < 3; ++i) {
+      utils::logmesg(lmp, "periodicity[{}]: {} \n", i, domain->periodicity[i]);
+      for (int j = 0; j < 2; ++j) {
+      utils::logmesg(lmp, "boundary[{}][{}]: {} \n", i, j, domain->boundary[i][j]);
+      }
+  }
+  utils::logmesg(lmp, "triclinic: {} \n", domain->triclinic);
+  utils::logmesg(lmp, "triclinic_general: {} \n", domain->triclinic_general);
+  utils::logmesg(lmp, "xprd: {} \n", domain->xprd);
+  utils::logmesg(lmp, "yprd: {} \n", domain->yprd);
+  utils::logmesg(lmp, "zprd: {} \n", domain->zprd);
+  utils::logmesg(lmp, "xprd_half: {} \n", domain->xprd_half);
+  utils::logmesg(lmp, "yprd_half: {} \n", domain->yprd_half);
+  utils::logmesg(lmp, "zprd_half: {} \n", domain->zprd_half);
+  for (int i = 0; i < 3; ++i) {
+      utils::logmesg(lmp, "prd[{}]: {} \n", i, domain->prd[i]);
+      utils::logmesg(lmp, "prd_half[{}]: {} \n", i, domain->prd_half[i]);
+      utils::logmesg(lmp, "prd_lamda[{}]: {} \n", i, domain->prd_lamda[i]);
+      utils::logmesg(lmp, "prd_half_lamda[{}]: {} \n", i, domain->prd_half_lamda[i]);
+  }
+  for (int i = 0; i < 3; ++i) {
+      utils::logmesg(lmp, "boxlo[{}]: {} \n", i, domain->boxlo[i]);
+      utils::logmesg(lmp, "boxhi[{}]: {} \n", i, domain->boxhi[i]);
+      utils::logmesg(lmp, "boxlo_lamda[{}]: {} \n", i, domain->boxlo_lamda[i]);
+      utils::logmesg(lmp, "boxhi_lamda[{}]: {} \n", i, domain->boxhi_lamda[i]);
+      utils::logmesg(lmp, "boxlo_bound[{}]: {} \n", i, domain->boxlo_bound[i]);
+      utils::logmesg(lmp, "boxhi_bound[{}]: {} \n", i, domain->boxhi_bound[i]);
+  }
+  for (int i = 0; i < 8; ++i) {
+      for (int j = 0; j < 3; ++j) {
+      utils::logmesg(lmp, "corners[{}][{}]: {} \n", i, j, domain->corners[i][j]);
+      }
+  }
+  utils::logmesg(lmp, "minxlo: {} \n", domain->minxlo);
+  utils::logmesg(lmp, "minxhi: {} \n", domain->minxhi);
+  utils::logmesg(lmp, "minylo: {} \n", domain->minylo);
+  utils::logmesg(lmp, "minyhi: {} \n", domain->minyhi);
+  utils::logmesg(lmp, "minzlo: {} \n", domain->minzlo);
+  utils::logmesg(lmp, "minzhi: {} \n", domain->minzhi);
+  for (int i = 0; i < 3; ++i) {
+      utils::logmesg(lmp, "sublo[{}]: {} \n", i, domain->sublo[i]);
+      utils::logmesg(lmp, "subhi[{}]: {} \n", i, domain->subhi[i]);
+      utils::logmesg(lmp, "sublo_lamda[{}]: {} \n", i, domain->sublo_lamda[i]);
+      utils::logmesg(lmp, "subhi_lamda[{}]: {} \n", i, domain->subhi_lamda[i]);
+  }
+  utils::logmesg(lmp, "xy: {} \n", domain->xy);
+  utils::logmesg(lmp, "xz: {} \n", domain->xz);
+  utils::logmesg(lmp, "yz: {} \n", domain->yz);
+  for (int i = 0; i < 6; ++i) {
+      utils::logmesg(lmp, "h[{}]: {} \n", i, domain->h[i]);
+      utils::logmesg(lmp, "h_inv[{}]: {} \n", i, domain->h_inv[i]);
+      utils::logmesg(lmp, "h_rate[{}]: {} \n", i, domain->h_rate[i]);
+  }
+  for (int i = 0; i < 3; ++i) {
+      utils::logmesg(lmp, "h_ratelo[{}]: {} \n", i, domain->h_ratelo[i]);
+  }
+  for (int i = 0; i < 3; ++i) {
+      utils::logmesg(lmp, "avec[{}]: {} \n", i, domain->avec[i]);
+      utils::logmesg(lmp, "bvec[{}]: {} \n", i, domain->bvec[i]);
+      utils::logmesg(lmp, "cvec[{}]: {} \n", i, domain->cvec[i]);
+  }
+  for (int i = 0; i < 3; ++i) {
+      for (int j = 0; j < 3; ++j) {
+      utils::logmesg(lmp, "rotate_g2r[{}][{}]: {} \n", i, j, domain->rotate_g2r[i][j]);
+      utils::logmesg(lmp, "rotate_r2g[{}][{}]: {} \n", i, j, domain->rotate_r2g[i][j]);
+      }
+  }
+  utils::logmesg(lmp, "box_change: {} \n", domain->box_change);
+  utils::logmesg(lmp, "box_change_size: {} \n", domain->box_change_size);
+  utils::logmesg(lmp, "box_change_shape: {} \n", domain->box_change_shape);
+  utils::logmesg(lmp, "box_change_domain: {} \n", domain->box_change_domain);
+  utils::logmesg(lmp, "deform_flag: {} \n", domain->deform_flag);
+  utils::logmesg(lmp, "deform_vremap: {} \n", domain->deform_vremap);
+  utils::logmesg(lmp, "deform_groupbit: {} \n", domain->deform_groupbit);
+  utils::logmesg(lmp, "copymode: {} \n", domain->copymode);
+
+  double prd_half_lam[3];
+  domain->x2lamda(domain->prd_half, prd_half_lam);
+  double prd_half[3];
+  domain->lamda2x(prd_half_lam, prd_half);
+  utils::logmesg(lmp, "x_h: {} -x2l-> {} -l2x-> {} \n", domain->xprd_half, prd_half_lam[0], prd_half[0]);
+  utils::logmesg(lmp, "y_h: {} -x2l-> {} -l2x-> {} \n", domain->yprd_half, prd_half_lam[1], prd_half[1]);
+  utils::logmesg(lmp, "z_h: {} -x2l-> {} -l2x-> {} \n", domain->zprd_half, prd_half_lam[2], prd_half[2]);
 }
 
 /* ---------------------------------------------------------------------- */

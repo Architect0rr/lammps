@@ -14,6 +14,7 @@ FixStyle(supersaturation/volume,FixSupersaturationVolume);
 #define LAMMPS_FIX_SUPERSATURATION_VOLUME_H
 
 #include "compute_supersaturation_mono.h"
+#include "neigh_list.h"
 
 #include "fix.h"
 
@@ -25,10 +26,16 @@ class FixSupersaturationVolume : public Fix {
   ~FixSupersaturationVolume() noexcept(true) override;
   int setmask() override;
   void init() override;
+  void init_list(int, class NeighList *) override;
+//   void end_of_step() override;
   void pre_exchange() override;
 
  protected:
   ComputeSupersaturationMono *compute_supersaturation_mono = nullptr;
+
+  NeighList* list;
+
+  bool need_exchange;
 
   FILE *fp;
   int screenflag;
@@ -46,6 +53,8 @@ class FixSupersaturationVolume : public Fix {
 
   void remap_before() noexcept(true);
   void remap_after() noexcept(true);
+  void print_box();
+  void calculate_out();
 };
 
 }    // namespace LAMMPS_NS

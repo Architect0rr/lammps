@@ -6,12 +6,12 @@
 
 #ifdef FIX_CLASS
 // clang-format off
-FixStyle(supersaturation,FixSupersaturation);
+FixStyle(keep/count,FixKeepCount);
 // clang-format on
 #else
 
-#ifndef LAMMPS_FIX_SUPERSATURATION_H
-#define LAMMPS_FIX_SUPERSATURATION_H
+#ifndef LAMMPS_FIX_KEEP_COUNT_H
+#define LAMMPS_FIX_KEEP_COUNT_H
 
 #include "compute_supersaturation_mono.h"
 
@@ -19,14 +19,14 @@ FixStyle(supersaturation,FixSupersaturation);
 #include "random_park.h"
 #include "region.h"
 
-namespace LAMMPS_NS {
-
 enum class MODE { LOCAL, UNIVERSE };
 
-class FixSupersaturation : public Fix {
+namespace LAMMPS_NS {
+
+class FixKeepCount : public Fix {
  public:
-  FixSupersaturation(class LAMMPS *, int, char **);
-  ~FixSupersaturation() noexcept(true) override;
+  FixKeepCount(class LAMMPS *, int, char **);
+  ~FixKeepCount() noexcept(true) override;
   int setmask() override;
   void pre_exchange() override;
 
@@ -38,13 +38,14 @@ class FixSupersaturation : public Fix {
   RanPark *vrandom;
   RanPark *alogrand;
 
-  MODE mode;
-
   FILE *fp;
   int screenflag;
   int fileflag;
 
   bigint next_step;
+  bigint total_count;
+
+  MODE mode;
 
   int maxtry;
   int triclinic;
@@ -53,17 +54,16 @@ class FixSupersaturation : public Fix {
   double monomer_temperature;
   double odistsq;
   double overlap;
-  double supersaturation;
   double damp;
   int offflag;
   int start_offset;
 
   double globbonds[3][2]{};
   double subbonds[3][2]{};
-  double *coord{};
   double lamda[3]{};
   double *boxlo;
   double *boxhi;
+  double *coord{};
   double xone[3]{};
 
   int *pproc{};
@@ -73,9 +73,9 @@ class FixSupersaturation : public Fix {
   void delete_monomers() noexcept(true);
   void add_monomers() noexcept(true);
   void add_monomers2() noexcept(true);
-  bool gen_one_local() noexcept(true);
+  bool gen_one_sub() noexcept(true);
   bool gen_one_full() noexcept(true);
-  bool gen_one_local_at(double, double, double, double, double, double) noexcept(true);
+  bool gen_one_sub_at(double, double, double, double, double, double) noexcept(true);
   void set_speed(int) noexcept(true);
   void post_add(const int) noexcept(true);
   void post_delete() noexcept(true);

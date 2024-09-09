@@ -5,7 +5,7 @@
    LAMMPS development team: developers@lammps.org
 ------------------------------------------------------------------------- */
 
-#include "fix_supersaturation.h"
+#include "fix_keep_count.h"
 #include "compute.h"
 #include "compute_supersaturation_mono.h"
 
@@ -39,20 +39,23 @@ constexpr int DEFAULT_MAXTRY_CALL = 5;
 
 /* ---------------------------------------------------------------------- */
 
-FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
-    Fix(lmp, narg, arg), mode(MODE::LOCAL), screenflag(1), fileflag(0), next_step(0),
+FixKeepCount::FixKeepCount(LAMMPS *lmp, int narg, char **arg) :
+    Fix(lmp, narg, arg), screenflag(1), fileflag(0), next_step(0), mode(MODE::UNIVERSE),
     maxtry(DEFAULT_MAXTRY), scaleflag(0), fix_temp(0), offflag(0), maxtry_call(DEFAULT_MAXTRY_CALL)
 {
-
   nevery = 1;
+  restart_pbc = 1;
+  pre_exchange_migrate = 1;
 
-  if (narg < 10) { utils::missing_cmd_args(FLERR, "fix supersaturation", error); }
+  if (narg < 10) { utils::missing_cmd_args(FLERR, "fix keep/count", error); }
 
   // Parse arguments //
 
   // Target region
   region = domain->get_region_by_id(arg[3]);
-  if (region == nullptr) { error->all(FLERR, "Cannot find target region {}", arg[3]); }
+  if (region == nullptr) {
+    error->all(FLERR, "fox keep/count: Cannot find target region {}", arg[3]);
+  }
 
   // Get compute supersaturation/mono
   compute_supersaturation_mono =
@@ -60,7 +63,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
 
   if (compute_supersaturation_mono == nullptr) {
     error->all(FLERR,
-               "fix supersaturation: cannot find compute of style 'supersaturation/mono' with "
+               "fix keep/count: cannot find compute of style 'supersaturation/mono' with "
                "given id: {}",
                arg[4]);
   }
@@ -68,7 +71,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
   // Minimum distance to other atoms from the place atom is inserted to
   overlap = utils::numeric(FLERR, arg[5], true, lmp);
   if (overlap < 0) {
-    error->all(FLERR, "Minimum distance for fix supersaturation must be non-negative");
+    error->all(FLERR, "Minimum distance for fix keep/count must be non-negative");
   }
 
   // apply scaling factor for styles that use distance-dependent factors
@@ -82,16 +85,14 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
   int const xseed = utils::inumeric(FLERR, arg[7], true, lmp);
   xrandom = new RanPark(lmp, xseed);
 
-  // Get needed supersaturation
-  supersaturation = utils::numeric(FLERR, arg[8], true, lmp);
-  if (supersaturation <= 0) {
-    error->all(FLERR, "Supersaturation for fix supersaturation must be positive");
-  }
+  // Get needed total count of atoms
+  total_count = utils::inumeric(FLERR, arg[8], true, lmp);
+  if (total_count <= 0) { error->all(FLERR, "Total count for fix keep/count must be positive"); }
 
   // Get dampfing parameter
   damp = utils::numeric(FLERR, arg[9], true, lmp);
   if (damp <= 0 || damp > 1) {
-    error->all(FLERR, "Dampfing parameter for fix supersaturation must be in range (0,1]");
+    error->all(FLERR, "Dampfing parameter for fix keep/count must be in range (0,1]");
   }
 
   // Parse optional keywords
@@ -104,18 +105,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
 
       // Max attempts to search for a new suitable location
       maxtry = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);
-      if (maxtry < 1) { error->all(FLERR, "maxtry for fix supersaturation cannot be less than 1"); }
-      iarg += 2;
-
-    } else if (strcmp(arg[iarg], "mode") == 0) {
-
-      if (strcmp(arg[iarg+1], "local") == 0){
-        mode = MODE::LOCAL;
-      } else if (strcmp(arg[iarg+1], "universe") == 0){
-        mode = MODE::UNIVERSE;
-      } else {
-        error->all(FLERR, "Unknown mode for fix supersaturation: {}", arg[iarg + 1]);
-      }
+      if (maxtry < 1) { error->all(FLERR, "maxtry for fix keep/count cannot be less than 1"); }
       iarg += 2;
 
     } else if (strcmp(arg[iarg], "maxtry_call") == 0) {
@@ -123,7 +113,20 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
       // Get max number of tries for calling delete_monomers()/add_monomers()
       maxtry_call = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);
       if (maxtry_call < 1) {
-        error->all(FLERR, "maxtry_call for fix supersaturation cannot be less than 1");
+        error->all(FLERR, "maxtry_call for fix keep/count cannot be less than 1");
+      }
+      iarg += 2;
+
+    } else if (strcmp(arg[iarg], "method") == 0) {
+
+      if (strcmp(arg[iarg + 1], "full") == 0) {
+        mode = MODE::UNIVERSE;
+      } else if (strcmp(arg[iarg + 1], "fast") == 0) {
+        mode = MODE::LOCAL;
+      } else if (strcmp(arg[iarg + 1], "hybrid") == 0) {
+        mode = MODE::LOCAL;
+      } else {
+        error->all(FLERR, "Unknown method for fix keep/count: {}", arg[iarg + 1]);
       }
       iarg += 2;
 
@@ -133,7 +136,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
       fix_temp = 1;
       monomer_temperature = utils::numeric(FLERR, arg[iarg + 1], true, lmp);
       if (monomer_temperature < 0) {
-        error->all(FLERR, "Monomer temperature for fix supersaturation cannot be negative");
+        error->all(FLERR, "Monomer temperature for fix keep/count cannot be negative");
       }
 
       // Get the seed for velocity generator
@@ -154,7 +157,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
         fileflag = 1;
         fp = fopen(arg[iarg + 1], "w");
         if (fp == nullptr) {
-          error->one(FLERR, "Cannot open fix supersaturation stats file {}: {}", arg[iarg + 1],
+          error->one(FLERR, "Cannot open fix keep/count stats file {}: {}", arg[iarg + 1],
                      utils::getsyserror());
         }
       }
@@ -167,7 +170,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
         fileflag = 1;
         fp = fopen(arg[iarg + 1], "a");
         if (fp == nullptr) {
-          error->one(FLERR, "Cannot open fix supersaturation stats file {}: {}", arg[iarg + 1],
+          error->one(FLERR, "Cannot open fix keep/count stats file {}: {}", arg[iarg + 1],
                      utils::getsyserror());
         }
       }
@@ -184,7 +187,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
       // Get start offset
       start_offset = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);
       if (start_offset < 0) {
-        error->all(FLERR, "start_offset for fix supersaturation cannot be less than 0");
+        error->all(FLERR, "start_offset for fix keep/count cannot be less than 0");
       }
       offflag = 1;
       iarg += 2;
@@ -196,12 +199,12 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
       } else if (strcmp(arg[iarg + 1], "lattice") == 0) {
         scaleflag = 1;
       } else {
-        error->all(FLERR, "Unknown fix supersaturation units option {}", arg[iarg + 1]);
+        error->all(FLERR, "Unknown fix keep/count units option {}", arg[iarg + 1]);
       }
       iarg += 2;
 
     } else {
-      error->all(FLERR, "Illegal fix supersaturation command option {}", arg[iarg]);
+      error->all(FLERR, "Illegal fix keep/count command option {}", arg[iarg]);
     }
   }
 
@@ -261,14 +264,14 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
   }
 
   if (comm->me == 0 && (fileflag != 0)) {
-    fmt::print(fp, "ntimestep,ntotal,a2d,a2a,ad,aa,ssb,ssa,del\n");
+    fmt::print(fp, "ntimestep,ntotal,a2d,a2a,ad,aa\n");
     fflush(fp);
   }
 
   next_step = update->ntimestep - (update->ntimestep % nevery);
   if (offflag != 0) { next_step = update->ntimestep + start_offset; }
 
-  memory->create(pproc, comm->nprocs * sizeof(int), "fix_supersaturation:pproc");
+  memory->create(pproc, comm->nprocs * sizeof(int), "keep/count:pproc");
 
   memset(xone, 0, 3 * sizeof(double));
   memset(lamda, 0, 3 * sizeof(double));
@@ -278,7 +281,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
 
 /* ---------------------------------------------------------------------- */
 
-FixSupersaturation::~FixSupersaturation() noexcept(true)
+FixKeepCount::~FixKeepCount() noexcept(true)
 {
   delete xrandom;
   delete vrandom;
@@ -292,7 +295,7 @@ FixSupersaturation::~FixSupersaturation() noexcept(true)
 
 /* ---------------------------------------------------------------------- */
 
-int FixSupersaturation::setmask()
+int FixKeepCount::setmask()
 {
   int mask = 0;
   mask |= PRE_EXCHANGE;
@@ -301,20 +304,12 @@ int FixSupersaturation::setmask()
 
 /* ---------------------------------------------------------------------- */
 
-void FixSupersaturation::pre_exchange()
+void FixKeepCount::pre_exchange()
 {
   if (update->ntimestep < next_step) { return; }
   next_step = update->ntimestep + nevery;
 
-  if (compute_supersaturation_mono->invoked_scalar != update->ntimestep) {
-    compute_supersaturation_mono->compute_scalar();
-  }
-  const double previous_supersaturation = compute_supersaturation_mono->scalar;
-
-  auto delta = static_cast<bigint>(
-      std::floor(static_cast<long double>(compute_supersaturation_mono->execute_func() *
-                                          domain->volume() * supersaturation) -
-                 compute_supersaturation_mono->global_monomers));
+  bigint delta = atom->natoms - total_count;
 
   const bool delflag = delta < 0;
   delta = static_cast<bigint>(
@@ -324,7 +319,7 @@ void FixSupersaturation::pre_exchange()
   const int nlocal_previous = atom->nlocal;
 
   if (delta != 0) {
-    if (!delflag && mode == MODE::UNIVERSE) {
+    if (mode == MODE::UNIVERSE && !delflag) {
       for (bigint i = 0; i < delta; ++i) {
         if (gen_one_full()) {    // if success new coords will be already in xone[]
           if (coord[0] >= subbonds[0][0] && coord[0] < subbonds[0][1] &&
@@ -371,113 +366,18 @@ void FixSupersaturation::pre_exchange()
     }
   }
 
-  double newsupersaturation = compute_supersaturation_mono->compute_scalar();
   if (comm->me == 0) {
     bigint atom_delta = std::abs(natoms_previous - atom->natoms);
     if (screenflag != 0) {
-      utils::logmesg(lmp,
-                     "fix SS: {} {} atoms. Previous SS: {:.3f}, new SS: {:.3f}, delta: {:.3f}. "
-                     "Total atoms: {}",
-                     delflag ? "deleted" : "added", atom_delta, previous_supersaturation,
-                     newsupersaturation, newsupersaturation - previous_supersaturation,
-                     atom->natoms);
+      utils::logmesg(lmp, "fix keep/count: {} {} atoms. Total atoms: {}",
+                     delflag ? "deleted" : "added", atom_delta, atom->natoms);
     }
     if (fileflag != 0) {
-      fmt::print(fp, "{},{},{},{},{},{},{:.3f},{:.3f},{:.3f}\n", update->ntimestep, atom->natoms,
-                 delflag ? delta : 0, !delflag ? delta : 0, delflag ? atom_delta : 0,
-                 !delflag ? atom_delta : 0, previous_supersaturation, newsupersaturation,
-                 newsupersaturation - previous_supersaturation);
+      fmt::print(fp, "{},{},{},{},{},{}\n", update->ntimestep, atom->natoms, delflag ? delta : 0,
+                 !delflag ? delta : 0, delflag ? atom_delta : 0, !delflag ? atom_delta : 0);
       fflush(fp);
     }
   }
-}
-
-/* ---------------------------------------------------------------------- */
-
-void FixSupersaturation::delete_monomers() noexcept(true)
-{
-  // delete local atoms flagged in dlist
-  // reset nlocal
-  int nlocal = atom->nlocal;
-
-  int local_monomers = compute_supersaturation_mono->local_monomers;
-  const int *mono_idx = compute_supersaturation_mono->mono_idx;
-
-  const int *mx = pproc[comm->me] > local_monomers ? &local_monomers : pproc + comm->me;
-
-  while (*mx > 0) {
-    atom->avec->copy(nlocal - 1, mono_idx[local_monomers - 1], 1);
-    --pproc[comm->me];
-    --local_monomers;
-    --nlocal;
-  }
-
-  compute_supersaturation_mono->local_monomers = local_monomers;
-  atom->nlocal = nlocal;
-}
-
-/* ---------------------------------------------------------------------- */
-
-void FixSupersaturation::add_monomers() noexcept(true)
-{
-  int ninsert = 0;
-  int unsucc = 0;
-  for (int i = 0; i < pproc[comm->me]; ++i) {
-    if (gen_one_local()) {
-      unsucc = 0;
-      atom->avec->create_atom(ntype, xone);
-
-      if (fix_temp != 0) { set_speed(atom->nlocal - 1); }
-
-      ++ninsert;
-    } else {
-      ++unsucc;
-      if (unsucc > 10) { break; }
-    }
-  }
-  pproc[comm->me] -= ninsert;
-}
-
-/* ---------------------------------------------------------------------- */
-
-void FixSupersaturation::add_monomers2() noexcept(true)
-{
-  const double cutoff = lmp->force->pair->cutforce;
-  auto const nx =
-      static_cast<bigint>(floor((subbonds[0][1] - subbonds[0][0] - 2 * cutoff) / overlap));
-  auto const ny =
-      static_cast<bigint>(floor((subbonds[1][1] - subbonds[1][0] - 2 * cutoff) / overlap));
-  auto const nz =
-      static_cast<bigint>(floor((subbonds[2][1] - subbonds[2][0] - 2 * cutoff) / overlap));
-  for (bigint i = 0; i < nx && pproc[comm->me] > 0; ++i) {
-    for (bigint j = 0; j < ny && pproc[comm->me] > 0; ++j) {
-      for (bigint k = 0; k < nz && pproc[comm->me] > 0; ++k) {
-        if (gen_one_local_at(subbonds[0][0] + cutoff + overlap * i,
-                             subbonds[1][0] + cutoff + overlap * j,
-                             subbonds[2][0] + cutoff + overlap * k, overlap, overlap, overlap)) {
-          atom->avec->create_atom(ntype, xone);
-          if (fix_temp != 0) { set_speed(atom->nlocal - 1); }
-          --pproc[comm->me];
-        }
-      }
-    }
-  }
-
-  add_monomers();
-}
-
-/* ---------------------------------------------------------------------- */
-
-void FixSupersaturation::set_speed(int pID) noexcept(true)
-{
-  double **v = atom->v;
-  // generate velocities
-  constexpr long double c_v = 0.7978845608028653558798921198687L;    // sqrt(2/pi)
-  const double sigma = std::sqrt(monomer_temperature / atom->mass[ntype]);
-  const double v_mean = static_cast<double>(c_v) * sigma;
-  v[pID][0] = v_mean + vrandom->gaussian() * sigma;
-  v[pID][1] = v_mean + vrandom->gaussian() * sigma;
-  if (domain->dimension == 3) { v[pID][2] = v_mean + vrandom->gaussian() * sigma; }
 }
 
 /* ----------------------------------------------------------------------
@@ -485,7 +385,7 @@ void FixSupersaturation::set_speed(int pID) noexcept(true)
   criteria for insertion: region, triclinic box, overlap
 ------------------------------------------------------------------------- */
 
-bool FixSupersaturation::gen_one_full() noexcept(true)
+bool FixKeepCount::gen_one_full() noexcept(true)
 {
 
   int ntry = 0;
@@ -547,11 +447,102 @@ bool FixSupersaturation::gen_one_full() noexcept(true)
 
   return success;
 
-}    // bool FixSupersaturation::gen_one_full()
+}    // bool FixKeepCount::gen_one_full()
 
 /* ---------------------------------------------------------------------- */
 
-bool FixSupersaturation::gen_one_local() noexcept(true)
+void FixKeepCount::set_speed(int pID) noexcept(true)
+{
+  if (fix_temp != 0) {
+    // generate velocities
+    constexpr long double c_v = 0.7978845608028653558798921198687L;    // sqrt(2/pi)
+    double const sigma = std::sqrt(monomer_temperature / atom->mass[atom->type[pID]]);
+    double const v_mean = static_cast<double>(c_v) * sigma;
+    atom->v[pID][0] = v_mean + vrandom->gaussian() * sigma;
+    atom->v[pID][1] = v_mean + vrandom->gaussian() * sigma;
+    atom->v[pID][2] = v_mean + vrandom->gaussian() * sigma;
+    if (domain->dimension == 2) { atom->v[pID][2] = 0.0; }
+  }
+}    // void FixKeepCount::set_speed(int)
+
+/* ---------------------------------------------------------------------- */
+
+void FixKeepCount::delete_monomers() noexcept(true)
+{
+  // delete local atoms flagged in dlist
+  // reset nlocal
+  int nlocal = atom->nlocal;
+
+  int local_monomers = compute_supersaturation_mono->local_monomers;
+  const int *mono_idx = compute_supersaturation_mono->mono_idx;
+
+  const int *mx = pproc[comm->me] > local_monomers ? &local_monomers : pproc + comm->me;
+
+  while (*mx > 0) {
+    atom->avec->copy(nlocal - 1, mono_idx[local_monomers - 1], 1);
+    --pproc[comm->me];
+    --local_monomers;
+    --nlocal;
+  }
+
+  compute_supersaturation_mono->local_monomers = local_monomers;
+  atom->nlocal = nlocal;
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixKeepCount::add_monomers() noexcept(true)
+{
+  int ninsert = 0;
+  int unsucc = 0;
+  for (int i = 0; i < pproc[comm->me]; ++i) {
+    if (gen_one_sub()) {
+      unsucc = 0;
+      atom->avec->create_atom(ntype, xone);
+
+      if (fix_temp != 0) { set_speed(atom->nlocal - 1); }
+
+      ++ninsert;
+    } else {
+      ++unsucc;
+      if (unsucc > 10) { break; }
+    }
+  }
+  pproc[comm->me] -= ninsert;
+}
+
+void FixKeepCount::add_monomers2() noexcept(true)
+{
+  const double cutoff = lmp->force->pair->cutforce;
+  auto const nx =
+      static_cast<bigint>(floor((subbonds[0][1] - subbonds[0][0] - 2 * cutoff) / overlap));
+  auto const ny =
+      static_cast<bigint>(floor((subbonds[1][1] - subbonds[1][0] - 2 * cutoff) / overlap));
+  auto const nz =
+      static_cast<bigint>(floor((subbonds[2][1] - subbonds[2][0] - 2 * cutoff) / overlap));
+  for (bigint i = 0; i < nx && pproc[comm->me] > 0; ++i) {
+    for (bigint j = 0; j < ny && pproc[comm->me] > 0; ++j) {
+      for (bigint k = 0; k < nz && pproc[comm->me] > 0; ++k) {
+        if (gen_one_sub_at(subbonds[0][0] + cutoff + overlap * i,
+                           subbonds[1][0] + cutoff + overlap * j,
+                           subbonds[2][0] + cutoff + overlap * k, overlap, overlap, overlap)) {
+          atom->avec->create_atom(ntype, xone);
+          if (fix_temp != 0) { set_speed(atom->nlocal - 1); }
+          --pproc[comm->me];
+        }
+      }
+    }
+  }
+
+  add_monomers();
+}
+
+/* ----------------------------------------------------------------------
+  attempts to create coords up to maxtry times
+  criteria for insertion: region, triclinic box, overlap
+------------------------------------------------------------------------- */
+
+bool FixKeepCount::gen_one_sub() noexcept(true)
 {
   int ntry = 0;
 
@@ -608,8 +599,8 @@ bool FixSupersaturation::gen_one_local() noexcept(true)
 
 /* ---------------------------------------------------------------------- */
 
-bool FixSupersaturation::gen_one_local_at(double _x, double _y, double _z, double _dx, double _dy,
-                                          double _dz) noexcept(true)
+bool FixKeepCount::gen_one_sub_at(double _x, double _y, double _z, double _dx, double _dy,
+                                  double _dz) noexcept(true)
 {
   int ntry = 0;
 
@@ -666,7 +657,7 @@ bool FixSupersaturation::gen_one_local_at(double _x, double _y, double _z, doubl
 
 /* ---------------------------------------------------------------------- */
 
-void FixSupersaturation::post_add(const int nlocal_previous) noexcept(true)
+void FixKeepCount::post_add(const int nlocal_previous) noexcept(true)
 {
   // init per-atom fix/compute/variable values for created atoms
 
@@ -695,7 +686,7 @@ void FixSupersaturation::post_add(const int nlocal_previous) noexcept(true)
 
 /* ---------------------------------------------------------------------- */
 
-void FixSupersaturation::post_delete() noexcept(true)
+void FixKeepCount::post_delete() noexcept(true)
 {
   if (atom->molecular == Atom::ATOMIC) {
     tagint *tag = atom->tag;
