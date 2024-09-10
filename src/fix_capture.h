@@ -13,19 +13,22 @@ FixStyle(capture,FixCapture);
 #ifndef LAMMPS_FIX_CAPTURE_H
 #define LAMMPS_FIX_CAPTURE_H
 
-#include "fix.h"
 #include "compute.h"
+#include "fix.h"
 #include "random_park.h"
 #include "region.h"
+#include <utility>
 
 #include <unordered_map>
 
 namespace LAMMPS_NS {
 
+enum class ACTION { COUNT, SLOW, DELETE };
+
 class FixCapture : public Fix {
  public:
-  FixCapture(class LAMMPS *, int, char **);
-  ~FixCapture() override;
+  FixCapture(class LAMMPS *lmp, int narg, char **arg);
+  ~FixCapture() noexcept(true) override;
   int setmask() override;
   void init() override;
   void final_integrate() override;
@@ -33,18 +36,20 @@ class FixCapture : public Fix {
  protected:
   Region *region = nullptr;
   RanPark *vrandom = nullptr;
-  Compute* compute_temp = nullptr;
+  Compute *compute_temp = nullptr;
 
-  std::unordered_map<int, std::pair<double, double>> typeids;
+  std::unordered_map<int, std::pair<double, double>> typeids;    // mapping type->(vmean,sigma)
 
-  int nsigma;
-  FILE* logfile;
+  ACTION action;    // action to do on captured atoms
 
-  double xlo, ylo, zlo, xhi, yhi, zhi;
-  double lamda[3];
-  double *boxlo, *boxhi;
-  double xone[3];
+  bool screenflag;    // wether to print info to screen or not
+  bool fileflag;      // wether to output info to file or not
 
+  int nsigma;    // number of gaussian sigmas of spread to allow
+  FILE *fp;      // logfile
+
+  void post_delete() noexcept(true);
+  void check_overlap() noexcept(true);
 };
 
 }    // namespace LAMMPS_NS

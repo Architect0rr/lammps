@@ -27,38 +27,26 @@ namespace LAMMPS_NS {
 
 class ComputeSupersaturationMono : public Compute {
  public:
-  ComputeSupersaturationMono(class LAMMPS *, int, char **);
+  ComputeSupersaturationMono(class LAMMPS *lmp, int narg, char **arg);
   ~ComputeSupersaturationMono() noexcept(true) override;
   void init() override;
   double compute_scalar() override;
   void compute_local() override;
   double memory_usage() override;
 
-  double local_scalar;
-  int local_monomers;
-  bigint global_monomers{};
-  double execute_func() const;
-  int *mono_idx{};
+  double local_scalar;            // local supersaturation
+  int local_monomers;             // number of local monomers
+  bigint global_monomers{};       // number of global monomers
+  double execute_func() const;    // monomer number density at saturation curve
+  int *mono_idx{};                // ids of local monomers
 
  private:
-  double xlo{};
-  double ylo{};
-  double zlo{};
-  double xhi{};
-  double yhi{};
-  double zhi{};
-  double lamda[3]{};
-  double *boxlo{};
-  double *boxhi{};
-  double sublo[3]{};
-  double subhi[3]{};    // epsilon-extended proc sub-box for adding atoms
-
   Region *region = nullptr;
-  double coeffs[2]{};
   Compute *compute_neighs = nullptr;
   Compute *compute_temp = nullptr;
 
-  int nloc{};
+  int nloc{};    // number of elements in mono_idx
+  double coeffs[2]{};
 };
 
 }    // namespace LAMMPS_NS

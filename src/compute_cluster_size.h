@@ -25,35 +25,23 @@ ComputeStyle(cluster/size,ComputeClusterSize);
 
 #include <unordered_map>
 
-// typedef NucC::Alloc<std::pair<const tagint, std::vector<tagint>>> myalloc;
-// typedef std::unordered_map<tagint, std::vector<tagint>, std::hash<tagint>, std::less<tagint>, myalloc> mymap;
-
 namespace LAMMPS_NS {
 
 class ComputeClusterSize : public Compute {
  public:
-  ComputeClusterSize(class LAMMPS *, int, char **);
-  ~ComputeClusterSize() override;
+  ComputeClusterSize(class LAMMPS *lmp, int narg, char **arg);
+  ~ComputeClusterSize() noexcept(true) override;
   void init() override;
   void compute_vector() override;
   double memory_usage() override;
 
-  // Mapping cID  -> local idx
-  std::unordered_map<tagint, std::vector<tagint>> atoms_by_cID;
-  // Mapping size -> cIDs
-  std::unordered_map<tagint, std::vector<tagint>> cIDs_by_size;
-  // std::unordered_set<tagint> unique_cIDs;
+  std::unordered_map<tagint, std::vector<tagint>> atoms_by_cID;    // Mapping cID  -> local idx
+  std::unordered_map<tagint, std::vector<tagint>> cIDs_by_size;    // Mapping size -> cIDs
 
  private:
-  double xlo{}, ylo{}, zlo{}, xhi{}, yhi{}, zhi{};
-  double lamda[3]{};
-  double *boxlo{}, *boxhi{};
-  double sublo[3]{}, subhi[3]{};    // epsilon-extended proc sub-box for adding atoms
-
-  //   myalloc alloc;
-  int nloc;
-  double *dist;
-  bigint nc_global;
+  int nloc;            // number of reserved elements in atoms_by_cID and cIDs_by_size
+  double *dist;        // cluster size distribution (vector == dist)
+  bigint nc_global;    // number of clusters total
 
   Region *region = nullptr;
   Compute *compute_cluster_atom = nullptr;

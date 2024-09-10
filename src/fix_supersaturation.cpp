@@ -41,7 +41,8 @@ constexpr int DEFAULT_MAXTRY_CALL = 5;
 
 FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
     Fix(lmp, narg, arg), mode(MODE::LOCAL), screenflag(1), fileflag(0), next_step(0),
-    maxtry(DEFAULT_MAXTRY), scaleflag(0), fix_temp(0), offflag(0), maxtry_call(DEFAULT_MAXTRY_CALL)
+    maxtry(::DEFAULT_MAXTRY), scaleflag(0), fix_temp(0), offflag(0),
+    maxtry_call(::DEFAULT_MAXTRY_CALL)
 {
 
   nevery = 1;
@@ -77,6 +78,9 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
 
   // # of type of atoms to insert
   ntype = utils::inumeric(FLERR, arg[6], true, lmp);
+  if ((ntype <= 0) || (ntype > atom->ntypes)) {
+    error->all(FLERR, "Invalid atom type in create_atoms command");
+  }
 
   // Get the seed for coordinate generator
   int const xseed = utils::inumeric(FLERR, arg[7], true, lmp);
@@ -90,7 +94,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
 
   // Get dampfing parameter
   damp = utils::numeric(FLERR, arg[9], true, lmp);
-  if (damp <= 0 || damp > 1) {
+  if ((damp <= 0) || (damp > 1)) {
     error->all(FLERR, "Dampfing parameter for fix supersaturation must be in range (0,1]");
   }
 
@@ -100,25 +104,25 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
   fp = nullptr;
 
   while (iarg < narg) {
-    if (strcmp(arg[iarg], "maxtry") == 0) {
+    if (::strcmp(arg[iarg], "maxtry") == 0) {
 
       // Max attempts to search for a new suitable location
       maxtry = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);
       if (maxtry < 1) { error->all(FLERR, "maxtry for fix supersaturation cannot be less than 1"); }
       iarg += 2;
 
-    } else if (strcmp(arg[iarg], "mode") == 0) {
+    } else if (::strcmp(arg[iarg], "mode") == 0) {
 
-      if (strcmp(arg[iarg+1], "local") == 0){
+      if (::strcmp(arg[iarg + 1], "local") == 0) {
         mode = MODE::LOCAL;
-      } else if (strcmp(arg[iarg+1], "universe") == 0){
+      } else if (::strcmp(arg[iarg + 1], "universe") == 0) {
         mode = MODE::UNIVERSE;
       } else {
         error->all(FLERR, "Unknown mode for fix supersaturation: {}", arg[iarg + 1]);
       }
       iarg += 2;
 
-    } else if (strcmp(arg[iarg], "maxtry_call") == 0) {
+    } else if (::strcmp(arg[iarg], "maxtry_call") == 0) {
 
       // Get max number of tries for calling delete_monomers()/add_monomers()
       maxtry_call = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);
@@ -127,7 +131,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
       }
       iarg += 2;
 
-    } else if (strcmp(arg[iarg], "temp") == 0) {
+    } else if (::strcmp(arg[iarg], "temp") == 0) {
 
       // Monomer temperature
       fix_temp = 1;
@@ -141,18 +145,18 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
       vrandom = new RanPark(lmp, vseed);
       iarg += 3;
 
-    } else if (strcmp(arg[iarg], "noscreen") == 0) {
+    } else if (::strcmp(arg[iarg], "noscreen") == 0) {
 
       // Do not output to screen
       screenflag = 0;
       iarg += 1;
 
-    } else if (strcmp(arg[iarg], "file") == 0) {
+    } else if (::strcmp(arg[iarg], "file") == 0) {
 
       // Write output to new file
       if (comm->me == 0) {
         fileflag = 1;
-        fp = fopen(arg[iarg + 1], "w");
+        fp = ::fopen(arg[iarg + 1], "w");
         if (fp == nullptr) {
           error->one(FLERR, "Cannot open fix supersaturation stats file {}: {}", arg[iarg + 1],
                      utils::getsyserror());
@@ -160,12 +164,12 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
       }
       iarg += 2;
 
-    } else if (strcmp(arg[iarg], "append") == 0) {
+    } else if (::strcmp(arg[iarg], "append") == 0) {
 
       // Append output to file
       if (comm->me == 0) {
         fileflag = 1;
-        fp = fopen(arg[iarg + 1], "a");
+        fp = ::fopen(arg[iarg + 1], "a");
         if (fp == nullptr) {
           error->one(FLERR, "Cannot open fix supersaturation stats file {}: {}", arg[iarg + 1],
                      utils::getsyserror());
@@ -173,13 +177,13 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
       }
       iarg += 2;
 
-    } else if (strcmp(arg[iarg], "nevery") == 0) {
+    } else if (::strcmp(arg[iarg], "nevery") == 0) {
 
       // Get execution period
       nevery = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);
       iarg += 2;
 
-    } else if (strcmp(arg[iarg], "offset") == 0) {
+    } else if (::strcmp(arg[iarg], "offset") == 0) {
 
       // Get start offset
       start_offset = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);
@@ -189,11 +193,11 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
       offflag = 1;
       iarg += 2;
 
-    } else if (strcmp(arg[iarg], "units") == 0) {
+    } else if (::strcmp(arg[iarg], "units") == 0) {
 
-      if (strcmp(arg[iarg + 1], "box") == 0) {
+      if (::strcmp(arg[iarg + 1], "box") == 0) {
         scaleflag = 0;
-      } else if (strcmp(arg[iarg + 1], "lattice") == 0) {
+      } else if (::strcmp(arg[iarg + 1], "lattice") == 0) {
         scaleflag = 1;
       } else {
         error->all(FLERR, "Unknown fix supersaturation units option {}", arg[iarg + 1]);
@@ -255,14 +259,14 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
     subbonds[2][1] = MIN(subbonds[2][1], region->extent_zhi);
   }
 
-  if (globbonds[0][0] > globbonds[0][1] || globbonds[1][0] > globbonds[1][1] ||
-      globbonds[2][0] > globbonds[2][1]) {
+  if ((globbonds[0][0] > globbonds[0][1]) || (globbonds[1][0] > globbonds[1][1]) ||
+      (globbonds[2][0] > globbonds[2][1])) {
     error->all(FLERR, "No overlap of box and region for fix keep/count");
   }
 
-  if (comm->me == 0 && (fileflag != 0)) {
+  if ((comm->me == 0) && (fileflag != 0)) {
     fmt::print(fp, "ntimestep,ntotal,a2d,a2a,ad,aa,ssb,ssa,del\n");
-    fflush(fp);
+    ::fflush(fp);
   }
 
   next_step = update->ntimestep - (update->ntimestep % nevery);
@@ -270,8 +274,8 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
 
   memory->create(pproc, comm->nprocs * sizeof(int), "fix_supersaturation:pproc");
 
-  memset(xone, 0, 3 * sizeof(double));
-  memset(lamda, 0, 3 * sizeof(double));
+  ::memset(xone, 0, 3 * sizeof(double));
+  ::memset(lamda, 0, 3 * sizeof(double));
 
   alogrand = new RanPark(lmp, comm->nprocs);
 }
@@ -283,11 +287,21 @@ FixSupersaturation::~FixSupersaturation() noexcept(true)
   delete xrandom;
   delete vrandom;
   delete alogrand;
+
   if ((fp != nullptr) && (comm->me == 0)) {
-    fflush(fp);
-    fclose(fp);
+    ::fflush(fp);
+    ::fclose(fp);
   }
   memory->destroy(pproc);
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixSupersaturation::init()
+{
+  if ((modify->get_fix_by_style(style).size() > 1) && (comm->me == 0)) {
+    error->warning(FLERR, "More than one fix {}", style);
+  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -324,12 +338,23 @@ void FixSupersaturation::pre_exchange()
   const int nlocal_previous = atom->nlocal;
 
   if (delta != 0) {
-    if (!delflag && mode == MODE::UNIVERSE) {
+    if (!delflag) {
+      // clear global->local map for owned and ghost atoms
+      // clear ghost count and any ghost bonus data internal to AtomVec
+      // same logic as beginning of Comm::exchange()
+      // do it now b/c creating atoms will overwrite ghost atoms
+
+      if (atom->map_style != Atom::MAP_NONE) { atom->map_clear(); }
+      atom->nghost = 0;
+      atom->avec->clear_bonus();
+    }
+
+    if ((!delflag) && (mode == MODE::UNIVERSE)) {
       for (bigint i = 0; i < delta; ++i) {
         if (gen_one_full()) {    // if success new coords will be already in xone[]
-          if (coord[0] >= subbonds[0][0] && coord[0] < subbonds[0][1] &&
-              coord[1] >= subbonds[1][0] && coord[1] < subbonds[1][1] &&
-              coord[2] >= subbonds[2][0] && coord[2] < subbonds[2][1]) {
+          if ((coord[0] >= subbonds[0][0]) && (coord[0] < subbonds[0][1]) &&
+              (coord[1] >= subbonds[1][0]) && (coord[1] < subbonds[1][1]) &&
+              (coord[2] >= subbonds[2][0]) && (coord[2] < subbonds[2][1])) {
             atom->avec->create_atom(ntype, xone);
             if (fix_temp != 0) { set_speed(atom->nlocal - 1); }
           }
@@ -337,11 +362,11 @@ void FixSupersaturation::pre_exchange()
       }
     } else {
       bigint sum = delta;
-      int __ntry = maxtry_call;
+      int tries = maxtry_call;
 
       do {
         pproc[comm->me] = static_cast<int>(sum / comm->nprocs);
-        if (static_cast<int>(alogrand->uniform() * 32767) == comm->me) {
+        if (static_cast<int>(alogrand->uniform() * 32'767) == comm->me) {
           pproc[comm->me] += sum % comm->nprocs;
         }
 
@@ -354,14 +379,14 @@ void FixSupersaturation::pre_exchange()
         }
 
         int temp = pproc[comm->me];
-        memset(pproc, 0, comm->nprocs * sizeof(int));
-        MPI_Allgather(&temp, 1, MPI_INT, pproc, 1, MPI_INT, world);
+        ::memset(pproc, 0, comm->nprocs * sizeof(int));
+        ::MPI_Allgather(&temp, 1, MPI_INT, pproc, 1, MPI_INT, world);
 
         sum = 0;
         for (int i = 0; i < comm->nprocs; ++i) { sum += pproc[i]; }
-        --__ntry;
+        --tries;
 
-      } while (sum > 0 && __ntry > 0);
+      } while ((sum > 0) && (tries > 0));
     }
 
     if (atom->natoms < natoms_previous) {
@@ -387,7 +412,7 @@ void FixSupersaturation::pre_exchange()
                  delflag ? delta : 0, !delflag ? delta : 0, delflag ? atom_delta : 0,
                  !delflag ? atom_delta : 0, previous_supersaturation, newsupersaturation,
                  newsupersaturation - previous_supersaturation);
-      fflush(fp);
+      ::fflush(fp);
     }
   }
 }
@@ -444,14 +469,14 @@ void FixSupersaturation::add_monomers2() noexcept(true)
 {
   const double cutoff = lmp->force->pair->cutforce;
   auto const nx =
-      static_cast<bigint>(floor((subbonds[0][1] - subbonds[0][0] - 2 * cutoff) / overlap));
+      static_cast<bigint>(::floor((subbonds[0][1] - subbonds[0][0] - 2 * cutoff) / overlap));
   auto const ny =
-      static_cast<bigint>(floor((subbonds[1][1] - subbonds[1][0] - 2 * cutoff) / overlap));
+      static_cast<bigint>(::floor((subbonds[1][1] - subbonds[1][0] - 2 * cutoff) / overlap));
   auto const nz =
-      static_cast<bigint>(floor((subbonds[2][1] - subbonds[2][0] - 2 * cutoff) / overlap));
-  for (bigint i = 0; i < nx && pproc[comm->me] > 0; ++i) {
-    for (bigint j = 0; j < ny && pproc[comm->me] > 0; ++j) {
-      for (bigint k = 0; k < nz && pproc[comm->me] > 0; ++k) {
+      static_cast<bigint>(::floor((subbonds[2][1] - subbonds[2][0] - 2 * cutoff) / overlap));
+  for (bigint i = 0; (i < nx) && (pproc[comm->me] > 0); ++i) {
+    for (bigint j = 0; (j < ny) && (pproc[comm->me] > 0); ++j) {
+      for (bigint k = 0; (k < nz) && (pproc[comm->me] > 0); ++k) {
         if (gen_one_local_at(subbonds[0][0] + cutoff + overlap * i,
                              subbonds[1][0] + cutoff + overlap * j,
                              subbonds[2][0] + cutoff + overlap * k, overlap, overlap, overlap)) {
@@ -505,8 +530,8 @@ bool FixSupersaturation::gen_one_full() noexcept(true)
     if (triclinic != 0) {
       domain->x2lamda(xone, lamda);
       coord = lamda;
-      if (coord[0] < boxlo[0] || coord[0] >= boxhi[0] || coord[1] < boxlo[1] ||
-          coord[1] >= boxhi[1] || coord[2] < boxlo[2] || coord[2] >= boxhi[2]) {
+      if ((coord[0] < boxlo[0]) || (coord[0] >= boxhi[0]) || (coord[1] < boxlo[1]) ||
+          (coord[1] >= boxhi[1]) || (coord[2] < boxlo[2]) || (coord[2] >= boxhi[2])) {
         continue;
       }
     } else {
@@ -520,7 +545,7 @@ bool FixSupersaturation::gen_one_full() noexcept(true)
     int reject = 0;
 
     // check new position for overlapping with all local atoms
-    for (int i = 0; i < atom->nmax; i++) {
+    for (int i = 0; i < atom->nmax; ++i) {
       double delx = xone[0] - x[i][0];
       double dely = xone[1] - x[i][1];
       double delz = xone[2] - x[i][2];
@@ -528,7 +553,7 @@ bool FixSupersaturation::gen_one_full() noexcept(true)
       const double distsq1 = delx * delx + dely * dely + delz * delz;
       domain->minimum_image(delx, dely, delz);
       const double distsq = delx * delx + dely * dely + delz * delz;
-      if (distsq < odistsq || distsq1 < odistsq) {
+      if ((distsq < odistsq) || (distsq1 < odistsq)) {
         reject = 1;
         break;
       }
@@ -536,7 +561,7 @@ bool FixSupersaturation::gen_one_full() noexcept(true)
 
     // gather reject flags from all of the procs
     int reject_any = 0;
-    MPI_Allreduce(&reject, &reject_any, 1, MPI_INT, MPI_MAX, world);
+    ::MPI_Allreduce(&reject, &reject_any, 1, MPI_INT, MPI_MAX, world);
     if (reject_any != 0) { continue; }
 
     // all tests passed
@@ -569,8 +594,8 @@ bool FixSupersaturation::gen_one_local() noexcept(true)
     if (triclinic != 0) {
       domain->x2lamda(xone, lamda);
       coord = lamda;
-      if (coord[0] < boxlo[0] || coord[0] >= boxhi[0] || coord[1] < boxlo[1] ||
-          coord[1] >= boxhi[1] || coord[2] < boxlo[2] || coord[2] >= boxhi[2]) {
+      if ((coord[0] < boxlo[0]) || (coord[0] >= boxhi[0]) || (coord[1] < boxlo[1]) ||
+          (coord[1] >= boxhi[1]) || (coord[2] < boxlo[2]) || (coord[2] >= boxhi[2])) {
         continue;
       }
     } else {
@@ -584,7 +609,7 @@ bool FixSupersaturation::gen_one_local() noexcept(true)
     bool reject = false;
 
     // check new position for overlapping with all local atoms
-    for (int i = 0; i < atom->nmax; i++) {
+    for (int i = 0; i < atom->nmax; ++i) {
       double delx = xone[0] - x[i][0];
       double dely = xone[1] - x[i][1];
       double delz = xone[2] - x[i][2];
@@ -592,7 +617,7 @@ bool FixSupersaturation::gen_one_local() noexcept(true)
 
       domain->minimum_image(delx, dely, delz);
       const double distsq = delx * delx + dely * dely + delz * delz;
-      if (distsq < odistsq || distsq1 < odistsq) {
+      if ((distsq < odistsq) || (distsq1 < odistsq)) {
         reject = true;
         break;
       }
@@ -627,8 +652,8 @@ bool FixSupersaturation::gen_one_local_at(double _x, double _y, double _z, doubl
     if (triclinic != 0) {
       domain->x2lamda(xone, lamda);
       coord = lamda;
-      if (coord[0] < boxlo[0] || coord[0] >= boxhi[0] || coord[1] < boxlo[1] ||
-          coord[1] >= boxhi[1] || coord[2] < boxlo[2] || coord[2] >= boxhi[2]) {
+      if ((coord[0] < boxlo[0]) || (coord[0] >= boxhi[0]) || (coord[1] < boxlo[1]) ||
+          (coord[1] >= boxhi[1]) || (coord[2] < boxlo[2]) || (coord[2] >= boxhi[2])) {
         continue;
       }
     } else {
@@ -642,7 +667,7 @@ bool FixSupersaturation::gen_one_local_at(double _x, double _y, double _z, doubl
     bool reject = false;
 
     // check new position for overlapping with all local atoms
-    for (int i = 0; i < atom->nmax; i++) {
+    for (int i = 0; i < atom->nmax; ++i) {
       double delx = xone[0] - x[i][0];
       double dely = xone[1] - x[i][1];
       double delz = xone[2] - x[i][2];
@@ -650,7 +675,7 @@ bool FixSupersaturation::gen_one_local_at(double _x, double _y, double _z, doubl
 
       domain->minimum_image(delx, dely, delz);
       double const distsq = delx * delx + dely * dely + delz * delz;
-      if (distsq < odistsq || distsq1 < odistsq) {
+      if ((distsq < odistsq) || (distsq1 < odistsq)) {
         reject = true;
         break;
       }
@@ -675,8 +700,10 @@ void FixSupersaturation::post_add(const int nlocal_previous) noexcept(true)
   // set new total # of atoms and error check
 
   bigint nblocal = atom->nlocal;
-  MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-  if (atom->natoms < 0 || atom->natoms >= MAXBIGINT) { error->all(FLERR, "Too many total atoms"); }
+  ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  if ((atom->natoms < 0) || (atom->natoms >= MAXBIGINT)) {
+    error->all(FLERR, "Too many total atoms");
+  }
 
   // add IDs for newly created atoms
   // check that atom IDs are valid
@@ -700,14 +727,14 @@ void FixSupersaturation::post_delete() noexcept(true)
   if (atom->molecular == Atom::ATOMIC) {
     tagint *tag = atom->tag;
     int const nlocal = atom->nlocal;
-    for (int i = 0; i < nlocal; i++) { tag[i] = 0; }
+    for (int i = 0; i < nlocal; ++i) { tag[i] = 0; }
     atom->tag_extend();
   }
 
   // reset atom->natoms and also topology counts
 
   bigint nblocal = atom->nlocal;
-  MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
 
   // reset bonus data counts
 
@@ -719,19 +746,19 @@ void FixSupersaturation::post_delete() noexcept(true)
 
   if (atom->nellipsoids > 0) {
     nlocal_bonus = avec_ellipsoid->nlocal_bonus;
-    MPI_Allreduce(&nlocal_bonus, &atom->nellipsoids, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    ::MPI_Allreduce(&nlocal_bonus, &atom->nellipsoids, 1, MPI_LMP_BIGINT, MPI_SUM, world);
   }
   if (atom->nlines > 0) {
     nlocal_bonus = avec_line->nlocal_bonus;
-    MPI_Allreduce(&nlocal_bonus, &atom->nlines, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    ::MPI_Allreduce(&nlocal_bonus, &atom->nlines, 1, MPI_LMP_BIGINT, MPI_SUM, world);
   }
   if (atom->ntris > 0) {
     nlocal_bonus = avec_tri->nlocal_bonus;
-    MPI_Allreduce(&nlocal_bonus, &atom->ntris, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    ::MPI_Allreduce(&nlocal_bonus, &atom->ntris, 1, MPI_LMP_BIGINT, MPI_SUM, world);
   }
   if (atom->nbodies > 0) {
     nlocal_bonus = avec_body->nlocal_bonus;
-    MPI_Allreduce(&nlocal_bonus, &atom->nbodies, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    ::MPI_Allreduce(&nlocal_bonus, &atom->nbodies, 1, MPI_LMP_BIGINT, MPI_SUM, world);
   }
 
   // reset atom->map if it exists

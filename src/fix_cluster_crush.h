@@ -24,8 +24,9 @@ namespace LAMMPS_NS {
 
 class FixClusterCrush : public Fix {
  public:
-  FixClusterCrush(class LAMMPS *, int, char **);
+  FixClusterCrush(class LAMMPS *lmp, int narg, char **arg);
   ~FixClusterCrush() noexcept(true) override;
+  void init() override;
   int setmask() override;
   void pre_exchange() override;
 
@@ -53,12 +54,9 @@ class FixClusterCrush : public Fix {
   double monomer_temperature;
   double odistsq;
 
-  double xlo;
-  double ylo;
-  double zlo;
-  double xhi;
-  double yhi;
-  double zhi;
+  double globbonds[3][2]{};
+  double subbonds[3][2]{};
+  double *coord{};
   double lamda[3]{};
   double *boxlo;
   double *boxhi;
@@ -72,11 +70,11 @@ class FixClusterCrush : public Fix {
 
   int teleportflag;
 
-  bool gen_one() noexcept(true);
-  void set(int) noexcept(true);
-  void delete_monomers(int) noexcept(true);
-  void post_teleport() noexcept(true);
-  void post_delete() noexcept(true);
+  bool genOneFull() noexcept(true);
+  void set(int pID) noexcept(true);
+  void deleteAtoms(int atoms2move_local) noexcept(true);
+  void postTeleport() noexcept(true);
+  void postDelete() noexcept(true);
 };
 
 }    // namespace LAMMPS_NS

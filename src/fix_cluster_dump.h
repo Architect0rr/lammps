@@ -20,8 +20,8 @@ namespace LAMMPS_NS {
 
 class FixClusterDump : public Fix {
  public:
-  FixClusterDump(class LAMMPS *, int, char **);
-  ~FixClusterDump() override;
+  FixClusterDump(class LAMMPS *lmp, int narg, char **arg);
+  ~FixClusterDump() noexcept(true) override;
   int setmask() override;
   void init() override;
   void end_of_step() override;

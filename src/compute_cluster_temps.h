@@ -27,8 +27,8 @@ namespace LAMMPS_NS {
 
 class ComputeClusterTemp : public Compute {
  public:
-  ComputeClusterTemp(class LAMMPS *, int, char **);
-  ~ComputeClusterTemp() override;
+  ComputeClusterTemp(class LAMMPS *lmp, int narg, char **arg);
+  ~ComputeClusterTemp() noexcept(true) override;
   void init() override;
   void compute_vector() override;
   void compute_local() override;
@@ -37,8 +37,9 @@ class ComputeClusterTemp : public Compute {
  private:
   ComputeClusterSize *compute_cluster_size = nullptr;
   Compute *compute_ke_atom = nullptr;
-  double *temp = nullptr;
-  double *local_temp = nullptr;
+
+  double *temp = nullptr;          // array of temps of global clusters
+  double *local_temp = nullptr;    // array of temps of local clusters
 };
 
 }    // namespace LAMMPS_NS

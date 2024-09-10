@@ -70,22 +70,22 @@ FixClusterDump::FixClusterDump(LAMMPS *lmp, int narg, char **arg) :
   }
 
   if (comm->me == 0) {
-    cldist = fopen(arg[9], "a");
+    cldist = ::fopen(arg[9], "a");
     if (cldist == nullptr) {
       error->one(FLERR, "Cannot open file {}: {}", arg[9], utils::getsyserror());
     }
 
-    cltemp = fopen(arg[10], "a");
+    cltemp = ::fopen(arg[10], "a");
     if (cltemp == nullptr) {
       error->one(FLERR, "Cannot open file {}: {}", arg[10], utils::getsyserror());
     }
 
-    scalars = fopen(arg[11], "a");
+    scalars = ::fopen(arg[11], "a");
     if (scalars == nullptr) {
       error->one(FLERR, "Cannot open file {}: {}", arg[11], utils::getsyserror());
     }
     fmt::print(scalars, "ntimestep,T,Srho,S1\n");
-    fflush(scalars);
+    ::fflush(scalars);
   }
 
   // Get temp compute
@@ -98,21 +98,30 @@ FixClusterDump::FixClusterDump(LAMMPS *lmp, int narg, char **arg) :
 
 /* ---------------------------------------------------------------------- */
 
-FixClusterDump::~FixClusterDump()
+FixClusterDump::~FixClusterDump() noexcept(true)
 {
   if (comm->me == 0) {
     if (cldist != nullptr) {
-      fflush(cldist);
-      fclose(cldist);
+      ::fflush(cldist);
+      ::fclose(cldist);
     }
     if (cltemp != nullptr) {
-      fflush(cltemp);
-      fclose(cltemp);
+      ::fflush(cltemp);
+      ::fclose(cltemp);
     }
     if (scalars != nullptr) {
-      fflush(scalars);
-      fclose(scalars);
+      ::fflush(scalars);
+      ::fclose(scalars);
     }
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixClusterDump::init()
+{
+  if ((modify->get_fix_by_style(style).size() > 1) && (comm->me == 0)) {
+    error->warning(FLERR, "More than one fix {}", style);
   }
 }
 
@@ -124,10 +133,6 @@ int FixClusterDump::setmask()
   mask |= END_OF_STEP;
   return mask;
 }
-
-/* ---------------------------------------------------------------------- */
-
-void FixClusterDump::init() {}
 
 /* ---------------------------------------------------------------------- */
 
@@ -167,16 +172,16 @@ void FixClusterDump::end_of_step()
       fmt::print(cldist, "{},", static_cast<bigint>(dist[i]));
     }
     fmt::print(cldist, "{}\n", static_cast<bigint>(dist[write_cutoff]));
-    fflush(cldist);
+    ::fflush(cldist);
 
     fmt::print(cltemp, "{},", update->ntimestep);
     for (bigint i = 1; i < write_cutoff; ++i) { fmt::print(cltemp, "{:.5f},", temp[i]); }
     fmt::print(cltemp, "{:.5f}\n", temp[write_cutoff]);
-    fflush(cltemp);
+    ::fflush(cltemp);
 
     fmt::print(scalars, "{},{:.5f},{:.5f},{:.5f}\n", update->ntimestep, compute_temp->scalar,
                compute_supersaturation_density->scalar, compute_supersaturation_mono->scalar);
-    fflush(scalars);
+    ::fflush(scalars);
   }
 
 }    // void FixClusterCrush::end_of_step()

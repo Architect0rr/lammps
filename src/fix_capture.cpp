@@ -8,18 +8,19 @@
 #include "fix_capture.h"
 
 #include "atom.h"
+#include "atom_vec.h"
+#include "atom_vec_body.h"
+#include "atom_vec_ellipsoid.h"
+#include "atom_vec_line.h"
+#include "atom_vec_tri.h"
 #include "comm.h"
 #include "domain.h"
 #include "error.h"
 #include "fix.h"
 #include "fmt/core.h"
-#include "irregular.h"
-#include "lattice.h"
-#include "memory.h"
 #include "modify.h"
 #include "update.h"
 
-#include <time.h>
 #include <cmath>
 #include <cstring>
 #include <unordered_map>
@@ -29,86 +30,109 @@ using namespace FixConst;
 
 /* ---------------------------------------------------------------------- */
 
-FixCapture::FixCapture(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
+FixCapture::FixCapture(LAMMPS *lmp, int narg, char **arg) :
+    Fix(lmp, narg, arg), action(ACTION::COUNT), screenflag(true), fileflag(false)
 {
 
   restart_pbc = 1;
 
-  if (domain->dimension == 2) { error->all(FLERR, "cluster/crush is not compatible with 2D yet"); }
-
-  if (narg < 6) utils::missing_cmd_args(FLERR, "cluster/crush", error);
+  if (narg < 5) { utils::missing_cmd_args(FLERR, "fix capture", error); }
 
   // Parse arguments //
 
   // Target region
   region = domain->get_region_by_id(arg[3]);
-  if (region == nullptr) { error->all(FLERR, "Cannot find target region {}", arg[3]); }
-
-  // Get the seed for velocity generator
-  int vseed = utils::numeric(FLERR, arg[4], true, lmp);
-  vrandom = new RanPark(lmp, vseed);
+  if (region == nullptr) { error->all(FLERR, "fix capture: Cannot find target region {}", arg[3]); }
 
   // Get number of sigmas
-  nsigma = utils::numeric(FLERR, arg[5], true, lmp);
+  nsigma = utils::inumeric(FLERR, arg[4], true, lmp);
+
+  int iarg = 5;
+  fp = nullptr;
+
+  while (iarg < narg) {
+    if (::strcmp(arg[iarg], "action") == 0) {
+
+      if (::strcmp(arg[iarg + 1], "count") == 0) {
+
+        action = ACTION::COUNT;
+        iarg += 2;
+
+      } else if (::strcmp(arg[iarg + 1], "delete") == 0) {
+
+        action = ACTION::DELETE;
+        iarg += 2;
+
+      } else if (::strcmp(arg[iarg + 1], "cool") == 0) {
+
+        action = ACTION::SLOW;
+        // Get the seed for velocity generator
+        int const vseed = utils::inumeric(FLERR, arg[iarg + 2], true, lmp);
+        vrandom = new RanPark(lmp, vseed);
+        iarg += 3;
+
+      } else {
+        error->all(FLERR, "Unknown mode for fix capture: {}", arg[iarg + 1]);
+      }
+
+    } else if (::strcmp(arg[iarg], "noscreen") == 0) {
+
+      // Do not output to screen
+      screenflag = false;
+      iarg += 1;
+
+    } else if (::strcmp(arg[iarg], "file") == 0) {
+
+      // Write output to new file
+      if (comm->me == 0) {
+        fileflag = true;
+        fp = ::fopen(arg[iarg + 1], "w");
+        if (fp == nullptr) {
+          error->one(FLERR, "Cannot open fix capture stats file {}: {}", arg[iarg + 1],
+                     utils::getsyserror());
+        }
+      }
+      iarg += 2;
+
+    } else if (::strcmp(arg[iarg], "append") == 0) {
+
+      // Append output to file
+      if (comm->me == 0) {
+        fileflag = true;
+        fp = ::fopen(arg[iarg + 1], "a");
+        if (fp == nullptr) {
+          error->one(FLERR, "Cannot open fix capture stats file {}: {}", arg[iarg + 1],
+                     utils::getsyserror());
+        }
+      }
+      iarg += 2;
+    } else {
+      error->all(FLERR, "Illegal fix capture command");
+    }
+  }
 
   // Get temp compute
   auto temp_computes = lmp->modify->get_compute_by_style("temp");
-  if (temp_computes.size() == 0) {
-    error->all(FLERR, "compute supersaturation: Cannot find compute with style 'temp'.");
+  if (temp_computes.empty()) {
+    error->all(FLERR, "fix capture: Cannot find compute with style 'temp'.");
   }
   compute_temp = temp_computes[0];
 
-  int triclinic = domain->triclinic;
-
-  // bounding box for atom creation
-  // only limit bbox by region if its bboxflag is set (interior region)
-
-  if (triclinic == 0) {
-    xlo = domain->boxlo[0];
-    xhi = domain->boxhi[0];
-    ylo = domain->boxlo[1];
-    yhi = domain->boxhi[1];
-    zlo = domain->boxlo[2];
-    zhi = domain->boxhi[2];
-  } else {
-    xlo = domain->boxlo_bound[0];
-    xhi = domain->boxhi_bound[0];
-    ylo = domain->boxlo_bound[1];
-    yhi = domain->boxhi_bound[1];
-    zlo = domain->boxlo_bound[2];
-    zhi = domain->boxhi_bound[2];
-    boxlo = domain->boxlo_lamda;
-    boxhi = domain->boxhi_lamda;
-  }
-
-  if (region && region->bboxflag) {
-    xlo = MAX(xlo, region->extent_xlo);
-    xhi = MIN(xhi, region->extent_xhi);
-    ylo = MAX(ylo, region->extent_ylo);
-    yhi = MIN(yhi, region->extent_yhi);
-    zlo = MAX(zlo, region->extent_zlo);
-    zhi = MIN(zhi, region->extent_zhi);
-  }
-
-  if (xlo > xhi || ylo > yhi || zlo > zhi)
-    error->all(FLERR, "No overlap of box and region for cluster/crush");
-  if (comm->me == 0){
-    logfile = fopen("fix_capture.log", "a");
-    if (logfile == nullptr)
-      error->one(FLERR, "Cannot open fix capture log file {}: {}", "fix_capture.log", utils::getsyserror());
-    fmt::print(logfile, "ts,n,vmean,sigma,mean_md\n");
-    fflush(logfile);
+  if (fileflag && (comm->me == 0)) {
+    fmt::print(fp, "ntimestep,n\n");
+    ::fflush(fp);
   }
 }
 
 /* ---------------------------------------------------------------------- */
 
-FixCapture::~FixCapture()
+FixCapture::~FixCapture() noexcept(true)
 {
   delete vrandom;
-  if (comm->me == 0){
-    fflush(logfile);
-    fclose(logfile);
+
+  if ((fp != nullptr) && (comm->me == 0)) {
+    ::fflush(fp);
+    ::fclose(fp);
   }
 }
 
@@ -123,79 +147,142 @@ int FixCapture::setmask()
 
 /* ---------------------------------------------------------------------- */
 
-void FixCapture::init() {
+void FixCapture::init()
+{
+  if ((modify->get_fix_by_style(style).size() > 1) && (comm->me == 0)) {
+    error->warning(FLERR, "More than one fix {}", style);
+  }
+
   typeids.clear();
   typeids.reserve(atom->ntypes);
-  for (int i = 0; i < atom->nlocal; ++i){
-    typeids.emplace(atom->type[i], std::make_pair<double, double>(0.0, 0.0));
-  }
-  for (const auto& [k, v] : typeids){
-    if (!atom->mass_setflag[k]){
+  for (int i = 0; i < atom->nlocal; ++i) { typeids.try_emplace(atom->type[i], 0.0, 0.0); }
+  for (const auto &[k, v] : typeids) {
+    if (atom->mass_setflag[k] == 0) {
       error->all(FLERR, "fix capture: mass is not set for atom type {}.", k);
     }
   }
-  // if (atom->mass_setflag){
-  //   error->all(FLERR, "fix capture: mass is not set.");
-  // }
 }
 
 /* ---------------------------------------------------------------------- */
 
 void FixCapture::final_integrate()
 {
-  if (compute_temp->invoked_scalar != update->ntimestep){
-    compute_temp->compute_scalar();
-  }
+  if (compute_temp->invoked_scalar != update->ntimestep) { compute_temp->compute_scalar(); }
 
-  // constexpr long double c_v = 0.7978845608028653558798921198687L;  // sqrt(2/pi)
-  constexpr long double c_v = 1.4142135623730950488016887242097L;  // sqrt(2)
-  for (auto& [k, v] : typeids){
-    v.first = sqrt(compute_temp->scalar / atom->mass[k]);
-    v.second = c_v * v.first;
+  constexpr long double c_v = 1.4142135623730950488016887242097L;    // sqrt(2)
+  for (auto &[k, v] : typeids) {
+    v.first = ::sqrt(compute_temp->scalar / atom->mass[k]);
+    v.second = static_cast<double>(c_v) * v.first;
   }
 
   double **v = atom->v;
 
   bigint ncaptured_local = 0;
-  for (int i = 0; i < atom->nlocal; ++i){
-    const auto& [sigma, vmean] = typeids[atom->type[i]];
-    constexpr long double a_v = 1.7320508075688772935274463415059L;  // sqrt(3)
-    if (sqrt(v[i][0] * v[i][0] + v[i][1] * v[i][1] + v[i][2] * v[i][2]) > /*a_v **/ (vmean + nsigma * sigma)){
-      v[i][0] = (vmean + vrandom->gaussian() * sigma)/2;
-      v[i][1] = (vmean + vrandom->gaussian() * sigma)/2;
-      v[i][2] = (vmean + vrandom->gaussian() * sigma)/2;
+  for (int i = 0; i < atom->nlocal; ++i) {
+    const auto &[sigma, vmean] = typeids[atom->type[i]];
+    if (((atom->mask[i] & groupbit) != 0) &&
+        (region->match(atom->x[i][0], atom->x[i][1], atom->x[i][2]) != 0) &&
+        (::sqrt(v[i][0] * v[i][0] + v[i][1] * v[i][1] + v[i][2] * v[i][2]) >
+         (vmean + nsigma * sigma))) {
+      if (action == ACTION::SLOW) {
+        v[i][0] = (vmean + vrandom->gaussian() * sigma) / 2;
+        v[i][1] = (vmean + vrandom->gaussian() * sigma) / 2;
+        v[i][2] = (vmean + vrandom->gaussian() * sigma) / 2;
+      } else if (action == ACTION::DELETE) {
+        atom->avec->copy(atom->nlocal - 1, i, 1);
+        --atom->nlocal;
+        --i;
+      } else {
+        // for linter
+      }
 
       ++ncaptured_local;
     }
   }
 
-  bigint ncaptured_total = 0;
-  MPI_Allreduce(&ncaptured_local, &ncaptured_total, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  if ((action == ACTION::DELETE) && (ncaptured_local > 0)) { post_delete(); }
 
-  constexpr long double a_v = 0.8*1.0220217810393767580226573302752L;
+  bigint ncaptured_total = 0;
+  ::MPI_Allreduce(&ncaptured_local, &ncaptured_total, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+
+  if (fileflag && (comm->me == 0)) {
+    fmt::print(fp, "{},{}\n", update->ntimestep, ncaptured_total);
+    ::fflush(fp);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixCapture::check_overlap() noexcept(true)
+{
+  constexpr long double a_v = 0.8 * 1.0220217810393767580226573302752L;
   constexpr long double b_v = 0.1546370863640482533333333333333L;
-  double rl = a_v*exp(b_v*pow(compute_temp->scalar, 2.791206046910478));
+  auto const rl = static_cast<double>(a_v) *
+      ::exp(static_cast<double>(b_v) * ::pow(compute_temp->scalar, 2.791206046910478));
 
   bigint nclose_local = 0;
   double **x = atom->x;
-  for (int i = 0; i < atom->nlocal; ++i){
-    for (int j = i + 1; j < atom->nghost; ++j){
-      double dx, dy, dz;
-      dx = x[i][0] - x[j][0];
-      dy = x[i][1] - x[j][1];
-      dz = x[i][2] - x[j][2];
-      if (dx*dx + dy*dy + dz*dz < rl*rl){
-        ++nclose_local;
-      }
+  for (int i = 0; i < atom->nlocal; ++i) {
+    for (int j = i + 1; j < atom->nmax; ++j) {
+      const double dx = x[i][0] - x[j][0];
+      const double dy = x[i][1] - x[j][1];
+      const double dz = x[i][2] - x[j][2];
+      if (dx * dx + dy * dy + dz * dz < rl * rl) { ++nclose_local; }
     }
   }
 
   bigint nclose_total = 0;
-  MPI_Allreduce(&nclose_local, &nclose_total, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  ::MPI_Allreduce(&nclose_local, &nclose_total, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+}
 
-  if (comm->me == 0){
-    fmt::print(logfile, "{},{}, {}\n", update->ntimestep, ncaptured_total, nclose_total);
-    fflush(logfile);
+/* ---------------------------------------------------------------------- */
+
+void FixCapture::post_delete() noexcept(true)
+{
+  if (atom->molecular == Atom::ATOMIC) {
+    tagint *tag = atom->tag;
+    int const nlocal = atom->nlocal;
+    for (int i = 0; i < nlocal; ++i) { tag[i] = 0; }
+    atom->tag_extend();
+  }
+
+  // reset atom->natoms and also topology counts
+
+  bigint nblocal = atom->nlocal;
+  ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+
+  // reset bonus data counts
+
+  const auto *avec_ellipsoid = dynamic_cast<AtomVecEllipsoid *>(atom->style_match("ellipsoid"));
+  const auto *avec_line = dynamic_cast<AtomVecLine *>(atom->style_match("line"));
+  const auto *avec_tri = dynamic_cast<AtomVecTri *>(atom->style_match("tri"));
+  const auto *avec_body = dynamic_cast<AtomVecBody *>(atom->style_match("body"));
+  bigint nlocal_bonus = 0;
+
+  if (atom->nellipsoids > 0) {
+    nlocal_bonus = avec_ellipsoid->nlocal_bonus;
+    ::MPI_Allreduce(&nlocal_bonus, &atom->nellipsoids, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  }
+  if (atom->nlines > 0) {
+    nlocal_bonus = avec_line->nlocal_bonus;
+    ::MPI_Allreduce(&nlocal_bonus, &atom->nlines, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  }
+  if (atom->ntris > 0) {
+    nlocal_bonus = avec_tri->nlocal_bonus;
+    ::MPI_Allreduce(&nlocal_bonus, &atom->ntris, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  }
+  if (atom->nbodies > 0) {
+    nlocal_bonus = avec_body->nlocal_bonus;
+    ::MPI_Allreduce(&nlocal_bonus, &atom->nbodies, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  }
+
+  // reset atom->map if it exists
+  // set nghost to 0 so old ghosts of deleted atoms won't be mapped
+
+  if (atom->map_style != Atom::MAP_NONE) {
+    atom->nghost = 0;
+    atom->map_init();
+    atom->map_set();
   }
 }
 

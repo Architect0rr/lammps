@@ -21,32 +21,24 @@ ComputeStyle(supersaturation/density,ComputeSupersaturationDensity);
 #define LMP_COMPUTE_SUPERSATURATION_DENSITY_H
 
 #include "compute.h"
-#include "region.h"
 
 namespace LAMMPS_NS {
 
 class ComputeSupersaturationDensity : public Compute {
  public:
-  ComputeSupersaturationDensity(class LAMMPS *, int, char **);
-  ~ComputeSupersaturationDensity() override;
+  ComputeSupersaturationDensity(class LAMMPS *lmp, int narg, char **arg);
+  ~ComputeSupersaturationDensity() noexcept(true) override;
   void init() override;
   double compute_scalar() override;
-  double memory_usage() override;
 
  private:
-  double xlo, ylo, zlo, xhi, yhi, zhi;
-  double lamda[3];
-  double *boxlo, *boxhi;
-  double sublo[3], subhi[3];    // epsilon-extended proc sub-box for adding atoms
-
-  Region *region = nullptr;
-  double coeffs[2];
   Compute *compute_cluster_size = nullptr;
   Compute *compute_temp = nullptr;
 
-  int kmax;
+  double coeffs[2]{};
+  int kmax;    // max cluster size considered a vapor
 
-  double execute_func();
+  double execute_func() const;    // number density at saturation curve
 };
 
 }    // namespace LAMMPS_NS

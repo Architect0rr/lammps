@@ -15,7 +15,6 @@
 
 #include "atom.h"
 #include "comm.h"
-#include "domain.h"
 #include "error.h"
 #include "memory.h"
 #include "modify.h"
@@ -28,36 +27,30 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 ComputeClusterSize::ComputeClusterSize(LAMMPS *lmp, int narg, char **arg) :
-    Compute(lmp, narg, arg), nloc(0), nc_global(0), dist(nullptr)
+    Compute(lmp, narg, arg), nloc(0), dist(nullptr), nc_global(0)
 {
   vector_flag = 1;
   extvector = 0;
   size_vector = 0;
   size_vector_variable = 1;
 
-  if (narg < 5) { utils::missing_cmd_args(FLERR, "compute cluster/size", error); }
+  if (narg < 4) { utils::missing_cmd_args(FLERR, "compute cluster/size", error); }
 
   // Parse arguments //
 
-  // Target region
-  region = domain->get_region_by_id(arg[3]);
-  if (region == nullptr) {
-    error->all(FLERR, "compute cluster/size: Cannot find target region {}", arg[3]);
-  }
-
   // Get cluster/atom compute
-  compute_cluster_atom = lmp->modify->get_compute_by_id(arg[4]);
+  compute_cluster_atom = lmp->modify->get_compute_by_id(arg[3]);
   if (compute_cluster_atom == nullptr) {
     error->all(
         FLERR,
         "compute cluster/size: Cannot find compute with style 'cluster/atom' with given id: {}",
-        arg[4]);
+        arg[3]);
   }
 }
 
 /* ---------------------------------------------------------------------- */
 
-ComputeClusterSize::~ComputeClusterSize()
+ComputeClusterSize::~ComputeClusterSize() noexcept(true)
 {
   if (dist != nullptr) { memory->destroy(dist); }
 }
@@ -66,8 +59,8 @@ ComputeClusterSize::~ComputeClusterSize()
 
 void ComputeClusterSize::init()
 {
-  if (modify->get_compute_by_style(style).size() > 1) {
-    if (comm->me == 0) { error->warning(FLERR, "More than one compute {}", style); }
+  if (modify->get_compute_by_style(style).size() > 1 && comm->me == 0) {
+    error->warning(FLERR, "More than one compute {}", style);
   }
 }
 
@@ -81,10 +74,10 @@ void ComputeClusterSize::compute_vector()
     compute_cluster_atom->compute_peratom();
   }
 
-  double *cluster_ids = compute_cluster_atom->vector_atom;
+  const double *cluster_ids = compute_cluster_atom->vector_atom;
 
-  if (size_vector != atom->natoms + 1 && dist != nullptr) { memory->destroy(dist); }
-  if (size_vector != atom->natoms + 1 || dist == nullptr) {
+  if ((size_vector != atom->natoms + 1) && (dist != nullptr)) { memory->destroy(dist); }
+  if ((size_vector != atom->natoms + 1) || (dist == nullptr)) {
     size_vector = atom->natoms + 1;
     memory->create(dist, size_vector, "compute:cluster/size:dist");
     vector = dist;
@@ -94,31 +87,29 @@ void ComputeClusterSize::compute_vector()
     nloc = atom->nlocal;
     atoms_by_cID.reserve(nloc);
     cIDs_by_size.reserve(nloc);
-    // unique_cIDs.reserve(nloc);
   }
 
   // Clear buffers
   atoms_by_cID.clear();
   cIDs_by_size.clear();
-  // unique_cIDs.clear();
 
   // Sort atom IDs by cluster IDs
   for (int i = 0; i < atom->nlocal; ++i) {
     if ((atom->mask[i] & groupbit) != 0) {
       auto const cid = static_cast<tagint>(cluster_ids[i]);
-      // unique_cIDs.emplace(cid);
       atoms_by_cID[cid].emplace_back(i);
     }
   }
 
   nc_global = 0;
-  memset(dist, 0.0, size_vector * sizeof(double));
+  ::memset(dist, 0.0, size_vector * sizeof(double));
+
   // Sum cluster size over all procs
   bigint l_size = 0;    // local size of cluster
   bigint g_size = 0;    // global size of cluster
   for (bigint i = 1; i <= atom->natoms; ++i) {
     l_size = atoms_by_cID.count(i) == 0 ? 0 : atoms_by_cID[i].size();
-    MPI_Allreduce(&l_size, &g_size, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    ::MPI_Allreduce(&l_size, &g_size, 1, MPI_LMP_BIGINT, MPI_SUM, world);
     if (l_size > 0) { cIDs_by_size[g_size].emplace_back(i); }
     if (g_size > 0) {
       dist[g_size] += 1;
@@ -133,5 +124,15 @@ void ComputeClusterSize::compute_vector()
 
 double ComputeClusterSize::memory_usage()
 {
-  return size_vector * sizeof(double);
+  size_t const atoms_by_cID_elementsMemory = atoms_by_cID.size() *
+      (sizeof(std::string) + sizeof(int) + 2 * sizeof(void *));    // Assuming 2 pointers per node;
+  size_t const atoms_by_cID_bucketOverhead =
+      atoms_by_cID.bucket_count() * sizeof(void *);    // Assuming each bucket is just a pointer
+  size_t const cIDs_by_size_elementsMemory = cIDs_by_size.size() *
+      (sizeof(std::string) + sizeof(int) + 2 * sizeof(void *));    // Assuming 2 pointers per node;
+  size_t const cIDs_by_size_bucketOverhead =
+      cIDs_by_size.bucket_count() * sizeof(void *);    // Assuming each bucket is just a pointer
+  return size_vector * sizeof(double) +
+      static_cast<double>(atoms_by_cID_elementsMemory + atoms_by_cID_bucketOverhead +
+                          cIDs_by_size_elementsMemory + cIDs_by_size_bucketOverhead);
 }

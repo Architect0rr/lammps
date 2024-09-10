@@ -25,8 +25,9 @@ enum class MODE { LOCAL, UNIVERSE };
 
 class FixSupersaturation : public Fix {
  public:
-  FixSupersaturation(class LAMMPS *, int, char **);
+  FixSupersaturation(class LAMMPS *lmp, int narg, char **arg);
   ~FixSupersaturation() noexcept(true) override;
+  void init() override;
   int setmask() override;
   void pre_exchange() override;
 
@@ -75,9 +76,10 @@ class FixSupersaturation : public Fix {
   void add_monomers2() noexcept(true);
   bool gen_one_local() noexcept(true);
   bool gen_one_full() noexcept(true);
-  bool gen_one_local_at(double, double, double, double, double, double) noexcept(true);
-  void set_speed(int) noexcept(true);
-  void post_add(const int) noexcept(true);
+  bool gen_one_local_at(double x, double y, double z, double dx, double dy,
+                        double dz) noexcept(true);
+  void set_speed(int pID) noexcept(true);
+  void post_add(const int nlocal_previous) noexcept(true);
   void post_delete() noexcept(true);
 };
 

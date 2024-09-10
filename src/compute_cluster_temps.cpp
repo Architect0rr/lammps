@@ -36,7 +36,7 @@ ComputeClusterTemp::ComputeClusterTemp(LAMMPS *lmp, int narg, char **arg) : Comp
   size_vector = 0;
   size_vector_variable = 1;
   extvector = 0;
-  // local_flag = 1;
+  local_flag = 1;
   size_local_rows = 0;
   size_local_cols = 0;
 
@@ -45,7 +45,7 @@ ComputeClusterTemp::ComputeClusterTemp(LAMMPS *lmp, int narg, char **arg) : Comp
   // Parse arguments //
 
   // Get cluster/size compute
-  compute_cluster_size = static_cast<ComputeClusterSize *>(lmp->modify->get_compute_by_id(arg[3]));
+  compute_cluster_size = dynamic_cast<ComputeClusterSize *>(lmp->modify->get_compute_by_id(arg[3]));
   if (compute_cluster_size == nullptr) {
     error->all(FLERR,
                "compute cluster/temp: Cannot find compute with style 'cluster/size' with id: {}",
@@ -62,7 +62,7 @@ ComputeClusterTemp::ComputeClusterTemp(LAMMPS *lmp, int narg, char **arg) : Comp
 
 /* ---------------------------------------------------------------------- */
 
-ComputeClusterTemp::~ComputeClusterTemp()
+ComputeClusterTemp::~ComputeClusterTemp() noexcept(true)
 {
   if (local_temp != nullptr) { memory->destroy(local_temp); }
   if (temp != nullptr) { memory->destroy(temp); }
@@ -72,8 +72,8 @@ ComputeClusterTemp::~ComputeClusterTemp()
 
 void ComputeClusterTemp::init()
 {
-  if (modify->get_compute_by_style(style).size() > 1) {
-    if (comm->me == 0) { error->warning(FLERR, "More than one compute {}", style); }
+  if ((modify->get_compute_by_style(style).size() > 1) && (comm->me == 0)) {
+    error->warning(FLERR, "More than one compute {}", style);
   }
 }
 
@@ -83,8 +83,8 @@ void ComputeClusterTemp::compute_vector()
 {
   invoked_vector = update->ntimestep;
 
-  if (size_vector != atom->natoms + 1 && temp != nullptr) { memory->destroy(temp); }
-  if (size_vector != atom->natoms + 1 || temp == nullptr) {
+  if ((size_vector != atom->natoms + 1) && (temp != nullptr)) { memory->destroy(temp); }
+  if ((size_vector != atom->natoms + 1) || (temp == nullptr)) {
     size_vector = atom->natoms + 1;
     memory->create(temp, size_vector, "compute:cluster/temp:temp");
     vector = temp;
@@ -92,9 +92,9 @@ void ComputeClusterTemp::compute_vector()
 
   compute_local();
 
-  MPI_Allreduce(local_temp, temp, size_vector, MPI_DOUBLE, MPI_SUM, world);
+  ::MPI_Allreduce(local_temp, temp, size_vector, MPI_DOUBLE, MPI_SUM, world);
 
-  double *dist = compute_cluster_size->vector;
+  const double *dist = compute_cluster_size->vector;
   for (tagint i = 0; i < size_vector; ++i) { temp[i] /= (dist[i] * i - 1) * domain->dimension; }
 }
 
@@ -110,15 +110,17 @@ void ComputeClusterTemp::compute_local()
 
   if (compute_ke_atom->invoked_peratom != update->ntimestep) { compute_ke_atom->compute_peratom(); }
 
-  if (size_local_rows != atom->natoms + 1 && local_temp != nullptr) { memory->destroy(local_temp); }
-  if (size_local_rows != atom->natoms + 1 || local_temp == nullptr) {
+  if ((size_local_rows != atom->natoms + 1) && (local_temp != nullptr)) {
+    memory->destroy(local_temp);
+  }
+  if ((size_local_rows != atom->natoms + 1) || (local_temp == nullptr)) {
     size_local_rows = atom->natoms + 1;
     memory->create(local_temp, size_local_rows, "compute:cluster/temp:temp");
     vector_local = local_temp;
   }
 
-  double *kes = compute_ke_atom->vector_atom;
-  memset(local_temp, 0.0, size_local_rows * sizeof(double));
+  const double *kes = compute_ke_atom->vector_atom;
+  ::memset(local_temp, 0.0, size_local_rows * sizeof(double));
 
   for (const auto &[size, vec] : compute_cluster_size->cIDs_by_size) {
     for (const tagint cid : vec) {
@@ -135,5 +137,5 @@ void ComputeClusterTemp::compute_local()
 
 double ComputeClusterTemp::memory_usage()
 {
-  return (size_local_rows + size_vector) * sizeof(double);
+  return static_cast<double>((size_local_rows + size_vector) * sizeof(double));
 }
