@@ -110,6 +110,8 @@ void ComputeSupersaturationMono::compute_local()
 
   ::memset(mono_idx, 0, nloc * sizeof(int));
 
+  region->prematch();
+
   local_monomers = 0;
   if (compute_neighs->invoked_peratom != update->ntimestep) { compute_neighs->compute_peratom(); }
   if (compute_temp->invoked_scalar != update->ntimestep) { compute_temp->compute_scalar(); }

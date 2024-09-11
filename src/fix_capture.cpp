@@ -177,6 +177,8 @@ void FixCapture::final_integrate()
 
   double **v = atom->v;
 
+  region->prematch();
+
   bigint ncaptured_local = 0;
   for (int i = 0; i < atom->nlocal; ++i) {
     const auto &[sigma, vmean] = typeids[atom->type[i]];

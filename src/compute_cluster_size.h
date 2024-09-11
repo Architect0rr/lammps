@@ -42,6 +42,7 @@ class ComputeClusterSize : public Compute {
   int nloc;            // number of reserved elements in atoms_by_cID and cIDs_by_size
   double *dist;        // cluster size distribution (vector == dist)
   bigint nc_global;    // number of clusters total
+  int size_cutoff;     // number of elements reserved in dist
 
   Region *region = nullptr;
   Compute *compute_cluster_atom = nullptr;

@@ -40,6 +40,7 @@ class ComputeClusterTemp : public Compute {
 
   double *temp = nullptr;          // array of temps of global clusters
   double *local_temp = nullptr;    // array of temps of local clusters
+  int size_cutoff;                 // size of max cluster
 };
 
 }    // namespace LAMMPS_NS

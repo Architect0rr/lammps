@@ -346,6 +346,8 @@ void FixClusterCrush::pre_exchange()
   bigint nmoved = 0;
 
   if (teleportflag != 0) {
+    region->prematch();
+
     for (int nproc = 0; nproc < nprocs; ++nproc) {
       for (int i = 0; i < nptt_rank[nproc]; ++i) {
         if (genOneFull()) {    // if success new coords will be already in xone[]

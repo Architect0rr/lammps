@@ -347,6 +347,8 @@ void FixSupersaturation::pre_exchange()
       if (atom->map_style != Atom::MAP_NONE) { atom->map_clear(); }
       atom->nghost = 0;
       atom->avec->clear_bonus();
+
+      region->prematch();
     }
 
     if ((!delflag) && (mode == MODE::UNIVERSE)) {

@@ -46,6 +46,15 @@ ComputeClusterSize::ComputeClusterSize(LAMMPS *lmp, int narg, char **arg) :
         "compute cluster/size: Cannot find compute with style 'cluster/atom' with given id: {}",
         arg[3]);
   }
+
+  // Get the critical size
+  size_cutoff = utils::inumeric(FLERR, arg[4], true, lmp);
+  if (size_cutoff < 1) { error->all(FLERR, "size_cutoff for compute cluster/size must be greater than 0"); }
+
+  size_vector = size_cutoff + 1;
+  memory->create(dist, size_vector + 1, "compute:cluster/size:dist");
+  vector = dist;
+
 }
 
 /* ---------------------------------------------------------------------- */
@@ -59,7 +68,7 @@ ComputeClusterSize::~ComputeClusterSize() noexcept(true)
 
 void ComputeClusterSize::init()
 {
-  if (modify->get_compute_by_style(style).size() > 1 && comm->me == 0) {
+  if ((modify->get_compute_by_style(style).size() > 1) && (comm->me == 0)) {
     error->warning(FLERR, "More than one compute {}", style);
   }
 }
@@ -75,13 +84,6 @@ void ComputeClusterSize::compute_vector()
   }
 
   const double *cluster_ids = compute_cluster_atom->vector_atom;
-
-  if ((size_vector != atom->natoms + 1) && (dist != nullptr)) { memory->destroy(dist); }
-  if ((size_vector != atom->natoms + 1) || (dist == nullptr)) {
-    size_vector = atom->natoms + 1;
-    memory->create(dist, size_vector, "compute:cluster/size:dist");
-    vector = dist;
-  }
 
   if (atom->nlocal > nloc) {
     nloc = atom->nlocal;
@@ -112,7 +114,7 @@ void ComputeClusterSize::compute_vector()
     ::MPI_Allreduce(&l_size, &g_size, 1, MPI_LMP_BIGINT, MPI_SUM, world);
     if (l_size > 0) { cIDs_by_size[g_size].emplace_back(i); }
     if (g_size > 0) {
-      dist[g_size] += 1;
+      if (g_size < size_cutoff) { dist[g_size] += 1; }
       ++nc_global;
     }
   }

@@ -34,7 +34,7 @@ ComputeClusterTemp::ComputeClusterTemp(LAMMPS *lmp, int narg, char **arg) : Comp
 
   vector_flag = 1;
   size_vector = 0;
-  size_vector_variable = 1;
+  // size_vector_variable = 1;
   extvector = 0;
   local_flag = 1;
   size_local_rows = 0;
@@ -52,12 +52,24 @@ ComputeClusterTemp::ComputeClusterTemp(LAMMPS *lmp, int narg, char **arg) : Comp
                arg[3]);
   }
 
+  // Get the critical size
+  size_cutoff = utils::inumeric(FLERR, arg[4], true, lmp);
+  if (size_cutoff < 1) { error->all(FLERR, "size_cutoff for compute cluster/temp must be greater than 0"); }
+
   // Get ke/atom compute
   auto computes = lmp->modify->get_compute_by_style("ke/atom");
   if (computes.empty()) {
     error->all(FLERR, "compute cluster/temp: Cannot find compute with style 'ke/atom'");
   }
   compute_ke_atom = computes[0];
+
+  size_local_rows = size_cutoff + 1;
+  memory->create(local_temp, size_local_rows + 1, "compute:cluster/temp:temp");
+  vector_local = local_temp;
+
+  size_vector = size_cutoff + 1;
+  memory->create(temp, size_vector + 1, "compute:cluster/temp:temp");
+  vector = temp;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -83,19 +95,12 @@ void ComputeClusterTemp::compute_vector()
 {
   invoked_vector = update->ntimestep;
 
-  if ((size_vector != atom->natoms + 1) && (temp != nullptr)) { memory->destroy(temp); }
-  if ((size_vector != atom->natoms + 1) || (temp == nullptr)) {
-    size_vector = atom->natoms + 1;
-    memory->create(temp, size_vector, "compute:cluster/temp:temp");
-    vector = temp;
-  }
-
   compute_local();
 
   ::MPI_Allreduce(local_temp, temp, size_vector, MPI_DOUBLE, MPI_SUM, world);
 
   const double *dist = compute_cluster_size->vector;
-  for (tagint i = 0; i < size_vector; ++i) { temp[i] /= (dist[i] * i - 1) * domain->dimension; }
+  for (int i = 0; i < size_vector; ++i) { temp[i] /= (dist[i] * i - 1) * domain->dimension; }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -110,22 +115,15 @@ void ComputeClusterTemp::compute_local()
 
   if (compute_ke_atom->invoked_peratom != update->ntimestep) { compute_ke_atom->compute_peratom(); }
 
-  if ((size_local_rows != atom->natoms + 1) && (local_temp != nullptr)) {
-    memory->destroy(local_temp);
-  }
-  if ((size_local_rows != atom->natoms + 1) || (local_temp == nullptr)) {
-    size_local_rows = atom->natoms + 1;
-    memory->create(local_temp, size_local_rows, "compute:cluster/temp:temp");
-    vector_local = local_temp;
-  }
-
   const double *kes = compute_ke_atom->vector_atom;
   ::memset(local_temp, 0.0, size_local_rows * sizeof(double));
 
   for (const auto &[size, vec] : compute_cluster_size->cIDs_by_size) {
-    for (const tagint cid : vec) {
-      for (const tagint pid : compute_cluster_size->atoms_by_cID[cid]) {
-        local_temp[size] += 2 * kes[pid];
+    if (size < size_cutoff){
+      for (const tagint cid : vec) {
+        for (const tagint pid : compute_cluster_size->atoms_by_cID[cid]) {
+          local_temp[size] += 2 * kes[pid];
+        }
       }
     }
   }
