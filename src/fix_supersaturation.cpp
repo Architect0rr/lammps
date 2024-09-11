@@ -366,7 +366,7 @@ void FixSupersaturation::pre_exchange()
 
       do {
         pproc[comm->me] = static_cast<int>(sum / comm->nprocs);
-        if (static_cast<int>(alogrand->uniform() * 32'767) == comm->me) {
+        if (static_cast<int>(alogrand->uniform() * 32767) == comm->me) {
           pproc[comm->me] += sum % comm->nprocs;
         }
 
