@@ -155,7 +155,7 @@ void FixCapture::init()
 
   typeids.clear();
   typeids.reserve(atom->ntypes);
-  for (int i = 0; i < atom->nlocal; ++i) { typeids.try_emplace(atom->type[i], 0.0, 0.0); }
+  for (int i = 0; i < atom->nlocal; ++i) { typeids.emplace(atom->type[i], std::make_pair<double, double>(0.0, 0.0)); }
   for (const auto &[k, v] : typeids) {
     if (atom->mass_setflag[k] == 0) {
       error->all(FLERR, "fix capture: mass is not set for atom type {}.", k);
