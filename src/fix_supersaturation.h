@@ -21,8 +21,6 @@ FixStyle(supersaturation,FixSupersaturation);
 
 namespace LAMMPS_NS {
 
-enum class MODE { LOCAL, UNIVERSE };
-
 class FixSupersaturation : public Fix {
  public:
   FixSupersaturation(class LAMMPS *lmp, int narg, char **arg);
@@ -39,7 +37,9 @@ class FixSupersaturation : public Fix {
   RanPark *vrandom;
   RanPark *alogrand;
 
-  MODE mode;
+  bool localflag;
+  bool randomflag;
+  bool moveflag;
 
   FILE *fp;
   int screenflag;
@@ -48,6 +48,9 @@ class FixSupersaturation : public Fix {
   bigint next_step;
 
   int maxtry;
+  int maxtry_call;
+  int maxtry_move;
+
   int triclinic;
   int scaleflag;
   int fix_temp;
@@ -68,16 +71,19 @@ class FixSupersaturation : public Fix {
   double xone[3]{};
 
   int *pproc{};
-  int maxtry_call;
   int ntype;
 
   void delete_monomers() noexcept(true);
-  void add_monomers() noexcept(true);
-  void add_monomers2() noexcept(true);
+  void add_monomers_universe_random(bigint delta) noexcept(true);
+  void add_monomers_local_grid() noexcept(true);
+  void add_monomers_local_random() noexcept(true);
+  bool gen_one_universe() noexcept(true);
   bool gen_one_local() noexcept(true);
-  bool gen_one_full() noexcept(true);
+  bool gen_one_local_move() noexcept(true);
   bool gen_one_local_at(double x, double y, double z, double dx, double dy,
                         double dz) noexcept(true);
+  bool gen_one_local_at_move(double x, double y, double z, double dx, double dy,
+                             double dz) noexcept(true);
   void set_speed(int pID) noexcept(true);
   void post_add(const int nlocal_previous) noexcept(true);
   void post_delete() noexcept(true);

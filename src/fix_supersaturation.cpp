@@ -20,11 +20,9 @@
 #include "error.h"
 #include "fix.h"
 #include "fmt/core.h"
-#include "force.h"
 #include "lattice.h"
 #include "memory.h"
 #include "modify.h"
-#include "pair.h"
 #include "update.h"
 
 #include <bits/std_abs.h>
@@ -36,13 +34,14 @@ using namespace FixConst;
 
 constexpr int DEFAULT_MAXTRY = 1000;
 constexpr int DEFAULT_MAXTRY_CALL = 5;
+constexpr int DEFAULT_MAXTRY_MOVE = 9;
 
 /* ---------------------------------------------------------------------- */
 
 FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
-    Fix(lmp, narg, arg), mode(MODE::LOCAL), screenflag(1), fileflag(0), next_step(0),
-    maxtry(::DEFAULT_MAXTRY), scaleflag(0), fix_temp(0), offflag(0),
-    maxtry_call(::DEFAULT_MAXTRY_CALL)
+    Fix(lmp, narg, arg), localflag(false), randomflag(true), moveflag(false), screenflag(1),
+    fileflag(0), next_step(0), maxtry(::DEFAULT_MAXTRY), maxtry_call(::DEFAULT_MAXTRY_CALL),
+    maxtry_move(::DEFAULT_MAXTRY_MOVE), scaleflag(0), fix_temp(0), offflag(0)
 {
 
   nevery = 1;
@@ -111,14 +110,45 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
       if (maxtry < 1) { error->all(FLERR, "maxtry for fix supersaturation cannot be less than 1"); }
       iarg += 2;
 
+    } else if (::strcmp(arg[iarg], "maxtry_move") == 0) {
+
+      // Max attempts to search for a new suitable location
+      maxtry_move = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);
+      if (maxtry_move < 1) {
+        error->all(FLERR, "maxtry_move for fix supersaturation cannot be less than 1");
+      }
+      iarg += 2;
+
     } else if (::strcmp(arg[iarg], "mode") == 0) {
 
       if (::strcmp(arg[iarg + 1], "local") == 0) {
-        mode = MODE::LOCAL;
+        localflag = true;
       } else if (::strcmp(arg[iarg + 1], "universe") == 0) {
-        mode = MODE::UNIVERSE;
+        localflag = false;
       } else {
         error->all(FLERR, "Unknown mode for fix supersaturation: {}", arg[iarg + 1]);
+      }
+      iarg += 2;
+
+    } else if (::strcmp(arg[iarg], "method") == 0) {
+
+      if (::strcmp(arg[iarg + 1], "random") == 0) {
+        randomflag = true;
+      } else if (::strcmp(arg[iarg + 1], "grid") == 0) {
+        randomflag = false;
+      } else {
+        error->all(FLERR, "Unknown method for fix supersaturation: {}", arg[iarg + 1]);
+      }
+      iarg += 2;
+
+    } else if (::strcmp(arg[iarg], "move") == 0) {
+
+      if (::strcmp(arg[iarg + 1], "yes") == 0) {
+        moveflag = true;
+      } else if (::strcmp(arg[iarg + 1], "no") == 0) {
+        moveflag = false;
+      } else {
+        error->all(FLERR, "Unknown move for fix supersaturation: {}", arg[iarg + 1]);
       }
       iarg += 2;
 
@@ -207,6 +237,13 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
     } else {
       error->all(FLERR, "Illegal fix supersaturation command option {}", arg[iarg]);
     }
+  }
+
+  if ((!localflag) && ((!randomflag) || moveflag)) {
+    error->all(
+        FLERR,
+        "fix supersaturation: mode UNIVERSE can be used only with method RANDOM and no moving",
+        arg[iarg]);
   }
 
   triclinic = domain->triclinic;
@@ -351,17 +388,8 @@ void FixSupersaturation::pre_exchange()
       region->prematch();
     }
 
-    if ((!delflag) && (mode == MODE::UNIVERSE)) {
-      for (bigint i = 0; i < delta; ++i) {
-        if (gen_one_full()) {    // if success new coords will be already in xone[]
-          if ((coord[0] >= subbonds[0][0]) && (coord[0] < subbonds[0][1]) &&
-              (coord[1] >= subbonds[1][0]) && (coord[1] < subbonds[1][1]) &&
-              (coord[2] >= subbonds[2][0]) && (coord[2] < subbonds[2][1])) {
-            atom->avec->create_atom(ntype, xone);
-            if (fix_temp != 0) { set_speed(atom->nlocal - 1); }
-          }
-        }
-      }
+    if ((!delflag) && (!localflag)) {
+      add_monomers_universe_random(delta);
     } else {
       bigint sum = delta;
       int tries = maxtry_call;
@@ -376,7 +404,11 @@ void FixSupersaturation::pre_exchange()
           if (delflag) {
             delete_monomers();
           } else {
-            add_monomers2();
+            if (randomflag) {
+              add_monomers_local_random();
+            } else {
+              add_monomers_local_grid();
+            }
           }
         }
 
@@ -398,8 +430,8 @@ void FixSupersaturation::pre_exchange()
     }
   }
 
-  double newsupersaturation = compute_supersaturation_mono->compute_scalar();
   if (comm->me == 0) {
+    double newsupersaturation = compute_supersaturation_mono->compute_scalar();
     bigint atom_delta = std::abs(natoms_previous - atom->natoms);
     if (screenflag != 0) {
       utils::logmesg(lmp,
@@ -445,12 +477,28 @@ void FixSupersaturation::delete_monomers() noexcept(true)
 
 /* ---------------------------------------------------------------------- */
 
-void FixSupersaturation::add_monomers() noexcept(true)
+void FixSupersaturation::add_monomers_universe_random(bigint delta) noexcept(true)
+{
+  for (bigint i = 0; i < delta; ++i) {
+    if (gen_one_universe()) {    // if success new coords will be already in xone[]
+      if ((coord[0] >= subbonds[0][0]) && (coord[0] < subbonds[0][1]) &&
+          (coord[1] >= subbonds[1][0]) && (coord[1] < subbonds[1][1]) &&
+          (coord[2] >= subbonds[2][0]) && (coord[2] < subbonds[2][1])) {
+        atom->avec->create_atom(ntype, xone);
+        if (fix_temp != 0) { set_speed(atom->nlocal - 1); }
+      }
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixSupersaturation::add_monomers_local_random() noexcept(true)
 {
   int ninsert = 0;
   int unsucc = 0;
   for (int i = 0; i < pproc[comm->me]; ++i) {
-    if (gen_one_local()) {
+    if (moveflag ? gen_one_local_move() : gen_one_local()) {
       unsucc = 0;
       atom->avec->create_atom(ntype, xone);
 
@@ -467,21 +515,23 @@ void FixSupersaturation::add_monomers() noexcept(true)
 
 /* ---------------------------------------------------------------------- */
 
-void FixSupersaturation::add_monomers2() noexcept(true)
+void FixSupersaturation::add_monomers_local_grid() noexcept(true)
 {
-  const double cutoff = lmp->force->pair->cutforce;
   auto const nx =
-      static_cast<bigint>(::floor((subbonds[0][1] - subbonds[0][0] - 2 * cutoff) / overlap));
+      static_cast<bigint>(::floor((subbonds[0][1] - subbonds[0][0] - 2 * overlap) / overlap));
   auto const ny =
-      static_cast<bigint>(::floor((subbonds[1][1] - subbonds[1][0] - 2 * cutoff) / overlap));
+      static_cast<bigint>(::floor((subbonds[1][1] - subbonds[1][0] - 2 * overlap) / overlap));
   auto const nz =
-      static_cast<bigint>(::floor((subbonds[2][1] - subbonds[2][0] - 2 * cutoff) / overlap));
+      static_cast<bigint>(::floor((subbonds[2][1] - subbonds[2][0] - 2 * overlap) / overlap));
   for (bigint i = 0; (i < nx) && (pproc[comm->me] > 0); ++i) {
     for (bigint j = 0; (j < ny) && (pproc[comm->me] > 0); ++j) {
       for (bigint k = 0; (k < nz) && (pproc[comm->me] > 0); ++k) {
-        if (gen_one_local_at(subbonds[0][0] + cutoff + overlap * i,
-                             subbonds[1][0] + cutoff + overlap * j,
-                             subbonds[2][0] + cutoff + overlap * k, overlap, overlap, overlap)) {
+        if (moveflag ? gen_one_local_at_move(
+                           subbonds[0][0] + overlap * (i + 1), subbonds[1][0] + overlap * (j + 1),
+                           subbonds[2][0] + overlap * (k + 1), overlap, overlap, overlap)
+                     : gen_one_local_at(
+                           subbonds[0][0] + overlap * (i + 1), subbonds[1][0] + overlap * (j + 1),
+                           subbonds[2][0] + overlap * (k + 1), overlap, overlap, overlap)) {
           atom->avec->create_atom(ntype, xone);
           if (fix_temp != 0) { set_speed(atom->nlocal - 1); }
           --pproc[comm->me];
@@ -490,7 +540,7 @@ void FixSupersaturation::add_monomers2() noexcept(true)
     }
   }
 
-  add_monomers();
+  add_monomers_local_random();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -512,7 +562,7 @@ void FixSupersaturation::set_speed(int pID) noexcept(true)
   criteria for insertion: region, triclinic box, overlap
 ------------------------------------------------------------------------- */
 
-bool FixSupersaturation::gen_one_full() noexcept(true)
+bool FixSupersaturation::gen_one_universe() noexcept(true)
 {
 
   int ntry = 0;
@@ -635,6 +685,73 @@ bool FixSupersaturation::gen_one_local() noexcept(true)
 
 /* ---------------------------------------------------------------------- */
 
+bool FixSupersaturation::gen_one_local_move() noexcept(true)
+{
+  int ntry = 0;
+
+  while (ntry < maxtry) {
+    ++ntry;
+
+    // generate new random position
+    xone[0] = subbonds[0][0] + xrandom->uniform() * (subbonds[0][1] - subbonds[0][0]);
+    xone[1] = subbonds[1][0] + xrandom->uniform() * (subbonds[1][1] - subbonds[1][0]);
+    xone[2] = subbonds[2][0] + xrandom->uniform() * (subbonds[2][1] - subbonds[2][0]);
+
+    int ntry_move = 0;
+    while (ntry_move < maxtry_move) {
+      ++ntry_move;
+
+      if (domain->dimension == 2) { xone[2] = 0.0; }
+
+      if ((region != nullptr) && (region->match(xone[0], xone[1], xone[2]) == 0)) { continue; }
+
+      if (triclinic != 0) {
+        domain->x2lamda(xone, lamda);
+        coord = lamda;
+        if ((coord[0] < boxlo[0]) || (coord[0] >= boxhi[0]) || (coord[1] < boxlo[1]) ||
+            (coord[1] >= boxhi[1]) || (coord[2] < boxlo[2]) || (coord[2] >= boxhi[2])) {
+          continue;
+        }
+      } else {
+        coord = xone;
+      }
+
+      // check for overlap of new atom/mol with all other atoms
+      // minimum_image() needed to account for distances across PBC
+
+      double **x = atom->x;
+      bool reject = false;
+
+      // check new position for overlapping with all local atoms
+      for (int i = 0; i < atom->nmax; ++i) {
+        double delx = xone[0] - x[i][0];
+        double dely = xone[1] - x[i][1];
+        double delz = xone[2] - x[i][2];
+        const double distsq1 = delx * delx + dely * dely + delz * delz;
+
+        domain->minimum_image(delx, dely, delz);
+        const double distsq = delx * delx + dely * dely + delz * delz;
+        if ((distsq < odistsq) || (distsq1 < odistsq)) {
+          reject = true;
+
+          xone[0] = x[i][0] + delx * ::sqrt(odistsq / distsq1);
+          xone[1] = x[i][1] + dely * ::sqrt(odistsq / distsq1);
+          xone[2] = x[i][2] + delz * ::sqrt(odistsq / distsq1);
+
+          break;
+        }
+      }
+      if (reject) { continue; }
+    }
+
+    return true;
+  }
+
+  return false;
+}    // void FixKeepCount::gen_one_sub()
+
+/* ---------------------------------------------------------------------- */
+
 bool FixSupersaturation::gen_one_local_at(double _x, double _y, double _z, double _dx, double _dy,
                                           double _dz) noexcept(true)
 {
@@ -679,6 +796,69 @@ bool FixSupersaturation::gen_one_local_at(double _x, double _y, double _z, doubl
       double const distsq = delx * delx + dely * dely + delz * delz;
       if ((distsq < odistsq) || (distsq1 < odistsq)) {
         reject = true;
+        break;
+      }
+    }
+
+    if (reject) { continue; }
+
+    return true;
+  }
+
+  return false;
+}    // void FixKeepCount::gen_one()
+
+/* ---------------------------------------------------------------------- */
+
+bool FixSupersaturation::gen_one_local_at_move(double _x, double _y, double _z, double _dx,
+                                               double _dy, double _dz) noexcept(true)
+{
+  int ntry = 0;
+
+  // generate new random position
+  xone[0] = _x + _dx / 2;
+  xone[1] = _y + _dy / 2;
+  xone[2] = _z + _dz / 2;
+
+  while (ntry < maxtry_move) {
+    ++ntry;
+    if (domain->dimension == 2) { xone[2] = 0.0; }
+
+    if ((region != nullptr) && (region->match(xone[0], xone[1], xone[2]) == 0)) { continue; }
+
+    if (triclinic != 0) {
+      domain->x2lamda(xone, lamda);
+      coord = lamda;
+      if ((coord[0] < boxlo[0]) || (coord[0] >= boxhi[0]) || (coord[1] < boxlo[1]) ||
+          (coord[1] >= boxhi[1]) || (coord[2] < boxlo[2]) || (coord[2] >= boxhi[2])) {
+        continue;
+      }
+    } else {
+      coord = xone;
+    }
+
+    // check for overlap of new atom/mol with all other atoms
+    // minimum_image() needed to account for distances across PBC
+
+    double **x = atom->x;
+    bool reject = false;
+
+    // check new position for overlapping with all local atoms
+    for (int i = 0; i < atom->nmax; ++i) {
+      double delx = xone[0] - x[i][0];
+      double dely = xone[1] - x[i][1];
+      double delz = xone[2] - x[i][2];
+      double const distsq1 = delx * delx + dely * dely + delz * delz;
+
+      domain->minimum_image(delx, dely, delz);
+      double const distsq = delx * delx + dely * dely + delz * delz;
+      if ((distsq < odistsq) || (distsq1 < odistsq)) {
+        reject = true;
+
+        xone[0] = x[i][0] + delx * ::sqrt(odistsq / distsq1);
+        xone[1] = x[i][1] + dely * ::sqrt(odistsq / distsq1);
+        xone[2] = x[i][2] + delz * ::sqrt(odistsq / distsq1);
+
         break;
       }
     }
