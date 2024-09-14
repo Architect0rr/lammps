@@ -302,7 +302,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
   }
 
   if ((comm->me == 0) && (fileflag != 0)) {
-    fmt::print(fp, "ntimestep,ntotal,a2d,a2a,ad,aa,ssb,ssa,del\n");
+    fmt::print(fp, "ntimestep,ntotal,a2d,a2a,ad,aa,ssb,ssa,del,succrate\n");
     ::fflush(fp);
   }
 
@@ -442,10 +442,10 @@ void FixSupersaturation::pre_exchange()
                      atom->natoms);
     }
     if (fileflag != 0) {
-      fmt::print(fp, "{},{},{},{},{},{},{:.3f},{:.3f},{:.3f}\n", update->ntimestep, atom->natoms,
+      fmt::print(fp, "{},{},{},{},{},{},{:.3f},{:.3f},{:.3f},{:.3f}\n", update->ntimestep, atom->natoms,
                  delflag ? delta : 0, !delflag ? delta : 0, delflag ? atom_delta : 0,
                  !delflag ? atom_delta : 0, previous_supersaturation, newsupersaturation,
-                 newsupersaturation - previous_supersaturation);
+                 newsupersaturation - previous_supersaturation, !delflag ? static_cast<double>(delta*100)/atom_delta : 0);
       ::fflush(fp);
     }
   }
