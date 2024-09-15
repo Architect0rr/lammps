@@ -518,20 +518,20 @@ void FixSupersaturation::add_monomers_local_random() noexcept(true)
 void FixSupersaturation::add_monomers_local_grid() noexcept(true)
 {
   auto const nx =
-      static_cast<bigint>(::floor((subbonds[0][1] - subbonds[0][0] - 2 * overlap) / overlap));
+      static_cast<bigint>(::floor((subbonds[0][1] - subbonds[0][0]) / overlap));
   auto const ny =
-      static_cast<bigint>(::floor((subbonds[1][1] - subbonds[1][0] - 2 * overlap) / overlap));
+      static_cast<bigint>(::floor((subbonds[1][1] - subbonds[1][0]) / overlap));
   auto const nz =
-      static_cast<bigint>(::floor((subbonds[2][1] - subbonds[2][0] - 2 * overlap) / overlap));
+      static_cast<bigint>(::floor((subbonds[2][1] - subbonds[2][0]) / overlap));
   for (bigint i = 0; (i < nx) && (pproc[comm->me] > 0); ++i) {
     for (bigint j = 0; (j < ny) && (pproc[comm->me] > 0); ++j) {
       for (bigint k = 0; (k < nz) && (pproc[comm->me] > 0); ++k) {
         if (moveflag ? gen_one_local_at_move(
-                           subbonds[0][0] + overlap * (i + 1), subbonds[1][0] + overlap * (j + 1),
-                           subbonds[2][0] + overlap * (k + 1), overlap, overlap, overlap)
+                           subbonds[0][0] + overlap * i, subbonds[1][0] + overlap * j,
+                           subbonds[2][0] + overlap * k, overlap, overlap, overlap)
                      : gen_one_local_at(
-                           subbonds[0][0] + overlap * (i + 1), subbonds[1][0] + overlap * (j + 1),
-                           subbonds[2][0] + overlap * (k + 1), overlap, overlap, overlap)) {
+                           subbonds[0][0] + overlap * i, subbonds[1][0] + overlap * j,
+                           subbonds[2][0] + overlap * k, overlap, overlap, overlap)) {
           atom->avec->create_atom(ntype, xone);
           if (fix_temp != 0) { set_speed(atom->nlocal - 1); }
           --pproc[comm->me];
@@ -698,6 +698,7 @@ bool FixSupersaturation::gen_one_local_move() noexcept(true)
     xone[2] = subbonds[2][0] + xrandom->uniform() * (subbonds[2][1] - subbonds[2][0]);
 
     int ntry_move = 0;
+    bool reject = false;
     while (ntry_move < maxtry_move) {
       ++ntry_move;
 
@@ -720,7 +721,7 @@ bool FixSupersaturation::gen_one_local_move() noexcept(true)
       // minimum_image() needed to account for distances across PBC
 
       double **x = atom->x;
-      bool reject = false;
+      reject = false;
 
       // check new position for overlapping with all local atoms
       for (int i = 0; i < atom->nmax; ++i) {
@@ -741,10 +742,10 @@ bool FixSupersaturation::gen_one_local_move() noexcept(true)
           break;
         }
       }
-      if (reject) { continue; }
+      if (!reject) { break; }
     }
 
-    return true;
+    if (!reject) { return true; }
   }
 
   return false;
