@@ -549,12 +549,10 @@ void FixSupersaturation::set_speed(int pID) noexcept(true)
 {
   double **v = atom->v;
   // generate velocities
-  constexpr long double c_v = 0.7978845608028653558798921198687L;    // sqrt(2/pi)
   const double sigma = std::sqrt(monomer_temperature / atom->mass[ntype]);
-  const double v_mean = static_cast<double>(c_v) * sigma;
-  v[pID][0] = v_mean + vrandom->gaussian() * sigma;
-  v[pID][1] = v_mean + vrandom->gaussian() * sigma;
-  if (domain->dimension == 3) { v[pID][2] = v_mean + vrandom->gaussian() * sigma; }
+  v[pID][0] = vrandom->gaussian() * sigma;
+  v[pID][1] = vrandom->gaussian() * sigma;
+  if (domain->dimension == 3) { v[pID][2] = vrandom->gaussian() * sigma; }
 }
 
 /* ----------------------------------------------------------------------
