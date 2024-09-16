@@ -445,7 +445,7 @@ void FixSupersaturation::pre_exchange()
       fmt::print(fp, "{},{},{},{},{},{},{:.3f},{:.3f},{:.3f},{:.3f}\n", update->ntimestep, atom->natoms,
                  delflag ? delta : 0, !delflag ? delta : 0, delflag ? atom_delta : 0,
                  !delflag ? atom_delta : 0, previous_supersaturation, newsupersaturation,
-                 newsupersaturation - previous_supersaturation, !delflag ? static_cast<double>(delta*100)/atom_delta : 0);
+                 newsupersaturation - previous_supersaturation, !delflag ? static_cast<double>(atom_delta*100)/delta : 0);
       ::fflush(fp);
     }
   }
