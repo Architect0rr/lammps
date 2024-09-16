@@ -430,8 +430,8 @@ void FixSupersaturation::pre_exchange()
     }
   }
 
+  double newsupersaturation = compute_supersaturation_mono->compute_scalar();
   if (comm->me == 0) {
-    double newsupersaturation = compute_supersaturation_mono->compute_scalar();
     bigint atom_delta = std::abs(natoms_previous - atom->natoms);
     if (screenflag != 0) {
       utils::logmesg(lmp,
