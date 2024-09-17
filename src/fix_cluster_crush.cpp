@@ -6,8 +6,8 @@
 ------------------------------------------------------------------------- */
 
 #include "fix_cluster_crush.h"
-
 #include <cmath>
+#include <fmt/core.h>
 
 #include "atom.h"
 #include "atom_vec.h"
@@ -19,9 +19,7 @@
 #include "domain.h"
 #include "error.h"
 #include "fix.h"
-#include "fmt/core.h"
 #include "irregular.h"
-#include "lattice.h"
 #include "memory.h"
 #include "modify.h"
 #include "update.h"
@@ -33,12 +31,16 @@ using namespace LAMMPS_NS;
 using namespace FixConst;
 
 constexpr int DEFAULT_MAXTRY = 1000;
+constexpr int DEFAULT_MAXTRY_CALL = 5;
+constexpr int MAX_RANDOM_VALUE = 32767;
 
 /* ---------------------------------------------------------------------- */
 
 FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) :
-    Fix(lmp, narg, arg), screenflag(1), fileflag(0), velscaleflag(0), velscale(0.0), next_step(0),
-    maxtry(::DEFAULT_MAXTRY), scaleflag(0), fix_temp(0), nloc(0), p2m(nullptr)
+    Fix(lmp, narg, arg), screenflag(1), fileflag(0), scaleflag(0), next_step(0), nloc(0),
+    p2m(nullptr), fix_temp(false), velscaleflag(0), velscale(0.0), maxtry(::DEFAULT_MAXTRY),
+    algorand(nullptr), maxtry_call(::DEFAULT_MAXTRY_CALL), map(nullptr), ntype(0), sigma(0),
+    succ(nullptr)
 {
 
   restart_pbc = 1;
@@ -60,32 +62,34 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) :
   kmax = utils::inumeric(FLERR, arg[4], true, lmp);
   if (kmax < 2) { error->all(FLERR, "kmax for fix cluster/crush cannot be less than 2"); }
 
-  if (::strcmp(arg[5], "delete") == 0) {
-    teleportflag = 0;
-  } else if (::strcmp(arg[5], "teleport") == 0) {
-    teleportflag = 1;
-    if (narg < 9) { utils::missing_cmd_args(FLERR, "cluster/crush", error); }
-  } else {
-    error->all(FLERR, "Illegal fix cluster/crush keyword: {}", arg[5]);
-  }
-
   // Get cluster/size compute
-  // compute_cluster_size = lmp->modify->get_compute_by_id(arg[7]);
-  compute_cluster_size = dynamic_cast<ComputeClusterSize *>(lmp->modify->get_compute_by_id(arg[6]));
+  compute_cluster_size = dynamic_cast<ComputeClusterSize *>(lmp->modify->get_compute_by_id(arg[5]));
   if (compute_cluster_size == nullptr) {
     error->all(FLERR, "fix cluster/crush: Cannot find compute of style 'cluster/size' with id: {}",
-               arg[8]);
+               arg[5]);
   }
 
-  if (teleportflag != 0) {
+  if (::strcmp(arg[6], "delete") == 0) {
+    mode = MODE::DELETE;
+  } else if (::strcmp(arg[6], "teleport") == 0) {
+    mode = MODE::TELEPORT;
+    if (narg < 9) { utils::missing_cmd_args(FLERR, "cluster/crush", error); }
+  } else if (::strcmp(arg[6], "fastport") == 0) {
+    mode = MODE::FASTPORT;
+    if (narg < 10) { utils::missing_cmd_args(FLERR, "cluster/crush", error); }
+  } else {
+    error->all(FLERR, "Illegal fix cluster/crush keyword: {}", arg[6]);
+  }
+
+  if ((mode == MODE::TELEPORT) || (mode == MODE::FASTPORT)) {
     // Minimum distance to other atoms from the place atom teleports to
-    double overlap = utils::numeric(FLERR, arg[7], true, lmp);
+    overlap = utils::numeric(FLERR, arg[7], true, lmp);
     if (overlap < 0) {
       error->all(FLERR, "Minimum distance for fix cluster/crush must be non-negative");
     }
 
     // apply scaling factor for styles that use distance-dependent factors
-    overlap *= domain->lattice->xlattice;
+    // overlap *= domain->lattice->xlattice;
     odistsq = overlap * overlap;
 
     // Get the seed for coordinate generator
@@ -93,9 +97,23 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) :
     xrandom = new RanPark(lmp, xseed);
   }
 
-  // Parse optional keywords
-  int iarg = teleportflag != 0 ? 9 : 7;
+  if (mode == MODE::FASTPORT) {
+    // Get the ntype atom creation
+    ntype = utils::inumeric(FLERR, arg[9], true, lmp);
+    if ((ntype <= 0) || (ntype > atom->ntypes)) {
+      error->all(FLERR, "Invalid atom type in create_atoms command");
+    }
+  }
 
+  // Parse optional keywords
+  int iarg = 0;
+  if (mode == MODE::DELETE) {
+    iarg = 7;
+  } else if (mode == MODE::TELEPORT) {
+    iarg = 9;
+  } else {
+    iarg = 10;    // fastport
+  }
   fp = nullptr;
 
   while (iarg < narg) {
@@ -107,7 +125,7 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) :
 
     } else if (::strcmp(arg[iarg], "temp") == 0) {
       // Monomer temperature
-      fix_temp = 1;
+      fix_temp = true;
       monomer_temperature = utils::numeric(FLERR, arg[iarg + 1], true, lmp);
       if (monomer_temperature < 0) {
         error->all(FLERR, "Monomer temperature for fix cluster/crush cannot be negative");
@@ -117,6 +135,15 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) :
       int const vseed = utils::inumeric(FLERR, arg[iarg + 2], true, lmp);
       vrandom = new RanPark(lmp, vseed);
       iarg += 3;
+
+    } else if (::strcmp(arg[iarg], "maxtry_call") == 0) {
+
+      // Get max number of tries for calling delete_monomers()/add_monomers()
+      maxtry_call = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);
+      if (maxtry_call < 1) {
+        error->all(FLERR, "maxtry_call for fix supersaturation cannot be less than 1");
+      }
+      iarg += 2;
 
     } else if (::strcmp(arg[iarg], "noscreen") == 0) {
       // Do not output to screen
@@ -222,19 +249,30 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) :
 
   if ((globbonds[0][0] > globbonds[0][1]) || (globbonds[1][0] > globbonds[1][1]) ||
       (globbonds[2][0] > globbonds[2][1])) {
-    error->all(FLERR, "No overlap of box and region for fix keep/count");
+    error->all(FLERR, "No overlap of box and region for fix cluster/crush");
   }
 
   if ((comm->me == 0) && (fileflag != 0)) {
-    fmt::print(fp, "ntimestep,cc,a2m,am,nm,ad\n");
+    fmt::print(fp, "ntimestep,ntotal,cc,a2m,am,ad\n");
     ::fflush(fp);
   }
 
   next_step = update->ntimestep - (update->ntimestep % nevery);
 
-  nprocs = comm->nprocs;
-  nptt_rank = memory->create(nptt_rank, nprocs * sizeof(int), "cluster/crush:nptt_rank");
-  c2c = memory->create(c2c, nprocs * sizeof(int), "cluster/crush:c2c");
+  pproc = memory->create(pproc, comm->nprocs * sizeof(int), "cluster/crush:pproc");
+  c2c = memory->create(c2c, comm->nprocs * sizeof(int), "cluster/crush:c2c");
+
+  if (mode == MODE::FASTPORT) {
+    ncell[0] = static_cast<bigint>(::floor(subbonds[0][1] - subbonds[0][0]) / overlap);
+    ncell[1] = static_cast<bigint>(::floor(subbonds[1][1] - subbonds[1][0]) / overlap);
+    ncell[2] = static_cast<bigint>(::floor(subbonds[2][1] - subbonds[2][0]) / overlap);
+    map =
+        memory->create(map, ncell[0] * ncell[1] * ncell[2] * sizeof(int), "fix_cluster/crush:map");
+    if (map == nullptr) { error->all(FLERR, "fix cluster/crush: cannot allocate map"); }
+    algorand = new RanPark(lmp, comm->nprocs);
+    sigma = std::sqrt(monomer_temperature / atom->mass[ntype]);
+    succ = memory->create(succ, comm->nprocs * sizeof(int), "fix cluster/crush:succ");
+  }
 
   ::memset(xone, 0, 3 * sizeof(double));
   ::memset(lamda, 0, 3 * sizeof(double));
@@ -253,10 +291,15 @@ FixClusterCrush::~FixClusterCrush() noexcept(true)
 {
   delete xrandom;
   delete vrandom;
+  delete algorand;
 
-  if ((fp != nullptr) && (comm->me == 0)) { ::fclose(fp); }
-  memory->destroy(nptt_rank);
+  if ((fp != nullptr) && (comm->me == 0)) {
+    ::fflush(fp);
+    ::fclose(fp);
+  }
+  memory->destroy(pproc);
   memory->destroy(c2c);
+  if (mode == MODE::FASTPORT) { memory->destroy(map); }
   if (p2m != nullptr) { memory->destroy(p2m); }
 }
 
@@ -280,6 +323,32 @@ int FixClusterCrush::setmask()
 
 /* ---------------------------------------------------------------------- */
 
+[[nodiscard]] inline bigint FixClusterCrush::i2c(bigint i, bigint j, bigint k) const noexcept(true)
+{
+  return i + j * ncell[0] + k * ncell[0] * ncell[1];
+}
+
+/* ---------------------------------------------------------------------- */
+
+[[nodiscard]] inline bigint FixClusterCrush::x2c(double x, double y, double z) const noexcept(true)
+{
+  return static_cast<bigint>(x / overlap) + static_cast<bigint>(y / overlap) * ncell[0] +
+      static_cast<bigint>(z / overlap) * ncell[0] * ncell[1];
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixClusterCrush::fill_map() noexcept(true)
+{
+  double **x = atom->x;
+  ::memset(map, 0, ncell[0] * ncell[1] * ncell[2] * sizeof(int));
+  for (int i = 0; i < atom->nlocal; ++i) {
+    ++map[x2c(x[i][0] - subbonds[0][0], x[i][1] - subbonds[1][0], x[i][2] - subbonds[2][0])];
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
 void FixClusterCrush::pre_exchange()
 {
   if (update->ntimestep < next_step) { return; }
@@ -295,7 +364,7 @@ void FixClusterCrush::pre_exchange()
   if ((nloc < atom->nlocal) && (p2m != nullptr)) { memory->destroy(p2m); }
   if ((nloc < atom->nlocal) || (p2m == nullptr)) {
     nloc = atom->nlocal;
-    memory->create(p2m, nloc, "fix cluster/crush:p2m");
+    memory->create(p2m, nloc * sizeof(int), "fix cluster/crush:p2m");
     ::memset(p2m, 0, nloc);
   }
 
@@ -316,18 +385,18 @@ void FixClusterCrush::pre_exchange()
     }
   }
 
-  ::memset(c2c, 0, nprocs * sizeof(int));
+  ::memset(c2c, 0, comm->nprocs * sizeof(int));
   c2c[comm->me] = clusters2crush_local;
   ::MPI_Allgather(&clusters2crush_local, 1, MPI_LMP_BIGINT, c2c, 1, MPI_LMP_BIGINT, world);
 
-  ::memset(nptt_rank, 0, nprocs * sizeof(int));
-  nptt_rank[comm->me] = atoms2move_local;
-  ::MPI_Allgather(&atoms2move_local, 1, MPI_INT, nptt_rank, 1, MPI_INT, world);
+  ::memset(pproc, 0, comm->nprocs * sizeof(int));
+  pproc[comm->me] = atoms2move_local;
+  ::MPI_Allgather(&atoms2move_local, 1, MPI_INT, pproc, 1, MPI_INT, world);
 
   bigint atoms2move_total = 0;
   bigint clusters2crush_total = 0;
-  for (int proc = 0; proc < nprocs; ++proc) {
-    atoms2move_total += nptt_rank[proc];
+  for (int proc = 0; proc < comm->nprocs; ++proc) {
+    atoms2move_total += pproc[proc];
     clusters2crush_total += c2c[proc];
   }
 
@@ -335,55 +404,195 @@ void FixClusterCrush::pre_exchange()
     if (comm->me == 0) {
       if (screenflag != 0) { utils::logmesg(lmp, "No clusters with size exceeding {}\n", kmax); }
       if (fileflag != 0) {
-        fmt::print(fp, "{},0,0,0,0,0\n", update->ntimestep);
+        fmt::print(fp, "{},{},0,0,0,0\n", update->ntimestep, atom->natoms);
         ::fflush(fp);
       }
     }
     return;
   }
 
-  bigint not_moved = 0;
+  bigint const natoms_previous = atom->natoms;
   bigint nmoved = 0;
 
-  if (teleportflag != 0) {
+  if ((mode == MODE::DELETE) || (mode == MODE::FASTPORT)) {
+    deleteAtoms(atoms2move_local);
+    postDelete();
+  } else {
     region->prematch();
 
-    for (int nproc = 0; nproc < nprocs; ++nproc) {
-      for (int i = 0; i < nptt_rank[nproc]; ++i) {
-        if (genOneFull()) {    // if success new coords will be already in xone[]
+    for (int nproc = 0; nproc < comm->nprocs; ++nproc) {
+      for (int i = 0; i < pproc[nproc]; ++i) {
+        if ((genOneFull()) && (nproc == comm->me)) {
+          set(p2m[i]);
           ++nmoved;
-          if (nproc == comm->me) { set(p2m[i]); }
-        } else {
-          ++not_moved;
         }
       }
     }
-    // warn if did not successfully moved all atoms
-    if (nmoved < atoms2move_total) {
-      error->warning(FLERR, "Only moved {} atoms out of {} ({}%)", nmoved, atoms2move_total,
-                     (100 * nmoved) / atoms2move_total);
-    }
     postTeleport();
-  } else {
-    deleteAtoms(atoms2move_local);
-    postDelete();
+  }
+
+  if (mode == MODE::FASTPORT) {
+    region->prematch();
+    int const nlocal_prev = atom->nlocal;
+    fill_map();
+    add_core();
+    post_add(nlocal_prev);
+
+    for (int i = 0; i < comm->nprocs; ++i) { nmoved += pproc[i]; }
+    nmoved = atoms2move_total - nmoved;
   }
 
   if (comm->me == 0) {
+    bigint atom_delta = natoms_previous - atom->natoms;
+    atom_delta = atom_delta < 0 ? -atom_delta : atom_delta;
     // print status
     if (screenflag != 0) {
       utils::logmesg(lmp, "Crushed {} clusters -> {} {} atoms\n", clusters2crush_total,
-                     teleportflag != 0 ? "moved" : "deleted",
-                     teleportflag != 0 ? nmoved : atoms2move_total);
+                     mode != MODE::DELETE ? "moved" : "deleted", atom_delta);
     }
     if (fileflag != 0) {
-      fmt::print(fp, "{},{},{},{},{},{}\n", update->ntimestep, clusters2crush_total,
-                 atoms2move_total, nmoved, not_moved, teleportflag != 0 ? 0 : atoms2move_total);
+      fmt::print(fp, "{},{},{},{},{},{}\n", update->ntimestep, atom->natoms, clusters2crush_total,
+                 atoms2move_total, mode != MODE::DELETE ? nmoved : 0,
+                 mode == MODE::DELETE ? atom_delta : 0);
       ::fflush(fp);
     }
   }
 
 }    // void FixClusterCrush::pre_exchange()
+
+/* ---------------------------------------------------------------------- */
+
+void FixClusterCrush::add_core() noexcept(true)
+{
+  bigint sum = 0;
+  for (int nproc = 0; nproc < comm->nprocs; ++nproc) { sum += pproc[nproc]; }
+  int tries = maxtry_call;
+
+  do {
+    pproc[comm->me] = static_cast<int>(sum / comm->nprocs);
+    if (static_cast<int>(algorand->uniform() * ::MAX_RANDOM_VALUE) % comm->nprocs == comm->me) {
+      pproc[comm->me] += sum % comm->nprocs;
+    }
+
+    if (pproc[comm->me] > 0) {
+      for (bigint i = 0; (i < ncell[0] - 2) && (pproc[comm->me] > 0); ++i) {
+        for (bigint j = 0; (j < ncell[1] - 2) && (pproc[comm->me] > 0); ++j) {
+          for (bigint k = 0; (k < ncell[2] - 2) && (pproc[comm->me] > 0); ++k) {
+            xone[0] = subbonds[0][0] + (i + 1) * overlap;
+            xone[1] = subbonds[1][0] + (j + 1) * overlap;
+            xone[2] = subbonds[2][0] + (k + 1) * overlap;
+            if ((map[i2c(i, j, k)] == 0) && (map[i2c(i, j + 1, k)] == 0) &&
+                (map[i2c(i, j, k + 1)] == 0) && (map[i2c(i, j + 1, k + 1)] == 0) &&
+                (map[i2c(i + 1, j, k)] == 0) && (map[i2c(i + 1, j + 1, k)] == 0) &&
+                (map[i2c(i + 1, j, k + 1)] == 0) && (map[i2c(i + 1, j + 1, k + 1)] == 0) &&
+                (region->match(xone[0], xone[1], xone[2]) != 0)) {
+              atom->avec->create_atom(ntype, xone);
+              if (fix_temp) { set_speed(atom->nlocal - 1); }
+              --pproc[comm->me];
+            }
+          }
+        }
+      }
+    }
+
+    int temp = pproc[comm->me];
+    ::memset(pproc, 0, comm->nprocs * sizeof(int));
+    ::MPI_Allgather(&temp, 1, MPI_INT, pproc, 1, MPI_INT, world);
+
+    sum = 0;
+    for (int i = 0; i < comm->nprocs; ++i) { sum += pproc[i]; }
+    --tries;
+
+  } while ((sum > 0) && (tries > 0));
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixClusterCrush::build_tp_map() noexcept(true)
+{
+  bigint sum = 0;
+  for (int nproc = 0; nproc < comm->nprocs; ++nproc) { sum += pproc[nproc]; }
+  int tries = maxtry_call;
+
+  do {
+    pproc[comm->me] = static_cast<int>(sum / comm->nprocs);
+    if (static_cast<int>(algorand->uniform() * ::MAX_RANDOM_VALUE) % comm->nprocs == comm->me) {
+      pproc[comm->me] += sum % comm->nprocs;
+    }
+
+    if (pproc[comm->me] > 0) {
+      for (bigint i = 0; (i < ncell[0] - 1) && (pproc[comm->me] > 0); ++i) {
+        for (bigint j = 0; (j < ncell[1] - 1) && (pproc[comm->me] > 0); ++j) {
+          for (bigint k = 0; (k < ncell[2] - 1) && (pproc[comm->me] > 0); ++k) {
+            xone[0] = (i + 1) * overlap;
+            xone[1] = (j + 1) * overlap;
+            xone[2] = (k + 1) * overlap;
+            if ((map[i2c(i, j, k)] == 0) && (map[i2c(i, j + 1, k)] == 0) &&
+                (map[i2c(i, j, k + 1)] == 0) && (map[i2c(i, j + 1, k + 1)] == 0) &&
+                (map[i2c(i + 1, j, k)] == 0) && (map[i2c(i + 1, j + 1, k)] == 0) &&
+                (map[i2c(i + 1, j, k + 1)] == 0) && (map[i2c(i + 1, j + 1, k + 1)] == 0) &&
+                (region->match(xone[0], xone[1], xone[2]) != 0)) {
+              atom->avec->create_atom(ntype, xone);
+              if (fix_temp) { set_speed(atom->nlocal - 1); }
+              --pproc[comm->me];
+            }
+          }
+        }
+      }
+    }
+
+    int temp = pproc[comm->me];
+    ::memset(pproc, 0, comm->nprocs * sizeof(int));
+    ::MPI_Allgather(&temp, 1, MPI_INT, pproc, 1, MPI_INT, world);
+
+    sum = 0;
+    for (int i = 0; i < comm->nprocs; ++i) { sum += pproc[i]; }
+    --tries;
+
+  } while ((sum > 0) && (tries > 0));
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixClusterCrush::post_add(const int nlocal_previous) noexcept(true)
+{
+  // init per-atom fix/compute/variable values for created atoms
+
+  atom->data_fix_compute_variable(nlocal_previous, atom->nlocal);
+
+  // set new total # of atoms and error check
+
+  bigint nblocal = atom->nlocal;
+  ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  if ((atom->natoms < 0) || (atom->natoms >= MAXBIGINT)) {
+    error->all(FLERR, "Too many total atoms");
+  }
+
+  // add IDs for newly created atoms
+  // check that atom IDs are valid
+
+  if (atom->tag_enable != 0) { atom->tag_extend(); }
+  atom->tag_check();
+
+  // if global map exists, reset it
+  // invoke map_init() b/c atom count has grown
+
+  if (atom->map_style != Atom::MAP_NONE) {
+    atom->map_init();
+    atom->map_set();
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixClusterCrush::set_speed(int pID) noexcept(true)
+{
+  double **v = atom->v;
+  // generate velocities
+  v[pID][0] = vrandom->gaussian() * sigma;
+  v[pID][1] = vrandom->gaussian() * sigma;
+  if (domain->dimension == 3) { v[pID][2] = vrandom->gaussian() * sigma; }
+}
 
 /* ---------------------------------------------------------------------- */
 
@@ -402,7 +611,7 @@ void FixClusterCrush::set(int pID) noexcept(true)
     v[pID][2] *= velscale;
   }
 
-  if (fix_temp != 0) {
+  if (fix_temp) {
     // generate velocities
     double const sigma = ::sqrt(monomer_temperature / atom->mass[atom->type[pID]]);
     v[pID][0] = vrandom->gaussian() * sigma;

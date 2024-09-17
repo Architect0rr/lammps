@@ -20,6 +20,7 @@ ComputeStyle(supersaturation/mono,ComputeSupersaturationMono);
 #ifndef LMP_COMPUTE_SUPERSATURATION_MONO_H
 #define LMP_COMPUTE_SUPERSATURATION_MONO_H
 
+#include "compute_cluster_temps.h"
 #include "compute.h"
 #include "region.h"
 
@@ -39,11 +40,13 @@ class ComputeSupersaturationMono : public Compute {
   bigint global_monomers{};       // number of global monomers
   double execute_func() const;    // monomer number density at saturation curve
   int *mono_idx{};                // ids of local monomers
+  bool use_t1;
 
  private:
   Region *region = nullptr;
   Compute *compute_neighs = nullptr;
   Compute *compute_temp = nullptr;
+  ComputeClusterTemp *compute_cltemp = nullptr;
 
   int nloc{};    // number of elements in mono_idx
   double coeffs[2]{};

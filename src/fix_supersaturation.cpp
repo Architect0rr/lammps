@@ -20,7 +20,6 @@
 #include "error.h"
 #include "fix.h"
 #include "fmt/core.h"
-#include "lattice.h"
 #include "memory.h"
 #include "modify.h"
 #include "update.h"
@@ -35,6 +34,7 @@ using namespace FixConst;
 constexpr int DEFAULT_MAXTRY = 1000;
 constexpr int DEFAULT_MAXTRY_CALL = 5;
 constexpr int DEFAULT_MAXTRY_MOVE = 9;
+constexpr int MAX_RANDOM_VALUE = 32767;
 
 /* ---------------------------------------------------------------------- */
 
@@ -72,7 +72,7 @@ FixSupersaturation::FixSupersaturation(LAMMPS *lmp, int narg, char **arg) :
   }
 
   // apply scaling factor for styles that use distance-dependent factors
-  overlap *= domain->lattice->xlattice;
+  // overlap *= domain->lattice->xlattice;
   odistsq = overlap * overlap;
 
   // # of type of atoms to insert
@@ -396,7 +396,7 @@ void FixSupersaturation::pre_exchange()
 
       do {
         pproc[comm->me] = static_cast<int>(sum / comm->nprocs);
-        if (static_cast<int>(alogrand->uniform() * 32767) == comm->me) {
+        if (static_cast<int>(alogrand->uniform() * ::MAX_RANDOM_VALUE) % comm->nprocs == comm->me) {
           pproc[comm->me] += sum % comm->nprocs;
         }
 
@@ -442,10 +442,11 @@ void FixSupersaturation::pre_exchange()
                      atom->natoms);
     }
     if (fileflag != 0) {
-      fmt::print(fp, "{},{},{},{},{},{},{:.3f},{:.3f},{:.3f},{:.3f}\n", update->ntimestep, atom->natoms,
-                 delflag ? delta : 0, !delflag ? delta : 0, delflag ? atom_delta : 0,
+      fmt::print(fp, "{},{},{},{},{},{},{:.3f},{:.3f},{:.3f},{:.3f}\n", update->ntimestep,
+                 atom->natoms, delflag ? delta : 0, !delflag ? delta : 0, delflag ? atom_delta : 0,
                  !delflag ? atom_delta : 0, previous_supersaturation, newsupersaturation,
-                 newsupersaturation - previous_supersaturation, !delflag ? static_cast<double>(atom_delta*100)/delta : 0);
+                 newsupersaturation - previous_supersaturation,
+                 !delflag ? static_cast<double>(atom_delta * 100) / delta : 0);
       ::fflush(fp);
     }
   }
@@ -517,21 +518,17 @@ void FixSupersaturation::add_monomers_local_random() noexcept(true)
 
 void FixSupersaturation::add_monomers_local_grid() noexcept(true)
 {
-  auto const nx =
-      static_cast<bigint>(::floor((subbonds[0][1] - subbonds[0][0]) / overlap));
-  auto const ny =
-      static_cast<bigint>(::floor((subbonds[1][1] - subbonds[1][0]) / overlap));
-  auto const nz =
-      static_cast<bigint>(::floor((subbonds[2][1] - subbonds[2][0]) / overlap));
+  auto const nx = static_cast<bigint>(::floor((subbonds[0][1] - subbonds[0][0]) / overlap));
+  auto const ny = static_cast<bigint>(::floor((subbonds[1][1] - subbonds[1][0]) / overlap));
+  auto const nz = static_cast<bigint>(::floor((subbonds[2][1] - subbonds[2][0]) / overlap));
   for (bigint i = 0; (i < nx) && (pproc[comm->me] > 0); ++i) {
     for (bigint j = 0; (j < ny) && (pproc[comm->me] > 0); ++j) {
       for (bigint k = 0; (k < nz) && (pproc[comm->me] > 0); ++k) {
-        if (moveflag ? gen_one_local_at_move(
-                           subbonds[0][0] + overlap * i, subbonds[1][0] + overlap * j,
-                           subbonds[2][0] + overlap * k, overlap, overlap, overlap)
-                     : gen_one_local_at(
-                           subbonds[0][0] + overlap * i, subbonds[1][0] + overlap * j,
-                           subbonds[2][0] + overlap * k, overlap, overlap, overlap)) {
+        if (moveflag
+                ? gen_one_local_at_move(subbonds[0][0] + overlap * i, subbonds[1][0] + overlap * j,
+                                        subbonds[2][0] + overlap * k, overlap, overlap, overlap)
+                : gen_one_local_at(subbonds[0][0] + overlap * i, subbonds[1][0] + overlap * j,
+                                   subbonds[2][0] + overlap * k, overlap, overlap, overlap)) {
           atom->avec->create_atom(ntype, xone);
           if (fix_temp != 0) { set_speed(atom->nlocal - 1); }
           --pproc[comm->me];
