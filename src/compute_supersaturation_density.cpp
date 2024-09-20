@@ -89,7 +89,7 @@ double ComputeSupersaturationDensity::compute_scalar()
   if (compute_temp->invoked_scalar != update->ntimestep) { compute_temp->compute_scalar(); }
 
   const double *dist = compute_cluster_size->vector;
-  double sum{};
+  double sum = 0;
   for (int i = 1; i <= kmax; ++i) { sum += dist[i]; }
 
   scalar = sum / domain->volume() / execute_func();

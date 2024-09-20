@@ -40,21 +40,21 @@ FixClusterDump::FixClusterDump(LAMMPS *lmp, int narg, char **arg) :
   if (size_cutoff < 1) { error->all(FLERR, "size_cutoff for cluster/dump must be greater than 0"); }
 
   // Get cluster/size compute
-  compute_cluster_size = lmp->modify->get_compute_by_id(arg[5]);
+  compute_cluster_size = dynamic_cast<ComputeClusterSize *>(lmp->modify->get_compute_by_id(arg[5]));
   if (compute_cluster_size == nullptr) {
     error->all(FLERR, "cluster/dump: Cannot find compute of style 'cluster/size' with id: {}",
                arg[5]);
   }
 
   // Get cluster/temp compute
-  compute_cluster_temp = lmp->modify->get_compute_by_id(arg[6]);
+  compute_cluster_temp = dynamic_cast<ComputeClusterTemp *>(lmp->modify->get_compute_by_id(arg[6]));
   if (compute_cluster_temp == nullptr) {
     error->all(FLERR, "cluster/dump: Cannot find compute of style 'cluster/temp' with id: {}",
                arg[6]);
   }
 
   // Get supersaturation/mono compute
-  compute_supersaturation_mono = lmp->modify->get_compute_by_id(arg[7]);
+  compute_supersaturation_mono = dynamic_cast<ComputeSupersaturationMono *>(lmp->modify->get_compute_by_id(arg[7]));
   if (compute_supersaturation_mono == nullptr) {
     error->all(FLERR,
                "cluster/dump: Cannot find compute of style 'supersaturation/mono' with id: {}",
@@ -62,7 +62,7 @@ FixClusterDump::FixClusterDump(LAMMPS *lmp, int narg, char **arg) :
   }
 
   // Get supersaturation/density compute
-  compute_supersaturation_density = lmp->modify->get_compute_by_id(arg[8]);
+  compute_supersaturation_density = dynamic_cast<ComputeSupersaturationDensity *>(lmp->modify->get_compute_by_id(arg[8]));
   if (compute_supersaturation_density == nullptr) {
     error->all(FLERR,
                "cluster/dump: Cannot find compute of style 'supersaturation/density' with id: {}",

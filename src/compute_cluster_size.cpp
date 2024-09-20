@@ -98,8 +98,7 @@ void ComputeClusterSize::compute_vector()
   // Sort atom IDs by cluster IDs
   for (int i = 0; i < atom->nlocal; ++i) {
     if ((atom->mask[i] & groupbit) != 0) {
-      auto const cid = static_cast<tagint>(cluster_ids[i]);
-      atoms_by_cID[cid].emplace_back(i);
+      atoms_by_cID[static_cast<tagint>(cluster_ids[i])].emplace_back(i);
     }
   }
 

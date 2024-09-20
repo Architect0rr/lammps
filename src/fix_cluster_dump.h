@@ -14,6 +14,10 @@ FixStyle(cluster/dump,FixClusterDump);
 #define LAMMPS_FIX_CLUSTER_DUMP_H
 
 #include "compute.h"
+#include "compute_cluster_size.h"
+#include "compute_cluster_temps.h"
+#include "compute_supersaturation_mono.h"
+#include "compute_supersaturation_density.h"
 #include "fix.h"
 
 namespace LAMMPS_NS {
@@ -28,10 +32,10 @@ class FixClusterDump : public Fix {
 
  protected:
   Compute *compute_temp = nullptr;
-  Compute *compute_cluster_size = nullptr;
-  Compute *compute_cluster_temp = nullptr;
-  Compute *compute_supersaturation_mono = nullptr;
-  Compute *compute_supersaturation_density = nullptr;
+  ComputeClusterSize *compute_cluster_size = nullptr;
+  ComputeClusterTemp *compute_cluster_temp = nullptr;
+  ComputeSupersaturationMono *compute_supersaturation_mono = nullptr;
+  ComputeSupersaturationDensity *compute_supersaturation_density = nullptr;
 
   FILE *cldist;
   FILE *cltemp;
