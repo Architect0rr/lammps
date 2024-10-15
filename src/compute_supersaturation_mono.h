@@ -49,7 +49,7 @@ class ComputeSupersaturationMono : public Compute {
 
   bool use_t1;
   int nloc{};    // number of elements in mono_idx
-  double coeffs[2]{};
+  double coeffs[3]{};
 };
 
 }    // namespace LAMMPS_NS

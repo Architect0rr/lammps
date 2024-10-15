@@ -357,9 +357,8 @@ void FixClusterCrush::pre_exchange()
   if (compute_cluster_size->invoked_vector < update->ntimestep - (nevery / 2)) {
     compute_cluster_size->compute_vector();
   }
-  std::unordered_map<tagint, std::vector<tagint>> const cIDs_by_size =
-      compute_cluster_size->cIDs_by_size;
-  std::unordered_map<tagint, std::vector<tagint>> atoms_by_cID = compute_cluster_size->atoms_by_cID;
+  const auto cIDs_by_size = compute_cluster_size->cIDs_by_size;
+  auto atoms_by_cID = compute_cluster_size->atoms_by_cID;
 
   if ((nloc < atom->nlocal) && (p2m != nullptr)) { memory->destroy(p2m); }
   if ((nloc < atom->nlocal) || (p2m == nullptr)) {

@@ -33,16 +33,19 @@ class ComputeClusterSize : public Compute {
   ~ComputeClusterSize() noexcept(true) override;
   void init() override;
   void compute_vector() override;
+  void compute_peratom() override;
   double memory_usage() override;
 
-  std::unordered_map<tagint, std::vector<tagint>> atoms_by_cID;    // Mapping cID  -> local idx
-  std::unordered_map<tagint, std::vector<tagint>> cIDs_by_size;    // Mapping size -> cIDs
+  std::unordered_map<bigint, std::vector<int>> atoms_by_cID;    // Mapping cID  -> local idx
+  std::unordered_map<bigint, std::vector<bigint>> cIDs_by_size;    // Mapping size -> cIDs
 
  private:
-  int nloc;            // number of reserved elements in atoms_by_cID and cIDs_by_size
-  double *dist;        // cluster size distribution (vector == dist)
-  bigint nc_global;    // number of clusters total
-  int size_cutoff;     // number of elements reserved in dist
+  int nloc;                // number of reserved elements in atoms_by_cID and cIDs_by_size
+  int nloc_atom;           // nunber of reserved elements in peratom array
+  double *peratom_size;    // peratom array (size of cluster it is in)
+  double *dist;            // cluster size distribution (vector == dist)
+  bigint nc_global;        // number of clusters total
+  int size_cutoff;         // number of elements reserved in dist
 
   Region *region = nullptr;
   Compute *compute_cluster_atom = nullptr;

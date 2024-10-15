@@ -34,7 +34,7 @@ ComputeSupersaturationDensity::ComputeSupersaturationDensity(LAMMPS *lmp, int na
   scalar_flag = 1;
   extscalar = 0;
 
-  if (narg < 7) { utils::missing_cmd_args(FLERR, "compute supersaturation/density", error); }
+  if (narg < 8) { utils::missing_cmd_args(FLERR, "compute supersaturation/density", error); }
 
   // Parse arguments //
 
@@ -56,6 +56,7 @@ ComputeSupersaturationDensity::ComputeSupersaturationDensity(LAMMPS *lmp, int na
   // Arrhenius coeffs
   coeffs[0] = utils::numeric(FLERR, arg[5], true, lmp);
   coeffs[1] = utils::numeric(FLERR, arg[6], true, lmp);
+  coeffs[2] = utils::numeric(FLERR, arg[7], true, lmp);
 
   auto temp_computes = lmp->modify->get_compute_by_style("temp");
   if (temp_computes.empty()) {
@@ -90,7 +91,7 @@ double ComputeSupersaturationDensity::compute_scalar()
 
   const double *dist = compute_cluster_size->vector;
   double sum = 0;
-  for (int i = 1; i <= kmax; ++i) { sum += dist[i]; }
+  for (int size = 1; size <= kmax; ++size) { sum += size * dist[size]; }
 
   scalar = sum / domain->volume() / execute_func();
   return scalar;
@@ -100,7 +101,7 @@ double ComputeSupersaturationDensity::compute_scalar()
 
 double ComputeSupersaturationDensity::execute_func() const
 {
-  return coeffs[0] * ::exp(-coeffs[1] / compute_temp->scalar);
+  return coeffs[0] * ::exp(coeffs[1] - coeffs[2] / compute_temp->scalar);
 }
 
 /* ---------------------------------------------------------------------- */

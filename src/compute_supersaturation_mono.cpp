@@ -36,7 +36,7 @@ ComputeSupersaturationMono::ComputeSupersaturationMono(LAMMPS *lmp, int narg, ch
   extscalar = 0;
   local_flag = 1;
 
-  if (narg < 7) { utils::missing_cmd_args(FLERR, "compute supersaturation/mono", error); }
+  if (narg < 8) { utils::missing_cmd_args(FLERR, "compute supersaturation/mono", error); }
 
   // Parse arguments //
 
@@ -58,9 +58,10 @@ ComputeSupersaturationMono::ComputeSupersaturationMono(LAMMPS *lmp, int narg, ch
   // Arrhenius coeffs
   coeffs[0] = utils::numeric(FLERR, arg[5], true, lmp);
   coeffs[1] = utils::numeric(FLERR, arg[6], true, lmp);
+  coeffs[2] = utils::numeric(FLERR, arg[7], true, lmp);
 
-  if (narg == 8) {
-    if (::strcmp(arg[7], "uset1") == 0) {
+  if (narg == 9) {
+    if (::strcmp(arg[8], "uset1") == 0) {
       use_t1 = true;
     } else {
       error->all(FLERR, "compute supersaturation/mono: Uknown option {}", arg[7]);
@@ -152,9 +153,9 @@ void ComputeSupersaturationMono::compute_local()
 double ComputeSupersaturationMono::execute_func() const
 {
   if (use_t1) {
-    return coeffs[0] * ::exp(-coeffs[1] / compute_cltemp->vector[1]);
+    return coeffs[0] * ::exp(coeffs[1] - coeffs[2] / compute_cltemp->vector[1]);
   } else {
-    return coeffs[0] * ::exp(-coeffs[1] / compute_temp->scalar);
+    return coeffs[0] * ::exp(coeffs[1] - coeffs[2] / compute_temp->scalar);
   }
 }
 

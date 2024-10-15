@@ -27,12 +27,15 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 ComputeClusterSize::ComputeClusterSize(LAMMPS *lmp, int narg, char **arg) :
-    Compute(lmp, narg, arg), nloc(0), dist(nullptr), nc_global(0)
+    Compute(lmp, narg, arg), nloc(0), nloc_atom(0), peratom_size(nullptr), dist(nullptr), nc_global(0)
 {
   vector_flag = 1;
   extvector = 0;
   size_vector = 0;
   size_vector_variable = 1;
+
+  peratom_flag = 1;
+  size_peratom_cols = 0;
 
   if (narg < 4) { utils::missing_cmd_args(FLERR, "compute cluster/size", error); }
 
@@ -52,9 +55,8 @@ ComputeClusterSize::ComputeClusterSize(LAMMPS *lmp, int narg, char **arg) :
   if (size_cutoff < 1) { error->all(FLERR, "size_cutoff for compute cluster/size must be greater than 0"); }
 
   size_vector = size_cutoff + 1;
-  memory->create(dist, size_vector + 1, "compute:cluster/size:dist");
+  dist = memory->create(dist, (size_vector + 1) * sizeof(double), "compute:cluster/size:dist");
   vector = dist;
-
 }
 
 /* ---------------------------------------------------------------------- */
@@ -62,6 +64,7 @@ ComputeClusterSize::ComputeClusterSize(LAMMPS *lmp, int narg, char **arg) :
 ComputeClusterSize::~ComputeClusterSize() noexcept(true)
 {
   if (dist != nullptr) { memory->destroy(dist); }
+  if (peratom_size != nullptr) { memory->destroy(peratom_size); }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -71,6 +74,13 @@ void ComputeClusterSize::init()
   if ((modify->get_compute_by_style(style).size() > 1) && (comm->me == 0)) {
     error->warning(FLERR, "More than one compute {}", style);
   }
+
+  nloc_atom = atom->nlocal;
+  peratom_size = memory->create(peratom_size, nloc_atom * sizeof(double), "cluster_size:peratom");
+  ::memset(peratom_size, 0.0, nloc_atom * sizeof(double));
+  vector_atom = peratom_size;
+
+  initialized_flag = 1;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -98,7 +108,7 @@ void ComputeClusterSize::compute_vector()
   // Sort atom IDs by cluster IDs
   for (int i = 0; i < atom->nlocal; ++i) {
     if ((atom->mask[i] & groupbit) != 0) {
-      atoms_by_cID[static_cast<tagint>(cluster_ids[i])].emplace_back(i);
+      atoms_by_cID[static_cast<bigint>(cluster_ids[i])].emplace_back(i);
     }
   }
 
@@ -115,6 +125,35 @@ void ComputeClusterSize::compute_vector()
     if (g_size > 0) {
       if (g_size < size_cutoff) { dist[g_size] += 1; }
       ++nc_global;
+    }
+  }
+
+  compute_peratom();
+
+}
+
+/* ---------------------------------------------------------------------- */
+
+void ComputeClusterSize::compute_peratom()
+{
+  invoked_peratom = update->ntimestep;
+
+  if ((nloc_atom < atom->nlocal) && (peratom_size != nullptr)) {
+    memory->destroy(peratom_size);
+  }
+
+  if ((nloc_atom < atom->nlocal) && (peratom_size == nullptr)) {
+    nloc_atom = atom->nlocal;
+    peratom_size = memory->create(peratom_size, nloc_atom * sizeof(double), "cluster_size:peratom");
+    ::memset(peratom_size, 0.0, nloc_atom * sizeof(double));
+    vector_atom = peratom_size;
+  }
+
+  for (auto [size, cIDs] : cIDs_by_size) {
+    for (auto cID : cIDs) {
+      for (auto pID : atoms_by_cID[cID]) {
+        peratom_size[pID] = size;
+      }
     }
   }
 }
