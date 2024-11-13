@@ -231,7 +231,7 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) 
   }
 
   if ((comm->me == 0) && (fileflag != 0)) {
-    fmt::print(fp, "ntimestep,ntotal,cc,ad,aa,tr,succ\n");
+    fmt::print(fp, "ntimestep,ntotal,cc,ad,aa,tr\n");
     ::fflush(fp);
   }
 
@@ -294,10 +294,12 @@ void FixClusterCrushDelete::pre_exchange()
     int const nloc_prev = atom->nlocal;
     for (int i = 0; i < at_once; ++i) {
       int tries = 0;
-      while (!genOneFull()) {
+      bool succ = false;
+      while (!succ) {
+        succ = genOneFull();
         if (++tries > maxtry) { break; }
       }
-      if (tries <= maxtry) {
+      if (succ) {
         if (coord[0] >= subbonds[0][0] && coord[0] < subbonds[0][1] && coord[1] >= subbonds[1][0] &&
             coord[1] < subbonds[1][1] && coord[2] >= subbonds[2][0] && coord[2] < subbonds[2][1]) {
           atom->avec->create_atom(ntype, xone);
@@ -307,7 +309,9 @@ void FixClusterCrushDelete::pre_exchange()
         ++added_prev;
       }
     }
-    post_add(nloc_prev);
+    if (atom->nlocal > nloc_prev) {
+      post_add(nloc_prev);
+    }
   }
 
   if (update->ntimestep < next_step) { return; }
@@ -358,13 +362,11 @@ void FixClusterCrushDelete::pre_exchange()
     clusters2crush_total += c2c[proc];
   }
 
-  double restore_succ_rate = static_cast<double>(added_prev*100)/(static_cast<double>(at_once*nevery));
-
   if (clusters2crush_total == 0) {
     if (comm->me == 0) {
       if (screenflag != 0) { utils::logmesg(lmp, "No clusters with size exceeding {}\n", kmax); }
       if (fileflag != 0) {
-        fmt::print(fp, "{},{},0,0,0,{},{:.3f}\n", update->ntimestep, atom->natoms, to_restore, restore_succ_rate);
+        fmt::print(fp, "{},{},0,0,{},{}\n", update->ntimestep, atom->natoms, added_prev, to_restore);
         ::fflush(fp);
       }
     }
@@ -382,8 +384,8 @@ void FixClusterCrushDelete::pre_exchange()
                      clusters2crush_total, atoms2move_total, added_prev);
     }
     if (fileflag != 0) {
-      fmt::print(fp, "{},{},{},{},{},{},{}\n", update->ntimestep, atom->natoms, clusters2crush_total,
-                 atoms2move_total, added_prev, to_restore, restore_succ_rate);
+      fmt::print(fp, "{},{},{},{},{},{}\n", update->ntimestep, atom->natoms, clusters2crush_total,
+                 atoms2move_total, added_prev, to_restore);
       ::fflush(fp);
     }
   }
