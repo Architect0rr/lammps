@@ -170,10 +170,6 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) 
         error->all(FLERR, "Unknown fix cluster/crush units option {}", arg[iarg + 1]);
       }
       iarg += 2;
-      // } else if (::strcmp(arg[iarg], "velscale") == 0) {
-      //   velscaleflag = 1;
-      //   velscale = utils::numeric(FLERR, arg[iarg + 1], true, lmp);
-      //   iarg += 2;
     } else {
       error->all(FLERR, "Illegal fix cluster/crush command option {}", arg[iarg]);
     }
@@ -235,7 +231,7 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) 
   }
 
   if ((comm->me == 0) && (fileflag != 0)) {
-    fmt::print(fp, "ntimestep,ntotal,cc,ad,aa\n");
+    fmt::print(fp, "ntimestep,ntotal,cc,ad,aa,tr,succ\n");
     ::fflush(fp);
   }
 
@@ -362,11 +358,13 @@ void FixClusterCrushDelete::pre_exchange()
     clusters2crush_total += c2c[proc];
   }
 
+  double restore_succ_rate = static_cast<double>(added_prev*100)/(static_cast<double>(at_once*nevery));
+
   if (clusters2crush_total == 0) {
     if (comm->me == 0) {
       if (screenflag != 0) { utils::logmesg(lmp, "No clusters with size exceeding {}\n", kmax); }
       if (fileflag != 0) {
-        fmt::print(fp, "{},{},0,0,0\n", update->ntimestep, atom->natoms);
+        fmt::print(fp, "{},{},0,0,0,{},{:.3f}\n", update->ntimestep, atom->natoms, to_restore, restore_succ_rate);
         ::fflush(fp);
       }
     }
@@ -384,8 +382,8 @@ void FixClusterCrushDelete::pre_exchange()
                      clusters2crush_total, atoms2move_total, added_prev);
     }
     if (fileflag != 0) {
-      fmt::print(fp, "{},{},{},{},{}\n", update->ntimestep, atom->natoms, clusters2crush_total,
-                 atoms2move_total, added_prev);
+      fmt::print(fp, "{},{},{},{},{},{},{}\n", update->ntimestep, atom->natoms, clusters2crush_total,
+                 atoms2move_total, added_prev, to_restore, restore_succ_rate);
       ::fflush(fp);
     }
   }
