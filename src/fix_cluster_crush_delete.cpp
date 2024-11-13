@@ -88,7 +88,7 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) 
   }
 
   // Parse optional keywords
-  int iarg = 10;
+  int iarg = 9;
   fp = nullptr;
 
   while (iarg < narg) {
