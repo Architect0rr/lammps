@@ -48,7 +48,7 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) :
 
   nevery = 1;
 
-  if (narg < 6) { utils::missing_cmd_args(FLERR, "fix cluster/crush", error); }
+  if (narg < 9) { utils::missing_cmd_args(FLERR, "fix cluster/crush", error); }
 
   // Parse arguments //
 
@@ -71,9 +71,9 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) :
 
   if (::strcmp(arg[6], "delete") == 0) {
     mode = MODE::DELETE;
+    if (narg < 10) { utils::missing_cmd_args(FLERR, "cluster/crush", error); }
   } else if (::strcmp(arg[6], "teleport") == 0) {
     mode = MODE::TELEPORT;
-    if (narg < 9) { utils::missing_cmd_args(FLERR, "cluster/crush", error); }
   } else if (::strcmp(arg[6], "fastport") == 0) {
     mode = MODE::FASTPORT;
     if (narg < 10) { utils::missing_cmd_args(FLERR, "cluster/crush", error); }
@@ -104,7 +104,7 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) :
   }
 
   // Parse optional keywords
-  int iarg = 0;
+  int iarg = 9;
   if (mode == MODE::DELETE) {
     iarg = 10;
   } else if (mode == MODE::TELEPORT) {
@@ -147,8 +147,8 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) :
 
       // Get max number of tries for calling delete_monomers()/add_monomers()
       at_once = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);
-      if (maxtry_call < 1) {
-        error->all(FLERR, "at_onve for fix cluster/crush cannot be less than 1");
+      if (at_once < 1) {
+        error->all(FLERR, "at_once for fix cluster/crush cannot be less than 1");
       }
       iarg += 2;
 
