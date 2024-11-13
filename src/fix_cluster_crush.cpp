@@ -116,9 +116,6 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) :
 
 
   while (iarg < narg) {
-    if (comm->me == 0){
-      utils::logmesg(lmp, "iarg: {}, arg[iarg] == {}", iarg, arg[iarg]);
-    }
     if (::strcmp(arg[iarg], "maxtry") == 0) {
       // Max attempts to search for a new suitable location
       maxtry = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);

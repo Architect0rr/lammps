@@ -6,7 +6,7 @@
 
 #ifdef FIX_CLASS
 // clang-format off
-FixStyle(cluster/crush/delete,FixClusterCrushDelete);
+FixStyle(cluster/crush_delete,FixClusterCrushDelete);
 // clang-format on
 #else
 
