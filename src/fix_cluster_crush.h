@@ -64,6 +64,10 @@ class FixClusterCrush : public Fix {
 
   MODE mode;
 
+  // for delete only
+  bigint to_restore;
+  int at_once;
+
   // for both teleport and fastport
   bool fix_temp;
   double monomer_temperature;

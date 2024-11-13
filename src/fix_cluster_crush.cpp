@@ -38,9 +38,9 @@ constexpr int MAX_RANDOM_VALUE = 32767;
 
 FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) :
     Fix(lmp, narg, arg), screenflag(1), fileflag(0), scaleflag(0), next_step(0), nloc(0),
-    p2m(nullptr), fix_temp(false), velscaleflag(0), velscale(0.0), maxtry(::DEFAULT_MAXTRY),
-    algorand(nullptr), maxtry_call(::DEFAULT_MAXTRY_CALL), map(nullptr), ntype(0), sigma(0),
-    succ(nullptr)
+    p2m(nullptr), to_restore(0), at_once(1), fix_temp(false), velscaleflag(0), velscale(0.0),
+    maxtry(::DEFAULT_MAXTRY), algorand(nullptr), maxtry_call(::DEFAULT_MAXTRY_CALL), map(nullptr),
+    ntype(0), sigma(0), succ(nullptr)
 {
 
   restart_pbc = 1;
@@ -81,23 +81,21 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) :
     error->all(FLERR, "Illegal fix cluster/crush keyword: {}", arg[6]);
   }
 
-  if ((mode == MODE::TELEPORT) || (mode == MODE::FASTPORT)) {
-    // Minimum distance to other atoms from the place atom teleports to
-    overlap = utils::numeric(FLERR, arg[7], true, lmp);
-    if (overlap < 0) {
-      error->all(FLERR, "Minimum distance for fix cluster/crush must be non-negative");
-    }
-
-    // apply scaling factor for styles that use distance-dependent factors
-    // overlap *= domain->lattice->xlattice;
-    odistsq = overlap * overlap;
-
-    // Get the seed for coordinate generator
-    int const xseed = utils::inumeric(FLERR, arg[8], true, lmp);
-    xrandom = new RanPark(lmp, xseed);
+  // Minimum distance to other atoms from the place atom teleports to
+  overlap = utils::numeric(FLERR, arg[7], true, lmp);
+  if (overlap < 0) {
+    error->all(FLERR, "Minimum distance for fix cluster/crush must be non-negative");
   }
 
-  if (mode == MODE::FASTPORT) {
+  // apply scaling factor for styles that use distance-dependent factors
+  // overlap *= domain->lattice->xlattice;
+  odistsq = overlap * overlap;
+
+  // Get the seed for coordinate generator
+  int const xseed = utils::inumeric(FLERR, arg[8], true, lmp);
+  xrandom = new RanPark(lmp, xseed);
+
+  if ((mode == MODE::FASTPORT) || (mode == MODE::DELETE)) {
     // Get the ntype atom creation
     ntype = utils::inumeric(FLERR, arg[9], true, lmp);
     if ((ntype <= 0) || (ntype > atom->ntypes)) {
@@ -108,7 +106,7 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) :
   // Parse optional keywords
   int iarg = 0;
   if (mode == MODE::DELETE) {
-    iarg = 7;
+    iarg = 10;
   } else if (mode == MODE::TELEPORT) {
     iarg = 9;
   } else {
@@ -141,7 +139,16 @@ FixClusterCrush::FixClusterCrush(LAMMPS *lmp, int narg, char **arg) :
       // Get max number of tries for calling delete_monomers()/add_monomers()
       maxtry_call = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);
       if (maxtry_call < 1) {
-        error->all(FLERR, "maxtry_call for fix supersaturation cannot be less than 1");
+        error->all(FLERR, "maxtry_call for fix cluster/crush cannot be less than 1");
+      }
+      iarg += 2;
+
+    } else if (::strcmp(arg[iarg], "at_once") == 0) {
+
+      // Get max number of tries for calling delete_monomers()/add_monomers()
+      at_once = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);
+      if (maxtry_call < 1) {
+        error->all(FLERR, "at_onve for fix cluster/crush cannot be less than 1");
       }
       iarg += 2;
 
@@ -351,6 +358,25 @@ void FixClusterCrush::fill_map() noexcept(true)
 
 void FixClusterCrush::pre_exchange()
 {
+  if ((mode == MODE::DELETE) && (to_restore > 0)) {
+    int nloc_prev = atom->nlocal;
+    for (int i = 0; i < at_once; ++i) {
+      int tries = 0;
+      while (!genOneFull()) {
+        if (++tries > maxtry) { break; }
+      }
+      if (tries <= maxtry) {
+        if (coord[0] >= subbonds[0][0] && coord[0] < subbonds[0][1] && coord[1] >= subbonds[1][0] &&
+            coord[1] < subbonds[1][1] && coord[2] >= subbonds[2][0] && coord[2] < subbonds[2][1]) {
+          atom->avec->create_atom(ntype, xone);
+          if (fix_temp) { set_speed(atom->nlocal - 1); }
+        }
+        --to_restore;
+      }
+    }
+    post_add(nloc_prev);
+  }
+
   if (update->ntimestep < next_step) { return; }
   next_step = update->ntimestep + nevery;
 
@@ -416,6 +442,7 @@ void FixClusterCrush::pre_exchange()
   if ((mode == MODE::DELETE) || (mode == MODE::FASTPORT)) {
     deleteAtoms(atoms2move_local);
     postDelete();
+    to_restore += atoms2move_total;
   } else {
     region->prematch();
 
