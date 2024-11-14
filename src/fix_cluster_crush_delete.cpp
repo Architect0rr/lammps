@@ -291,8 +291,10 @@ int FixClusterCrushDelete::setmask()
 void FixClusterCrushDelete::pre_exchange()
 {
   if (to_restore > 0) {
+    if (comm->me == 0) { utils::logmesg(lmp, "Restoring..."); }
     int const nloc_prev = atom->nlocal;
     for (int i = 0; (i < at_once) && (to_restore > 0); ++i) {
+      if (comm->me == 0) { utils::logmesg(lmp, "Restoring iteration {}...", i); }
       // int tries = 0;
       bool succ = false;
       // while (!succ) {
