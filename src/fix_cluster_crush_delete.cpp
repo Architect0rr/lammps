@@ -295,12 +295,12 @@ void FixClusterCrushDelete::pre_exchange()
     int const nloc_prev = atom->nlocal;
     for (int i = 0; (i < at_once) && (to_restore > 0); ++i) {
       if (comm->me == 0) { utils::logmesg(lmp, "Restoring iteration {}...", i); }
-      // int tries = 0;
+      int tries = 0;
       bool succ = false;
-      // while (!succ) {
+      while (!succ) {
         succ = genOneFull();
-        // if (++tries > maxtry) { break; }
-      // }
+        if (++tries > maxtry) { break; }
+      }
       if (succ) {
         if (coord[0] >= subbonds[0][0] && coord[0] < subbonds[0][1] && coord[1] >= subbonds[1][0] &&
             coord[1] < subbonds[1][1] && coord[2] >= subbonds[2][0] && coord[2] < subbonds[2][1]) {
@@ -311,7 +311,10 @@ void FixClusterCrushDelete::pre_exchange()
         ++added_prev;
       }
     }
-    if (atom->nlocal > nloc_prev) {
+    int added = atom->nlocal > nloc_prev ? 1 : 0;
+    int added_any = 0;
+    ::MPI_Allreduce(&added,  &added_any, 1, MPI_INT, MPI_MAX, world);
+    if (added_any) {
       post_add(nloc_prev);
     }
   }
