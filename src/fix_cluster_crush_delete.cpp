@@ -292,13 +292,13 @@ void FixClusterCrushDelete::pre_exchange()
 {
   if (to_restore > 0) {
     int const nloc_prev = atom->nlocal;
-    for (int i = 0; i < at_once; ++i) {
-      int tries = 0;
+    for (int i = 0; (i < at_once) && (to_restore > 0); ++i) {
+      // int tries = 0;
       bool succ = false;
-      while (!succ) {
+      // while (!succ) {
         succ = genOneFull();
-        if (++tries > maxtry) { break; }
-      }
+        // if (++tries > maxtry) { break; }
+      // }
       if (succ) {
         if (coord[0] >= subbonds[0][0] && coord[0] < subbonds[0][1] && coord[1] >= subbonds[1][0] &&
             coord[1] < subbonds[1][1] && coord[2] >= subbonds[2][0] && coord[2] < subbonds[2][1]) {
