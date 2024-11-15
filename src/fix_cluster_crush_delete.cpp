@@ -376,6 +376,8 @@ void FixClusterCrushDelete::pre_exchange()
 
   double x00[3]{};
   double vss[3]{};
+  double gx00[3]{};
+  double gvss[3]{};
 
   for (int i = 0; i < atom->nlocal; ++i) {
     x00[0] += atom->x[i][0];
@@ -386,6 +388,16 @@ void FixClusterCrushDelete::pre_exchange()
     vss[1] += atom->v[i][1];
     vss[2] += atom->v[i][2];
   }
+  x00[0] /= atom->nlocal / comm->nprocs;
+  x00[1] /= atom->nlocal / comm->nprocs;
+  x00[2] /= atom->nlocal / comm->nprocs;
+
+  vss[0] /= atom->nlocal / comm->nprocs;
+  vss[1] /= atom->nlocal / comm->nprocs;
+  vss[2] /= atom->nlocal / comm->nprocs;
+
+  MPI_Reduce(x00, gx00, 3, MPI_DOUBLE, MPI_SUM, 0, world);
+  MPI_Reduce(vss, gvss, 3, MPI_DOUBLE, MPI_SUM, 0, world);
 
   if (clusters2crush_total == 0) {
     if (comm->me == 0) {
