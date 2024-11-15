@@ -238,7 +238,7 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) 
   }
 
   if ((comm->me == 0) && (fileflag != 0)) {
-    fmt::print(fp, "ntimestep,ntotal,cc,ad,aa,tr,x0,y0,z0,vx,vy,vz\n");
+    fmt::print(fp, "ntimestep,ntotal,cc,ad,aa,tr,rjbno,x0,y0,z0,vx,vy,vz\n");
     ::fflush(fp);
   }
   // if (comm->me == 0) {
@@ -421,8 +421,8 @@ void FixClusterCrushDelete::pre_exchange()
     if (comm->me == 0) {
       if (screenflag != 0) { utils::logmesg(lmp, "No clusters with size exceeding {}\n", kmax); }
       if (fileflag != 0) {
-        fmt::print(fp, "{},{},0,0,{},{},{},{},{},{},{},{}\n", update->ntimestep, atom->natoms, added_prev,
-                   to_restore, x00[0], x00[1], x00[2], vss[0], vss[1], vss[2]);
+        fmt::print(fp, "{},{},0,0,{},{},{},{},{},{},{},{},{}\n", update->ntimestep, atom->natoms, added_prev,
+                   to_restore, rejected_by_nonown_global, x00[0], x00[1], x00[2], vss[0], vss[1], vss[2]);
         ::fflush(fp);
       }
     }
@@ -441,8 +441,8 @@ void FixClusterCrushDelete::pre_exchange()
                      clusters2crush_total, atoms2move_total, added_prev);
     }
     if (fileflag != 0) {
-      fmt::print(fp, "{},{},{},{},{},{},{},{},{},{},{},{}\n", update->ntimestep, atom->natoms, clusters2crush_total,
-                 atoms2move_total, added_prev, to_restore, x00[0], x00[1], x00[2], vss[0], vss[1], vss[2]);
+      fmt::print(fp, "{},{},{},{},{},{},{},{},{},{},{},{},{}\n", update->ntimestep, atom->natoms, clusters2crush_total,
+                 atoms2move_total, added_prev, to_restore, rejected_by_nonown_global, x00[0], x00[1], x00[2], vss[0], vss[1], vss[2]);
       ::fflush(fp);
     }
   }
