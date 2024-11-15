@@ -19,10 +19,10 @@
 #include "domain.h"
 #include "error.h"
 #include "fix.h"
+#include "irregular.h"
 #include "memory.h"
 #include "modify.h"
 #include "update.h"
-#include "irregular.h"
 
 #include <cstring>
 #include <unordered_map>
@@ -315,10 +315,8 @@ void FixClusterCrushDelete::pre_exchange()
     }
     int added = atom->nlocal > nloc_prev ? 1 : 0;
     int added_any = 0;
-    ::MPI_Allreduce(&added,  &added_any, 1, MPI_INT, MPI_MAX, world);
-    if (added_any) {
-      post_add(nloc_prev);
-    }
+    ::MPI_Allreduce(&added, &added_any, 1, MPI_INT, MPI_MAX, world);
+    if (added_any != 0) { post_add(nloc_prev); }
   }
 
   if (update->ntimestep < next_step) { return; }
@@ -373,7 +371,8 @@ void FixClusterCrushDelete::pre_exchange()
     if (comm->me == 0) {
       if (screenflag != 0) { utils::logmesg(lmp, "No clusters with size exceeding {}\n", kmax); }
       if (fileflag != 0) {
-        fmt::print(fp, "{},{},0,0,{},{}\n", update->ntimestep, atom->natoms, added_prev, to_restore);
+        fmt::print(fp, "{},{},0,0,{},{}\n", update->ntimestep, atom->natoms, added_prev,
+                   to_restore);
         ::fflush(fp);
       }
     }
