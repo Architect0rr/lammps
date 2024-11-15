@@ -330,7 +330,7 @@ void FixClusterCrushDelete::pre_exchange()
           atom->avec->create_atom(ntype, xone);
           if (fix_temp) { set_speed(atom->nlocal - 1); }
         }
-        MPI_Reduce(&paste, &rejected_by_nonown, 1, MPI_INT, MPI_MIN, 0, world);
+        MPI_Allreduce(&paste, &rejected_by_nonown, 1, MPI_INT, MPI_MIN, world);
         rejected_by_nonown_global += rejected_by_nonown;
         if (rejected_by_nonown == 0) {
           --to_restore;
