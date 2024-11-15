@@ -481,7 +481,6 @@ void FixClusterCrushDelete::set_speed(int pID) noexcept(true)
 
 bool FixClusterCrushDelete::genOneFull() noexcept(true)
 {
-
   int ntry = 0;
   bool success = false;
 
@@ -519,10 +518,9 @@ bool FixClusterCrushDelete::genOneFull() noexcept(true)
       double dely = xone[1] - x[i][1];
       double delz = xone[2] - x[i][2];
 
-      const double distsq1 = delx * delx + dely * dely + delz * delz;
       domain->minimum_image(delx, dely, delz);
       const double distsq = delx * delx + dely * dely + delz * delz;
-      if ((distsq < odistsq) || (distsq1 < odistsq)) {
+      if (distsq < odistsq) {
         reject = 1;
         break;
       }
