@@ -292,11 +292,8 @@ int FixClusterCrushDelete::setmask()
 void FixClusterCrushDelete::pre_exchange()
 {
   if (to_restore > 0) {
-    postTeleport();
-    if (comm->me == 0) { utils::logmesg(lmp, "Restoring..."); }
     int const nloc_prev = atom->nlocal;
     for (int i = 0; (i < at_once) && (to_restore > 0); ++i) {
-      if (comm->me == 0) { utils::logmesg(lmp, "Restoring iteration {}...", i); }
       int tries = 0;
       bool succ = false;
       while (!succ) {
@@ -381,6 +378,7 @@ void FixClusterCrushDelete::pre_exchange()
 
   deleteAtoms(atoms2move_local);
   postDelete();
+  domain->remap_all();
   to_restore += atoms2move_total;
 
   if (comm->me == 0) {
@@ -521,22 +519,22 @@ void FixClusterCrushDelete::postTeleport() noexcept(true)
   imageint *image = atom->image;
   for (int i = 0; i < atom->nlocal; ++i) { domain->remap(atom->x[i], image[i]); }
 
-  if (domain->triclinic != 0) { domain->x2lamda(atom->nlocal); }
-  domain->reset_box();
-  auto *irregular = new Irregular(lmp);
-  irregular->migrate_atoms(1);
-  delete irregular;
-  if (domain->triclinic != 0) { domain->lamda2x(atom->nlocal); }
+  // if (domain->triclinic != 0) { domain->x2lamda(atom->nlocal); }
+  // domain->reset_box();
+  // auto *irregular = new Irregular(lmp);
+  // irregular->migrate_atoms(1);
+  // delete irregular;
+  // if (domain->triclinic != 0) { domain->lamda2x(atom->nlocal); }
 
-  // check if any atoms were lost
-  bigint nblocal = atom->nlocal;
-  bigint natoms = 0;
-  ::MPI_Allreduce(&nblocal, &natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  // // check if any atoms were lost
+  // bigint nblocal = atom->nlocal;
+  // bigint natoms = 0;
+  // ::MPI_Allreduce(&nblocal, &natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
 
-  if ((comm->me == 0) && (natoms != atom->natoms)) {
-    error->warning(FLERR, "Lost atoms via cluster/crush: original {} current {}", atom->natoms,
-                   natoms);
-  }
+  // if ((comm->me == 0) && (natoms != atom->natoms)) {
+  //   error->warning(FLERR, "Lost atoms via cluster/crush: original {} current {}", atom->natoms,
+  //                  natoms);
+  // }
 }
 
 /* ---------------------------------------------------------------------- */
