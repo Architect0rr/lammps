@@ -22,6 +22,7 @@
 #include "memory.h"
 #include "modify.h"
 #include "update.h"
+#include "irregular.h"
 
 #include <cstring>
 #include <unordered_map>
@@ -291,6 +292,7 @@ int FixClusterCrushDelete::setmask()
 void FixClusterCrushDelete::pre_exchange()
 {
   if (to_restore > 0) {
+    postTeleport();
     if (comm->me == 0) { utils::logmesg(lmp, "Restoring..."); }
     int const nloc_prev = atom->nlocal;
     for (int i = 0; (i < at_once) && (to_restore > 0); ++i) {
@@ -508,6 +510,35 @@ bool FixClusterCrushDelete::genOneFull() noexcept(true)
   return success;
 
 }    // bool FixClusterCrush::gen_one_full()
+
+/* ---------------------------------------------------------------------- */
+
+void FixClusterCrushDelete::postTeleport() noexcept(true)
+{
+  // move atoms back inside simulation box and to new processors
+  // use remap() instead of pbc() in case atoms moved a long distance
+  // use irregular() in case atoms moved a long distance
+
+  imageint *image = atom->image;
+  for (int i = 0; i < atom->nlocal; ++i) { domain->remap(atom->x[i], image[i]); }
+
+  if (domain->triclinic != 0) { domain->x2lamda(atom->nlocal); }
+  domain->reset_box();
+  auto *irregular = new Irregular(lmp);
+  irregular->migrate_atoms(1);
+  delete irregular;
+  if (domain->triclinic != 0) { domain->lamda2x(atom->nlocal); }
+
+  // check if any atoms were lost
+  bigint nblocal = atom->nlocal;
+  bigint natoms = 0;
+  ::MPI_Allreduce(&nblocal, &natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+
+  if ((comm->me == 0) && (natoms != atom->natoms)) {
+    error->warning(FLERR, "Lost atoms via cluster/crush: original {} current {}", atom->natoms,
+                   natoms);
+  }
+}
 
 /* ---------------------------------------------------------------------- */
 
