@@ -299,8 +299,22 @@ int FixClusterCrushDelete::setmask()
 
 /* ---------------------------------------------------------------------- */
 
+inline bool FixClusterCrushDelete::checkown() noexcept(true)
+{
+  return coord[0] >= subbonds[0][0]
+      && coord[0] <  subbonds[0][1]
+      && coord[1] >= subbonds[1][0]
+      && coord[1] <  subbonds[1][1]
+      && coord[2] >= subbonds[2][0]
+      && coord[2] <  subbonds[2][1];
+}
+
+/* ---------------------------------------------------------------------- */
+
 void FixClusterCrushDelete::pre_exchange()
 {
+  int rejected_by_nonown = 0;
+  int rejected_by_nonown_global = 0;
   if (to_restore > 0) {
     int const nloc_prev = atom->nlocal;
     for (int i = 0; (i < at_once) && (to_restore > 0); ++i) {
@@ -311,13 +325,17 @@ void FixClusterCrushDelete::pre_exchange()
         if (++tries > maxtry) { break; }
       }
       if (succ) {
-        if (coord[0] >= subbonds[0][0] && coord[0] < subbonds[0][1] && coord[1] >= subbonds[1][0] &&
-            coord[1] < subbonds[1][1] && coord[2] >= subbonds[2][0] && coord[2] < subbonds[2][1]) {
+        int paste = checkown() ? 0 : 1;
+        if (paste == 0) {
           atom->avec->create_atom(ntype, xone);
           if (fix_temp) { set_speed(atom->nlocal - 1); }
         }
-        --to_restore;
-        ++added_prev;
+        MPI_Reduce(&paste, &rejected_by_nonown, 1, MPI_INT, MPI_MIN, 0, world);
+        rejected_by_nonown_global += rejected_by_nonown;
+        if (rejected_by_nonown == 0) {
+          --to_restore;
+          ++added_prev;
+        }
       }
     }
     int added = atom->nlocal > nloc_prev ? 1 : 0;
@@ -481,12 +499,10 @@ void FixClusterCrushDelete::set_speed(int pID) noexcept(true)
 
 bool FixClusterCrushDelete::genOneFull() noexcept(true)
 {
-  int ntry = 0;
+  int ntry = -1;
   bool success = false;
 
-  while (ntry < maxtry) {
-    ++ntry;
-
+  while (++ntry < maxtry) {
     // generate new random position
     xone[0] = globbonds[0][0] + xrandom->uniform() * (globbonds[0][1] - globbonds[0][0]);
     xone[1] = globbonds[1][0] + xrandom->uniform() * (globbonds[1][1] - globbonds[1][0]);

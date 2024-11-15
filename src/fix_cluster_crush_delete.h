@@ -81,6 +81,7 @@ class FixClusterCrushDelete : public Fix {
   void postDelete() noexcept(true);
   void post_add(const int nlocal_previous) noexcept(true);
   void postTeleport() noexcept(true);
+  bool checkown() noexcept(true);
 };
 
 }    // namespace LAMMPS_NS
