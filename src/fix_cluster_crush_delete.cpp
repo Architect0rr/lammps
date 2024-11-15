@@ -176,6 +176,12 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) 
     }
   }
 
+  // diagfile = ::fopen("diagnostics.csv", "a");
+  // if (diagfile == nullptr) {
+  //   error->one(FLERR, "Cannot open fix cluster/crush stats file {}: {}", "diagnostics.csv",
+  //               utils::getsyserror());
+  // }
+
   triclinic = domain->triclinic;
 
   // bounding box for atom creation
@@ -232,9 +238,13 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) 
   }
 
   if ((comm->me == 0) && (fileflag != 0)) {
-    fmt::print(fp, "ntimestep,ntotal,cc,ad,aa,tr\n");
+    fmt::print(fp, "ntimestep,ntotal,cc,ad,aa,tr,x0,y0,z0,vx,vy,vz\n");
     ::fflush(fp);
   }
+  // if (comm->me == 0) {
+  //   fmt::print(diagfile, "ntimestep,\n");
+  //   ::fflush(fp);
+  // }
 
   next_step = update->ntimestep - (update->ntimestep % nevery);
 
@@ -364,12 +374,25 @@ void FixClusterCrushDelete::pre_exchange()
     clusters2crush_total += c2c[proc];
   }
 
+  double x00[3]{};
+  double vss[3]{};
+
+  for (int i = 0; i < atom->nlocal; ++i) {
+    x00[0] += atom->x[i][0];
+    x00[1] += atom->x[i][1];
+    x00[2] += atom->x[i][2];
+
+    vss[0] += atom->v[i][0];
+    vss[1] += atom->v[i][1];
+    vss[2] += atom->v[i][2];
+  }
+
   if (clusters2crush_total == 0) {
     if (comm->me == 0) {
       if (screenflag != 0) { utils::logmesg(lmp, "No clusters with size exceeding {}\n", kmax); }
       if (fileflag != 0) {
-        fmt::print(fp, "{},{},0,0,{},{}\n", update->ntimestep, atom->natoms, added_prev,
-                   to_restore);
+        fmt::print(fp, "{},{},0,0,{},{},{},{},{},{},{},{}\n", update->ntimestep, atom->natoms, added_prev,
+                   to_restore, x00[0], x00[1], x00[2], vss[0], vss[1], vss[2]);
         ::fflush(fp);
       }
     }
@@ -388,8 +411,8 @@ void FixClusterCrushDelete::pre_exchange()
                      clusters2crush_total, atoms2move_total, added_prev);
     }
     if (fileflag != 0) {
-      fmt::print(fp, "{},{},{},{},{},{}\n", update->ntimestep, atom->natoms, clusters2crush_total,
-                 atoms2move_total, added_prev, to_restore);
+      fmt::print(fp, "{},{},{},{},{},{},{},{},{},{},{},{}\n", update->ntimestep, atom->natoms, clusters2crush_total,
+                 atoms2move_total, added_prev, to_restore, x00[0], x00[1], x00[2], vss[0], vss[1], vss[2]);
       ::fflush(fp);
     }
   }

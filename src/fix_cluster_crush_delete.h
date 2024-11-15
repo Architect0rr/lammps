@@ -39,6 +39,7 @@ class FixClusterCrushDelete : public Fix {
   RanPark *vrandom = nullptr;
 
   FILE *fp;
+//   FILE *diagfile;
   int screenflag;
   int fileflag;
   int triclinic;
