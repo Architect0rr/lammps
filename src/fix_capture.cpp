@@ -123,34 +123,6 @@ FixCapture::FixCapture(LAMMPS *lmp, int narg, char **arg) :
     fmt::print(fp, "ntimestep,n\n");
     ::fflush(fp);
   }
-
-  memory->create(rmins, atom->ntypes + 1, atom->ntypes + 1, "fix_capture:rmins");
-  memory->create(vmax_coeffs, atom->ntypes + 1, "fix_capture:vmax_coeffs");
-  memory->create(sigmas, atom->ntypes + 1, "fix_capture:sigmas");
-
-  constexpr long double eight_over_pi_sqrt = 1.5957691216057307117597842397375L;    // sqrt(8/pi)
-  constexpr long double ssdd = 0.6734396116428514837424685996751L;                  // sqrt(3-8/pi)
-  for (int i = 1; i <= atom->ntypes; ++i) {
-    const double m = atom->mass[i];
-    vmax_coeffs[i] =
-        ::pow(eight_over_pi_sqrt * ::sqrt(1.0 / m) + nsigma * ssdd * ::sqrt(1.0 / m), 2);
-  }
-}
-
-/* ---------------------------------------------------------------------- */
-
-inline long double FixCapture::rmin(const int i, const int j) noexcept(true)
-{
-  constexpr long double two_sqrt = 1.4142135623730950488016887242096L;         // sqrt(2)
-  constexpr long double two_one_third = 1.2599210498948731647672106072782L;    // 2^(1/3)
-  constexpr long double one_over_six = 0.1666666666666666666666666666666L;     // 1/6
-  return two_one_third /
-      ::pow((2 +
-             two_sqrt *
-                 sqrt(2 +
-                      (atom->mass[i] * vmax_coeffs[i] + atom->mass[j] * vmax_coeffs[j]) *
-                          compute_temp->scalar)),
-            one_over_six);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -190,6 +162,34 @@ void FixCapture::init()
       error->all(FLERR, "fix capture: mass is not set for atom type {}.", i);
     }
   }
+
+  memory->create(rmins, atom->ntypes + 1, atom->ntypes + 1, "fix_capture:rmins");
+  memory->create(vmax_coeffs, atom->ntypes + 1, "fix_capture:vmax_coeffs");
+  memory->create(sigmas, atom->ntypes + 1, "fix_capture:sigmas");
+
+  constexpr long double eight_over_pi_sqrt = 1.5957691216057307117597842397375L;    // sqrt(8/pi)
+  constexpr long double ssdd = 0.6734396116428514837424685996751L;                  // sqrt(3-8/pi)
+  for (int i = 1; i <= atom->ntypes; ++i) {
+    const double m = atom->mass[i];
+    vmax_coeffs[i] =
+        ::pow(eight_over_pi_sqrt * ::sqrt(1.0 / m) + nsigma * ssdd * ::sqrt(1.0 / m), 2);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+inline long double FixCapture::rmin(const int i, const int j) noexcept(true)
+{
+  constexpr long double two_sqrt = 1.4142135623730950488016887242096L;         // sqrt(2)
+  constexpr long double two_one_third = 1.2599210498948731647672106072782L;    // 2^(1/3)
+  constexpr long double one_over_six = 0.1666666666666666666666666666666L;     // 1/6
+  return two_one_third /
+      ::pow((2 +
+             two_sqrt *
+                 sqrt(2 +
+                      (atom->mass[i] * vmax_coeffs[i] + atom->mass[j] * vmax_coeffs[j]) *
+                          compute_temp->scalar)),
+            one_over_six);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -418,7 +418,7 @@ void FixCapture::test_overlap(int i) noexcept(true)
     const double dx = x[i][0] - x[j][0];
     const double dy = x[i][1] - x[j][1];
     const double dz = x[i][2] - x[j][2];
-    const double rm = rmins[i][j];
+    const double rm = rmins[atom->type[i]][atom->type[j]];
     if (dx * dx + dy * dy + dz * dz < rm * rm) {
       ++Fcounts[FIX_CAPTURE_OVERLAP_FLAG];
       captured();
