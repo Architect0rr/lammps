@@ -530,7 +530,7 @@ bool FixClusterCrushDelete::genOneFull() noexcept(true)
         if (comm->me == 0) {
           utils::logmesg(lmp, "####### MINIMUM IMAGE EXCEPTION ######\n");
           utils::logmesg(lmp, "PTAG: {}, POS: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], x[i][0], x[i][1], x[i][2]);
-          utils::logmesg(lmp, "     VELOCITY: {:.3f} {:.3f} {:.3f}\n", atom->v[0], atom->v[1], atom->v[2]);
+          utils::logmesg(lmp, "     VELOCITY: {:.3f} {:.3f} {:.3f}\n", atom->v[i][0], atom->v[i][1], atom->v[i][2]);
           utils::logmesg(lmp, "    FOUND POS: {:.3f} {:.3f} {:.3f}\n", xone[0], xone[1], xone[2]);
           utils::logmesg(lmp, "   BUFF DELTA: {:.3f} {:.3f} {:.3f}\n", xb, yb, zb);
           utils::logmesg(lmp, "   CALC DELTA: {:.3f} {:.3f} {:.3f}\n", delx, dely, delz);
