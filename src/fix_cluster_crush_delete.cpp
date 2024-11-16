@@ -238,7 +238,7 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) 
   }
 
   if ((comm->me == 0) && (fileflag != 0)) {
-    fmt::print(fp, "ntimestep,ntotal,cc,ad,aa,tr,rjbno,x0,y0,z0,vx,vy,vz\n");
+    fmt::print(fp, "ntimestep,ntotal,cc,ad,aa,tr,rjbno,nonn\n");
     ::fflush(fp);
   }
   // if (comm->me == 0) {
@@ -299,14 +299,17 @@ int FixClusterCrushDelete::setmask()
 
 /* ---------------------------------------------------------------------- */
 
+inline bool FixClusterCrushDelete::isnonnumeric(const double *const vec3) noexcept(true)
+{
+  return std::isnan(vec3[0]) || std::isnan(vec3[1]) || std::isnan(vec3[2]) || std::isinf(vec3[0]) ||
+      std::isinf(vec3[1]) || std::isinf(vec3[2]);
+}
+
 inline bool FixClusterCrushDelete::checkown() noexcept(true)
 {
-  return coord[0] >= subbonds[0][0]
-      && coord[0] <  subbonds[0][1]
-      && coord[1] >= subbonds[1][0]
-      && coord[1] <  subbonds[1][1]
-      && coord[2] >= subbonds[2][0]
-      && coord[2] <  subbonds[2][1];
+  bool a = coord[0] >= subbonds[0][0] && coord[0] < subbonds[0][1] && coord[1] >= subbonds[1][0] &&
+      coord[1] < subbonds[1][1] && coord[2] >= subbonds[2][0] && coord[2] < subbonds[2][1];
+  return (a) && (!isnonnumeric(coord));
 }
 
 /* ---------------------------------------------------------------------- */
@@ -385,6 +388,13 @@ void FixClusterCrushDelete::pre_exchange()
   pproc[comm->me] = atoms2move_local;
   ::MPI_Allgather(&atoms2move_local, 1, MPI_INT, pproc, 1, MPI_INT, world);
 
+  bigint nonn = 0;
+  for (int i = 0; i < atom->nlocal; ++i) {
+    if (isnonnumeric(atom->x[i])) { ++nonn; }
+  }
+  bigint nonng = 0;
+  MPI_Allreduce(&nonn, &nonng, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+
   bigint atoms2move_total = 0;
   bigint clusters2crush_total = 0;
   for (int proc = 0; proc < comm->nprocs; ++proc) {
@@ -392,37 +402,12 @@ void FixClusterCrushDelete::pre_exchange()
     clusters2crush_total += c2c[proc];
   }
 
-  double x00[3]{};
-  double vss[3]{};
-  double gx00[3]{};
-  double gvss[3]{};
-
-  for (int i = 0; i < atom->nlocal; ++i) {
-    x00[0] += atom->x[i][0];
-    x00[1] += atom->x[i][1];
-    x00[2] += atom->x[i][2];
-
-    vss[0] += atom->v[i][0];
-    vss[1] += atom->v[i][1];
-    vss[2] += atom->v[i][2];
-  }
-  x00[0] /= atom->nlocal / comm->nprocs;
-  x00[1] /= atom->nlocal / comm->nprocs;
-  x00[2] /= atom->nlocal / comm->nprocs;
-
-  vss[0] /= atom->nlocal / comm->nprocs;
-  vss[1] /= atom->nlocal / comm->nprocs;
-  vss[2] /= atom->nlocal / comm->nprocs;
-
-  MPI_Reduce(x00, gx00, 3, MPI_DOUBLE, MPI_SUM, 0, world);
-  MPI_Reduce(vss, gvss, 3, MPI_DOUBLE, MPI_SUM, 0, world);
-
   if (clusters2crush_total == 0) {
     if (comm->me == 0) {
       if (screenflag != 0) { utils::logmesg(lmp, "No clusters with size exceeding {}\n", kmax); }
       if (fileflag != 0) {
-        fmt::print(fp, "{},{},0,0,{},{},{},{},{},{},{},{},{}\n", update->ntimestep, atom->natoms, added_prev,
-                   to_restore, rejected_by_nonown_global, x00[0], x00[1], x00[2], vss[0], vss[1], vss[2]);
+        fmt::print(fp, "{},{},0,0,{},{},{},{}\n", update->ntimestep, atom->natoms, added_prev,
+                   to_restore, rejected_by_nonown_global, nonng);
         ::fflush(fp);
       }
     }
@@ -441,8 +426,9 @@ void FixClusterCrushDelete::pre_exchange()
                      clusters2crush_total, atoms2move_total, added_prev);
     }
     if (fileflag != 0) {
-      fmt::print(fp, "{},{},{},{},{},{},{},{},{},{},{},{},{}\n", update->ntimestep, atom->natoms, clusters2crush_total,
-                 atoms2move_total, added_prev, to_restore, rejected_by_nonown_global, x00[0], x00[1], x00[2], vss[0], vss[1], vss[2]);
+      fmt::print(fp, "{},{},{},{},{},{},{},{}\n", update->ntimestep, atom->natoms,
+                 clusters2crush_total, atoms2move_total, added_prev, to_restore,
+                 rejected_by_nonown_global, nonng);
       ::fflush(fp);
     }
   }

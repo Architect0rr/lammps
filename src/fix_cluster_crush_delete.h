@@ -15,7 +15,6 @@ FixStyle(cluster/crush_delete,FixClusterCrushDelete);
 
 #include "compute.h"
 #include "compute_cluster_size.h"
-
 #include "fix.h"
 #include "random_park.h"
 #include "region.h"
@@ -82,6 +81,7 @@ class FixClusterCrushDelete : public Fix {
   void post_add(const int nlocal_previous) noexcept(true);
   void postTeleport() noexcept(true);
   bool checkown() noexcept(true);
+  bool isnonnumeric(const double *const vec3) noexcept(true);
 };
 
 }    // namespace LAMMPS_NS
