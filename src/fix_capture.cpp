@@ -18,12 +18,13 @@
 #include "domain.h"
 #include "error.h"
 #include "fix.h"
+#include "group.h"
+#include "memory.h"
 #include "modify.h"
 #include "update.h"
 
 #include <cmath>
 #include <cstring>
-#include <unordered_map>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -122,6 +123,34 @@ FixCapture::FixCapture(LAMMPS *lmp, int narg, char **arg) :
     fmt::print(fp, "ntimestep,n\n");
     ::fflush(fp);
   }
+
+  memory->create(rmins, atom->ntypes + 1, atom->ntypes + 1, "fix_capture:rmins");
+  memory->create(vmax_coeffs, atom->ntypes + 1, "fix_capture:vmax_coeffs");
+  memory->create(sigmas, atom->ntypes + 1, "fix_capture:sigmas");
+
+  constexpr long double eight_over_pi_sqrt = 1.5957691216057307117597842397375L;    // sqrt(8/pi)
+  constexpr long double ssdd = 0.6734396116428514837424685996751L;                  // sqrt(3-8/pi)
+  for (int i = 1; i <= atom->ntypes; ++i) {
+    const double m = atom->mass[i];
+    vmax_coeffs[i] =
+        ::pow(eight_over_pi_sqrt * ::sqrt(1.0 / m) + nsigma * ssdd * ::sqrt(1.0 / m), 2);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+inline long double FixCapture::rmin(const int i, const int j) noexcept(true)
+{
+  constexpr long double two_sqrt = 1.4142135623730950488016887242096L;         // sqrt(2)
+  constexpr long double two_one_third = 1.2599210498948731647672106072782L;    // 2^(1/3)
+  constexpr long double one_over_six = 0.1666666666666666666666666666666L;     // 1/6
+  return two_one_third /
+      ::pow((2 +
+             two_sqrt *
+                 sqrt(2 +
+                      (atom->mass[i] * vmax_coeffs[i] + atom->mass[j] * vmax_coeffs[j]) *
+                          compute_temp->scalar)),
+            one_over_six);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -129,6 +158,9 @@ FixCapture::FixCapture(LAMMPS *lmp, int narg, char **arg) :
 FixCapture::~FixCapture() noexcept(true)
 {
   delete vrandom;
+  if (rmins != nullptr) { memory->destroy(rmins); }
+  if (vmax_coeffs != nullptr) { memory->destroy(vmax_coeffs); }
+  if (sigmas != nullptr) { memory->destroy(sigmas); }
 
   if ((fp != nullptr) && (comm->me == 0)) {
     ::fflush(fp);
@@ -153,12 +185,9 @@ void FixCapture::init()
     error->warning(FLERR, "More than one fix {}", style);
   }
 
-  typeids.clear();
-  typeids.reserve(atom->ntypes);
-  for (int i = 0; i < atom->nlocal; ++i) { typeids.emplace(atom->type[i], 0.0); }
-  for (const auto &[k, v] : typeids) {
-    if (atom->mass_setflag[k] == 0) {
-      error->all(FLERR, "fix capture: mass is not set for atom type {}.", k);
+  for (int i = 1; i <= atom->ntypes; ++i) {
+    if (atom->mass_setflag[i] == 0) {
+      error->all(FLERR, "fix capture: mass is not set for atom type {}.", i);
     }
   }
 }
@@ -178,7 +207,7 @@ template <bool ISREL> void FixCapture::test_superspeed(int *atomid) noexcept(tru
   int const i = *atomid;
   double *v = atom->v[i];
   double *x = atom->x[i];
-  double const sigma = typeids[atom->type[i]];
+  double const sigma = sigmas[atom->type[i]];
   bool arr[3] = {false, false, false};
   double old_v[3]{};
   old_v[0] = v[0];
@@ -191,7 +220,7 @@ template <bool ISREL> void FixCapture::test_superspeed(int *atomid) noexcept(tru
     } else {
       diff = v[j];
     }
-    if (diff > nsigma * sigma) {
+    if (::fabs(diff) > nsigma * sigma) {
       arr[j] = true;
       if (action == ACTION::SLOW) {
         if constexpr (ISREL) {
@@ -217,7 +246,7 @@ template <bool ISREL> void FixCapture::test_superspeed(int *atomid) noexcept(tru
     }
 
     captured();
-    utils::logmesg(lmp, "{}####### SUPER ATOM VELOCITY ######{}\n", atom->tag[i], comm->me);
+    utils::logmesg(lmp, "{}, {}####### SUPER ATOM VELOCITY ######{}\n", atom->tag[i], update->ntimestep, comm->me);
     utils::logmesg(lmp, "{}           POS: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], x[0], x[1], x[2]);
     utils::logmesg(lmp, "{}      VELOCITY: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], old_v[0],
                    old_v[1], old_v[2]);
@@ -249,7 +278,20 @@ void FixCapture::test_xnonnum(int i) noexcept(true)
   if (isnonnumeric(atom->x[i])) {
     ++Fcounts[FIX_CAPTURE_xNaN_FLAG];
     captured();
-    utils::logmesg(lmp, "{}####### NON-NUMERIC ATOM COORDS ######{}\n", atom->tag[i], comm->me);
+    utils::logmesg(lmp, "{}, {}####### NON-NUMERIC ATOM COORDS ######{}\n", atom->tag[i], update->ntimestep, comm->me);
+    utils::logmesg(lmp, "{}     POS: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], atom->x[i][0],
+                   atom->x[i][1], atom->x[i][2]);
+    utils::logmesg(lmp, "{}VELOCITY: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], atom->v[i][0],
+                   atom->v[i][1], atom->v[i][2]);
+  }
+}
+
+void FixCapture::test_vnonnum(int i) noexcept(true)
+{
+  if (isnonnumeric(atom->v[i])) {
+    ++Fcounts[FIX_CAPTURE_vNaN_FLAG];
+    captured();
+    utils::logmesg(lmp, "{}, {}####### NON-NUMERIC ATOM VELOCITY ######{}\n", atom->tag[i], update->ntimestep, comm->me);
     utils::logmesg(lmp, "{}     POS: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], atom->x[i][0],
                    atom->x[i][1], atom->x[i][2]);
     utils::logmesg(lmp, "{}VELOCITY: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], atom->v[i][0],
@@ -259,39 +301,39 @@ void FixCapture::test_xnonnum(int i) noexcept(true)
 
 /* ---------------------------------------------------------------------- */
 
-void FixCapture::mean() noexcept(true)
-{
-  double vmean_local[3]{};
-  ::memset(vmean, 0.0, 3 * sizeof(double));
-  ::memset(vmean_local, 0.0, 3 * sizeof(double));
+// void FixCapture::mean() noexcept(true)
+// {
+//   double vmean_local[3]{};
+//   ::memset(vmean, 0.0, 3 * sizeof(double));
+//   ::memset(vmean_local, 0.0, 3 * sizeof(double));
 
-  double **v = atom->v;
-  double **x = atom->x;
+//   double **v = atom->v;
+//   double **x = atom->x;
 
-  for (int i = 0; i < atom->nlocal; ++i) {
-    if ((atom->mask[i] & groupbit) != 0) {
-      if (isnonnumeric(v[i])) {
-        ++Fcounts[FIX_CAPTURE_vNaN_FLAG];
-        captured();
-        utils::logmesg(lmp, "{}####### NON-NUMERIC ATOM VELOCITY ######{}\n", atom->tag[i],
-                       comm->me);
-        utils::logmesg(lmp, "{}     POS: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], x[i][0], x[i][1],
-                       x[i][2]);
-        utils::logmesg(lmp, "{}VELOCITY: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], v[i][0], v[i][1],
-                       v[i][2]);
-      }
-      vmean_local[0] += v[i][0];
-      vmean_local[1] += v[i][1];
-      vmean_local[2] += v[i][2];
-    }
-  }
+//   for (int i = 0; i < atom->nlocal; ++i) {
+//     if ((atom->mask[i] & groupbit) != 0) {
+//       if (isnonnumeric(v[i])) {
+//         ++Fcounts[FIX_CAPTURE_vNaN_FLAG];
+//         captured();
+//         utils::logmesg(lmp, "{}####### NON-NUMERIC ATOM VELOCITY ######{}\n", atom->tag[i],
+//                        comm->me);
+//         utils::logmesg(lmp, "{}     POS: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], x[i][0], x[i][1],
+//                        x[i][2]);
+//         utils::logmesg(lmp, "{}VELOCITY: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], v[i][0], v[i][1],
+//                        v[i][2]);
+//       }
+//       vmean_local[0] += v[i][0];
+//       vmean_local[1] += v[i][1];
+//       vmean_local[2] += v[i][2];
+//     }
+//   }
 
-  vmean_local[0] /= (atom->nlocal * comm->nprocs);
-  vmean_local[1] /= (atom->nlocal * comm->nprocs);
-  vmean_local[2] /= (atom->nlocal * comm->nprocs);
+//   vmean_local[0] /= (atom->nlocal * comm->nprocs);
+//   vmean_local[1] /= (atom->nlocal * comm->nprocs);
+//   vmean_local[2] /= (atom->nlocal * comm->nprocs);
 
-  ::MPI_Allreduce(vmean_local, vmean, 3, MPI_DOUBLE, MPI_SUM, world);
-}
+//   ::MPI_Allreduce(vmean_local, vmean, 3, MPI_DOUBLE, MPI_SUM, world);
+// }
 
 /* ---------------------------------------------------------------------- */
 
@@ -308,22 +350,24 @@ void FixCapture::final_integrate()
 
   ::memset(Fcounts, 0, FIX_CAPTURE_FLAGS_COUNT * sizeof(bigint));
 
-  constexpr long double c_v = 1.4142135623730950488016887242097L;    // sqrt(2)
-  for (auto &[k, v] : typeids) { v = ::sqrt(compute_temp->scalar / atom->mass[k]); }
+  for (int i = 1; i <= atom->ntypes; ++i) {
+    sigmas[i] = ::sqrt(compute_temp->scalar / atom->mass[i]);
+    for (int j = 1; j <= atom->ntypes; ++j) { rmins[i][j] = rmin(i, j); }
+  }
 
-  mean();
-
-  double **v = atom->v;
+  group->vcm(igroup, group->mass(igroup), vmean);
 
   // region->prematch();
 
   for (int i = 0; i < atom->nlocal; ++i) {
     allow = true;
-    if (((atom->mask[i] & groupbit) !=
-         0) /* && (region->match(atom->x[i][0], atom->x[i][1], atom->x[i][2]) != 0)*/) {
+    if (((atom->mask[i] & groupbit) != 0)) {
+      // && (region->match(atom->x[i][0], atom->x[i][1], atom->x[i][2]) != 0)
       test_xnonnum(i);
-      test_superspeed<true>(&i);
+      test_vnonnum(i);
       test_superspeed<false>(&i);
+      test_superspeed<true>(&i);
+      test_overlap(i);
     }
   }
 
@@ -342,26 +386,58 @@ void FixCapture::final_integrate()
 
 /* ---------------------------------------------------------------------- */
 
-void FixCapture::check_overlap() noexcept(true)
-{
-  constexpr long double a_v = 0.8 * 1.0220217810393767580226573302752L;
-  constexpr long double b_v = 0.1546370863640482533333333333333L;
-  auto const rl = static_cast<double>(a_v) *
-      ::exp(static_cast<double>(b_v) * ::pow(compute_temp->scalar, 2.791206046910478));
+// inline long double FixCapture::vav_total(const long double mass) noexcept(true)
+// {
+//   constexpr long double eight_over_pi_sqrt = 1.5957691216057307117597842397375L; // sqrt(8/pi)
+//   return eight_over_pi_sqrt * ::sqrt(compute_temp->scalar/mass);
+// }
 
-  bigint nclose_local = 0;
+// inline long double FixCapture::vsi_total(const long double mass) noexcept(true)
+// {
+//   constexpr long double ssdd = 0.6734396116428514837424685996751L;  // sqrt(3-8/pi)
+//   return ssdd * ::sqrt(compute_temp->scalar/mass);
+// }
+
+// long double FixCapture::rmin(const int i, const int j) noexcept(true)
+// {
+//   constexpr long double two_sqrt = 1.4142135623730950488016887242096L;  // sqrt(2)
+//   constexpr long double two_one_third = 1.2599210498948731647672106072782L;  // 2^(1/3)
+//   constexpr long double one_over_six = 0.1666666666666666666666666666666L;  // 1/6
+//   const double m1 = atom->mass[atom->type[i]];
+//   const double m2 = atom->mass[atom->type[j]];
+//   const double vmax1sq = ::pow(vav_total(m1) + nsigma * vsi_total(m1), 2);
+//   const double vmax2sq = ::pow(vav_total(m2) + nsigma * vsi_total(m2), 2);
+//   return two_one_third / ::pow((2+two_sqrt*sqrt(2 + m1*vmax1sq + m2*vmax2sq)), one_over_six);
+// }
+
+void FixCapture::test_overlap(int i) noexcept(true)
+{
+  // constexpr long double pi = 3.1415926535897932384626433832795L;  // pi
   double **x = atom->x;
-  for (int i = 0; i < atom->nlocal; ++i) {
-    for (int j = i + 1; j < atom->nmax; ++j) {
-      const double dx = x[i][0] - x[j][0];
-      const double dy = x[i][1] - x[j][1];
-      const double dz = x[i][2] - x[j][2];
-      if (dx * dx + dy * dy + dz * dz < rl * rl) { ++nclose_local; }
+  for (int j = i + 1; j < atom->nmax; ++j) {
+    const double dx = x[i][0] - x[j][0];
+    const double dy = x[i][1] - x[j][1];
+    const double dz = x[i][2] - x[j][2];
+    const double rm = rmins[i][j];
+    if (dx * dx + dy * dy + dz * dz < rm * rm) {
+      ++Fcounts[FIX_CAPTURE_OVERLAP_FLAG];
+      captured();
+      utils::logmesg(lmp, "{}, {}####### ATOM OVERLAP {} with {} ######{}\n", atom->tag[i], update->ntimestep,
+                     atom->tag[i], atom->tag[j], comm->me);
+      utils::logmesg(lmp, "{} {}      POS: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], atom->tag[i],
+                     atom->x[i][0], atom->x[i][1], atom->x[i][2]);
+      utils::logmesg(lmp, "{} {} VELOCITY: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], atom->tag[i],
+                     atom->v[i][0], atom->v[i][1], atom->v[i][2]);
+      utils::logmesg(lmp, "{} {}      POS: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], atom->tag[j],
+                     atom->x[j][0], atom->x[j][1], atom->x[j][2]);
+      utils::logmesg(lmp, "{} {} VELOCITY: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], atom->tag[j],
+                     atom->v[j][0], atom->v[j][1], atom->v[j][2]);
+      utils::logmesg(lmp, "{}       DELTA: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], dx, dy, dz);
+      utils::logmesg(lmp, "{}    DISTANCE: {:.3f}  Rmin: {:.3f}\n", atom->tag[i],
+                     ::sqrt(dx * dx + dy * dy + dz * dz), rm);
+      break;
     }
   }
-
-  bigint nclose_total = 0;
-  ::MPI_Allreduce(&nclose_local, &nclose_total, 1, MPI_LMP_BIGINT, MPI_SUM, world);
 }
 
 /* ---------------------------------------------------------------------- */

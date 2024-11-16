@@ -177,18 +177,10 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) 
     }
   }
 
-  // diagfile = ::fopen("diagnostics.csv", "a");
-  // if (diagfile == nullptr) {
-  //   error->one(FLERR, "Cannot open fix cluster/crush stats file {}: {}", "diagnostics.csv",
-  //               utils::getsyserror());
-  // }
-
-  triclinic = domain->triclinic;
-
   // bounding box for atom creation
   // only limit bbox by region if its bboxflag is set (interior region)
 
-  if (triclinic == 0) {
+  if (domain->triclinic == 0) {
     globbonds[0][0] = domain->boxlo[0];
     globbonds[0][1] = domain->boxhi[0];
     globbonds[1][0] = domain->boxlo[1];
@@ -242,10 +234,6 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) 
     fmt::print(fp, "ntimestep,ntotal,cc,ad,aa,tr,rjbno,nonn\n");
     ::fflush(fp);
   }
-  // if (comm->me == 0) {
-  //   fmt::print(diagfile, "ntimestep,\n");
-  //   ::fflush(fp);
-  // }
 
   next_step = update->ntimestep - (update->ntimestep % nevery);
 
@@ -275,8 +263,8 @@ FixClusterCrushDelete::~FixClusterCrushDelete() noexcept(true)
     ::fflush(fp);
     ::fclose(fp);
   }
-  memory->destroy(pproc);
-  memory->destroy(c2c);
+  if (pproc != nullptr) { memory->destroy(pproc); }
+  if (c2c != nullptr) { memory->destroy(c2c); }
   if (p2m != nullptr) { memory->destroy(p2m); }
 }
 
@@ -306,6 +294,8 @@ inline bool FixClusterCrushDelete::isnonnumeric(const double *const vec3) noexce
       std::isinf(vec3[1]) || std::isinf(vec3[2]);
 }
 
+/* ---------------------------------------------------------------------- */
+
 inline bool FixClusterCrushDelete::checkown() noexcept(true)
 {
   bool a = coord[0] >= subbonds[0][0] && coord[0] < subbonds[0][1] && coord[1] >= subbonds[1][0] &&
@@ -320,6 +310,7 @@ void FixClusterCrushDelete::pre_exchange()
   int rejected_by_nonown = 0;
   int rejected_by_nonown_global = 0;
   if (to_restore > 0) {
+    region->prematch();
     int const nloc_prev = atom->nlocal;
     for (int i = 0; (i < at_once) && (to_restore > 0); ++i) {
       int tries = 0;
@@ -498,7 +489,7 @@ bool FixClusterCrushDelete::genOneFull() noexcept(true)
 
     if ((region != nullptr) && (region->match(xone[0], xone[1], xone[2]) == 0)) { continue; }
 
-    if (triclinic != 0) {
+    if (domain->triclinic != 0) {
       domain->x2lamda(xone, lamda);
       coord = lamda;
       if ((coord[0] < boxlo[0]) || (coord[0] >= boxhi[0]) || (coord[1] < boxlo[1]) ||
@@ -527,17 +518,14 @@ bool FixClusterCrushDelete::genOneFull() noexcept(true)
       try {
         domain->minimum_image(delx, dely, delz);
       } catch (const LAMMPSAbortException& exc) {
-        if (comm->me == 0) {
-          utils::logmesg(lmp, "####### MINIMUM IMAGE EXCEPTION ######\n");
-          utils::logmesg(lmp, "PTAG: {}, POS: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], x[i][0], x[i][1], x[i][2]);
-          utils::logmesg(lmp, "     VELOCITY: {:.3f} {:.3f} {:.3f}\n", atom->v[i][0], atom->v[i][1], atom->v[i][2]);
-          utils::logmesg(lmp, "    FOUND POS: {:.3f} {:.3f} {:.3f}\n", xone[0], xone[1], xone[2]);
-          utils::logmesg(lmp, "   BUFF DELTA: {:.3f} {:.3f} {:.3f}\n", xb, yb, zb);
-          utils::logmesg(lmp, "   CALC DELTA: {:.3f} {:.3f} {:.3f}\n", delx, dely, delz);
-        }
+        utils::logmesg(lmp, "####### MINIMUM IMAGE EXCEPTION ######{}\n", comm->me);
+        utils::logmesg(lmp, "PTAG: {}, POS: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], x[i][0], x[i][1], x[i][2]);
+        utils::logmesg(lmp, "     VELOCITY: {:.3f} {:.3f} {:.3f}\n", atom->v[i][0], atom->v[i][1], atom->v[i][2]);
+        utils::logmesg(lmp, "    FOUND POS: {:.3f} {:.3f} {:.3f}\n", xone[0], xone[1], xone[2]);
+        utils::logmesg(lmp, "   ORIG DELTA: {:.3f} {:.3f} {:.3f}\n", xb, yb, zb);
+        utils::logmesg(lmp, "   CALC DELTA: {:.3f} {:.3f} {:.3f}\n", delx, dely, delz);
       }
-      const double distsq = delx * delx + dely * dely + delz * delz;
-      if (distsq < odistsq) {
+      if (delx * delx + dely * dely + delz * delz < odistsq) {
         reject = 1;
         break;
       }

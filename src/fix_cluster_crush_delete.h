@@ -41,7 +41,6 @@ class FixClusterCrushDelete : public Fix {
 //   FILE *diagfile;
   int screenflag;
   int fileflag;
-  int triclinic;
   int scaleflag;
 
   bigint next_step;
