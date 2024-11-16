@@ -19,6 +19,7 @@
 #include "domain.h"
 #include "error.h"
 #include "fix.h"
+#include "exceptions.h"
 #include "irregular.h"
 #include "memory.h"
 #include "modify.h"
@@ -519,8 +520,21 @@ bool FixClusterCrushDelete::genOneFull() noexcept(true)
       double delx = xone[0] - x[i][0];
       double dely = xone[1] - x[i][1];
       double delz = xone[2] - x[i][2];
+      double xb = delx;
+      double yb = dely;
+      double zb = delz;
 
-      domain->minimum_image(delx, dely, delz);
+      try {
+        domain->minimum_image(delx, dely, delz);
+      } catch (const LAMMPSAbortException& exc) {
+        if (comm->me == 0) {
+          utils::logmesg(lmp, "####### MINIMUM IMAGE EXCEPTION ######\n");
+          utils::logmesg(lmp, "PTAG: {}, POS: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], x[i][0], x[i][1], x[i][2]);
+          utils::logmesg(lmp, "    FOUND POS: {:.3f} {:.3f} {:.3f}\n", xone[0], xone[1], xone[2]);
+          utils::logmesg(lmp, "   BUFF DELTA: {:.3f} {:.3f} {:.3f}\n", xb, yb, zb);
+          utils::logmesg(lmp, "   CALC DELTA: {:.3f} {:.3f} {:.3f}\n", delx, dely, delz);
+        }
+      }
       const double distsq = delx * delx + dely * dely + delz * delz;
       if (distsq < odistsq) {
         reject = 1;
