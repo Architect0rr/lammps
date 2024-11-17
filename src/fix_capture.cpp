@@ -178,7 +178,7 @@ void FixCapture::init()
 
 /* ---------------------------------------------------------------------- */
 
-void FixCapture::pre_exchange()
+[[gnu::hot]] void FixCapture::pre_exchange()
 {
   if (compute_temp->invoked_scalar != update->ntimestep) { compute_temp->compute_scalar(); }
 
@@ -220,7 +220,7 @@ void FixCapture::pre_exchange()
 
 /* ---------------------------------------------------------------------- */
 
-inline long double FixCapture::rmin(const int i, const int j) noexcept(true)
+[[gnu::hot]] inline long double FixCapture::rmin(const int i, const int j) noexcept(true)
 {
   constexpr long double two_sqrt = 1.4142135623730950488016887242096L;         // sqrt(2)
   constexpr long double two_one_third = 1.2599210498948731647672106072782L;    // 2^(1/3)
@@ -236,7 +236,7 @@ inline long double FixCapture::rmin(const int i, const int j) noexcept(true)
 
 /* ---------------------------------------------------------------------- */
 
-inline bool FixCapture::isnonnumeric(const double *const vec3) noexcept(true)
+[[gnu::hot]] inline bool FixCapture::isnonnumeric(const double *const vec3) noexcept(true)
 {
   return std::isnan(vec3[0]) || std::isnan(vec3[1]) || std::isnan(vec3[2]) || std::isinf(vec3[0]) ||
       std::isinf(vec3[1]) || std::isinf(vec3[2]);
@@ -245,7 +245,7 @@ inline bool FixCapture::isnonnumeric(const double *const vec3) noexcept(true)
 /* ---------------------------------------------------------------------- */
 
 template <bool ISREL>
-inline bool FixCapture::super_cond(const double *const v, const double *const vmeanx,
+[[gnu::hot]] inline bool FixCapture::super_cond(const double *const v, const double *const vmeanx,
                                    const double sigma) const noexcept(true)
 {
   if constexpr (ISREL) {
@@ -255,7 +255,7 @@ inline bool FixCapture::super_cond(const double *const v, const double *const vm
   }
 }
 
-template <bool ISREL> void FixCapture::test_superspeed(int *atomid) noexcept(true)
+template <bool ISREL> [[gnu::hot]] void FixCapture::test_superspeed(int *atomid) noexcept(true)
 {
   const int i = *atomid;
   double *v = atom->v[i];
@@ -323,7 +323,7 @@ template <bool ISREL> void FixCapture::test_superspeed(int *atomid) noexcept(tru
 
 /* ---------------------------------------------------------------------- */
 
-void FixCapture::captured() noexcept(true)
+[[gnu::hot]] inline void FixCapture::captured() noexcept(true)
 {
   if (allow) {
     ++Fcounts[FIX_CAPTURE_TOTAL_FLAG];
@@ -333,7 +333,7 @@ void FixCapture::captured() noexcept(true)
 
 /* ---------------------------------------------------------------------- */
 
-void FixCapture::test_xnonnum(int i) noexcept(true)
+[[gnu::hot]] void FixCapture::test_xnonnum(int i) noexcept(true)
 {
   if (isnonnumeric(atom->x[i])) {
     ++Fcounts[FIX_CAPTURE_xNaN_FLAG];
@@ -349,7 +349,7 @@ void FixCapture::test_xnonnum(int i) noexcept(true)
 
 /* ---------------------------------------------------------------------- */
 
-void FixCapture::test_vnonnum(int i) noexcept(true)
+[[gnu::hot]] void FixCapture::test_vnonnum(int i) noexcept(true)
 {
   if (isnonnumeric(atom->v[i])) {
     ++Fcounts[FIX_CAPTURE_vNaN_FLAG];
@@ -365,7 +365,7 @@ void FixCapture::test_vnonnum(int i) noexcept(true)
 
 /* ---------------------------------------------------------------------- */
 
-void FixCapture::test_overlap(int i) noexcept(true)
+[[gnu::hot]]  void FixCapture::test_overlap(int i) noexcept(true)
 {
   double **x = atom->x;
   // for (int j = i + 1; j < atom->nmax; ++j) {
@@ -398,7 +398,7 @@ void FixCapture::test_overlap(int i) noexcept(true)
 
 /* ---------------------------------------------------------------------- */
 
-void FixCapture::post_delete() noexcept(true)
+[[gnu::cold]] void FixCapture::post_delete() noexcept(true)
 {
   if (atom->molecular == Atom::ATOMIC) {
     tagint *tag = atom->tag;
