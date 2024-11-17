@@ -244,26 +244,27 @@ inline bool FixCapture::isnonnumeric(const double *const vec3) noexcept(true)
 
 /* ---------------------------------------------------------------------- */
 
+template <bool ISREL>
+inline bool FixCapture::super_cond(const double *const v, const double *const vmeanx,
+                                   const double sigma) const noexcept(true)
+{
+  if constexpr (ISREL) {
+    return ::fabs(*v - *vmeanx) > nsigma * sigma;
+  } else {
+    return ::fabs(*v) > nsigma * sigma;
+  }
+}
+
 template <bool ISREL> void FixCapture::test_superspeed(int *atomid) noexcept(true)
 {
-  int const i = *atomid;
+  const int i = *atomid;
   double *v = atom->v[i];
-  double *x = atom->x[i];
-  double const sigma = sigmas[atom->type[i]];
-  bool arr[3] = {false, false, false};
-  double old_v[3]{};
-  old_v[0] = v[0];
-  old_v[1] = v[1];
-  old_v[2] = v[2];
+  const double sigma = sigmas[atom->type[i]];
+  bool flag = false;
+  double old_v[3] = {v[0], v[1], v[2]};
   for (int j = 0; j < 3; ++j) {
-    double diff = 0;
-    if constexpr (ISREL) {
-      diff = v[j] - vmean[j];
-    } else {
-      diff = v[j];
-    }
-    if (::fabs(diff) > nsigma * sigma) {
-      arr[j] = true;
+    if (super_cond<ISREL>(v + j, vmean + j, sigma)) {
+      flag = true;
       if (action == ACTION::SLOW) {
         if constexpr (ISREL) {
           v[j] = vrandom->gaussian() * sigma + vmean[j];
@@ -280,7 +281,7 @@ template <bool ISREL> void FixCapture::test_superspeed(int *atomid) noexcept(tru
       }
     }
   }
-  if (arr[0] || arr[1] || arr[2]) {
+  if (flag) {
     if constexpr (ISREL) {
       ++Fcounts[FIX_CAPTURE_OVERSPEED_REL_FLAG];
     } else {
@@ -290,11 +291,27 @@ template <bool ISREL> void FixCapture::test_superspeed(int *atomid) noexcept(tru
     captured();
     utils::logmesg(lmp, "{}, {}####### SUPER ATOM VELOCITY ({}) ######{}\n", atom->tag[i],
                    update->ntimestep, ISREL ? "REL" : "NOREL", comm->me);
-    utils::logmesg(lmp, "{}           POS: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], x[0], x[1], x[2]);
-    utils::logmesg(lmp, "{}      VELOCITY: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], old_v[0],
-                   old_v[1], old_v[2]);
-    utils::logmesg(lmp, "{}VELOCITY NOREL: {:.3f} {:.3f} {:.3f}\n", atom->tag[i],
-                   old_v[0] - vmean[0], old_v[1] - vmean[1], old_v[2] - vmean[2]);
+    utils::logmesg(lmp, "{}           POS: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], atom->x[i][0],
+                   atom->x[i][1], atom->x[i][2]);
+    if constexpr (ISREL) {
+      utils::logmesg(lmp, "{}      VELOCITY: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], old_v[0],
+                     old_v[1], old_v[2]);
+      old_v[0] -= vmean[0];
+      old_v[1] -= vmean[1];
+      old_v[2] -= vmean[2];
+      double vtot = ::sqrt(old_v[0] * old_v[0] + old_v[1] * old_v[1] + old_v[2] * old_v[2]);
+      utils::logmesg(lmp, "{}VELOCITY NOREL: {:.3f} {:.3f} {:.3f} ({:.3f} > {} * {:.3f})\n",
+                     atom->tag[i], old_v[0], old_v[1], old_v[2], vtot, nsigma, sigma);
+    } else {
+      double vtot = ::sqrt(old_v[0] * old_v[0] + old_v[1] * old_v[1] + old_v[2] * old_v[2]);
+      utils::logmesg(lmp, "{}      VELOCITY: {:.3f} {:.3f} {:.3f} ({:.3f} > {} * {:.3f})\n",
+                     atom->tag[i], old_v[0], old_v[1], old_v[2], vtot, nsigma, sigma);
+      old_v[0] -= vmean[0];
+      old_v[1] -= vmean[1];
+      old_v[2] -= vmean[2];
+      utils::logmesg(lmp, "{}VELOCITY NOREL: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], old_v[0],
+                     old_v[1], old_v[2]);
+    }
     if (action == ACTION::DELETE) {
       utils::logmesg(lmp, "{} DELETED\n", atom->tag[i]);
     } else {

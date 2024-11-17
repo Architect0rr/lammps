@@ -18,7 +18,6 @@ FixStyle(capture,FixCapture);
 #include "random_park.h"
 #include "region.h"
 
-
 namespace LAMMPS_NS {
 
 #define FIX_CAPTURE_FLAGS_COUNT 6
@@ -68,6 +67,9 @@ class FixCapture : public Fix {
   static bool isnonnumeric(const double *const vec3) noexcept(true);
   long double rmin(const int i, const int j) noexcept(true);
 
+  template <bool ISREL>
+  bool super_cond(const double *const v, const double *const vmeanx, const double sigma) const
+      noexcept(true);
   template <bool ISREL> void test_superspeed(int *atomid) noexcept(true);
 };
 
