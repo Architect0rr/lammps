@@ -403,6 +403,7 @@ void FixClusterCrushDelete::pre_exchange()
         ::fflush(fp);
       }
     }
+    added_prev = 0;
     return;
   }
 
