@@ -145,7 +145,7 @@ FixCapture::~FixCapture() noexcept(true)
 int FixCapture::setmask()
 {
   int mask = 0;
-  mask |= FINAL_INTEGRATE | PRE_EXCHANGE;
+  mask |= PRE_EXCHANGE;
   return mask;
 }
 
