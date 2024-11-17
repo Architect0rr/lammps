@@ -507,7 +507,7 @@ bool FixClusterCrushDelete::genOneFull() noexcept(true)
     int reject = 0;
 
     // check new position for overlapping with all local atoms
-    for (int i = 0; i < atom->nmax; ++i) {
+    for (int i = 0; i < atom->nlocal; ++i) {
       double delx = xone[0] - x[i][0];
       double dely = xone[1] - x[i][1];
       double delz = xone[2] - x[i][2];
@@ -525,7 +525,7 @@ bool FixClusterCrushDelete::genOneFull() noexcept(true)
         utils::logmesg(lmp, "   ORIG DELTA: {:.3f} {:.3f} {:.3f}\n", xb, yb, zb);
         utils::logmesg(lmp, "   CALC DELTA: {:.3f} {:.3f} {:.3f}\n", delx, dely, delz);
       }
-      if (delx * delx + dely * dely + delz * delz < odistsq) {
+      if (delx * delx + dely * dely + delz * delz < odistsq) { // odistsq = overlap * overlap
         reject = 1;
         break;
       }
