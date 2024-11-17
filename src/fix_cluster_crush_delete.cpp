@@ -40,7 +40,7 @@ constexpr int MAX_RANDOM_VALUE = 32767;
 FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) :
     Fix(lmp, narg, arg), screenflag(1), fileflag(0), scaleflag(0), next_step(0), nloc(0),
     p2m(nullptr), to_restore(0), added_prev(0), at_once(1), fix_temp(false),
-    maxtry(::DEFAULT_MAXTRY), maxtry_call(::DEFAULT_MAXTRY_CALL), ntype(0), sigma(0)
+    maxtry(::DEFAULT_MAXTRY), maxtry_call(::DEFAULT_MAXTRY_CALL), ntype(0), sigma(0), rejected(0)
 {
 
   restart_pbc = 1;
@@ -231,7 +231,7 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) 
   }
 
   if ((comm->me == 0) && (fileflag != 0)) {
-    fmt::print(fp, "ntimestep,ntotal,cc,ad,aa,tr,rjbno,nonn\n");
+    fmt::print(fp, "ntimestep,ntotal,cc,ad,aa,tr,rjbno,rejected\n");
     ::fflush(fp);
   }
 
@@ -249,7 +249,7 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) 
     error->all(FLERR, "compute supersaturation: Cannot find compute with style 'temp'.");
   }
   compute_temp = temp_computes[0];
-  sigma = std::sqrt(monomer_temperature / atom->mass[ntype]);
+  sigma = ::sqrt(monomer_temperature / atom->mass[ntype]);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -305,7 +305,7 @@ inline bool FixClusterCrushDelete::checkown() noexcept(true)
 
 /* ---------------------------------------------------------------------- */
 
-void FixClusterCrushDelete::pre_exchange()
+[[gnu::hot]] void FixClusterCrushDelete::pre_exchange()
 {
   int rejected_by_nonown = 0;
   int rejected_by_nonown_global = 0;
@@ -314,12 +314,12 @@ void FixClusterCrushDelete::pre_exchange()
     int const nloc_prev = atom->nlocal;
     for (int i = 0; (i < at_once) && (to_restore > 0); ++i) {
       int tries = 0;
-      bool succ = false;
-      while (!succ) {
-        succ = genOneFull();
+      bool success = false;
+      while (!success) {
+        success = genOneFull();
         if (++tries > maxtry) { break; }
       }
-      if (succ) {
+      if (success) {
         int paste = checkown() ? 0 : 1;
         if (paste == 0) {
           atom->avec->create_atom(ntype, xone);
@@ -380,12 +380,9 @@ void FixClusterCrushDelete::pre_exchange()
   pproc[comm->me] = atoms2move_local;
   ::MPI_Allgather(&atoms2move_local, 1, MPI_INT, pproc, 1, MPI_INT, world);
 
-  bigint nonn = 0;
-  for (int i = 0; i < atom->nlocal; ++i) {
-    if (isnonnumeric(atom->x[i])) { ++nonn; }
-  }
-  bigint nonng = 0;
-  MPI_Allreduce(&nonn, &nonng, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  bigint rejected_global = 0;
+  MPI_Allreduce(&rejected, &rejected_global, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  rejected = 0;
 
   bigint atoms2move_total = 0;
   bigint clusters2crush_total = 0;
@@ -399,7 +396,7 @@ void FixClusterCrushDelete::pre_exchange()
       if (screenflag != 0) { utils::logmesg(lmp, "No clusters with size exceeding {}\n", kmax); }
       if (fileflag != 0) {
         fmt::print(fp, "{},{},0,0,{},{},{},{}\n", update->ntimestep, atom->natoms, added_prev,
-                   to_restore, rejected_by_nonown_global, nonng);
+                   to_restore, rejected_by_nonown_global, rejected_global);
         ::fflush(fp);
       }
     }
@@ -421,7 +418,7 @@ void FixClusterCrushDelete::pre_exchange()
     if (fileflag != 0) {
       fmt::print(fp, "{},{},{},{},{},{},{},{}\n", update->ntimestep, atom->natoms,
                  clusters2crush_total, atoms2move_total, added_prev, to_restore,
-                 rejected_by_nonown_global, nonng);
+                 rejected_by_nonown_global, rejected_global);
       ::fflush(fp);
     }
   }
@@ -519,12 +516,13 @@ bool FixClusterCrushDelete::genOneFull() noexcept(true)
       try {
         domain->minimum_image(delx, dely, delz);
       } catch (const LAMMPSAbortException& exc) {
-        utils::logmesg(lmp, "####### MINIMUM IMAGE EXCEPTION ######{}\n", comm->me);
-        utils::logmesg(lmp, "PTAG: {}, POS: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], x[i][0], x[i][1], x[i][2]);
-        utils::logmesg(lmp, "     VELOCITY: {:.3f} {:.3f} {:.3f}\n", atom->v[i][0], atom->v[i][1], atom->v[i][2]);
-        utils::logmesg(lmp, "    FOUND POS: {:.3f} {:.3f} {:.3f}\n", xone[0], xone[1], xone[2]);
-        utils::logmesg(lmp, "   ORIG DELTA: {:.3f} {:.3f} {:.3f}\n", xb, yb, zb);
-        utils::logmesg(lmp, "   CALC DELTA: {:.3f} {:.3f} {:.3f}\n", delx, dely, delz);
+        utils::logmesg(lmp, "{} {}####### MINIMUM IMAGE EXCEPTION ######{}\n",atom->tag[i], update->ntimestep, comm->me);
+        utils::logmesg(lmp, "{}        POS: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], x[i][0], x[i][1], x[i][2]);
+        utils::logmesg(lmp, "{}   VELOCITY: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], atom->v[i][0], atom->v[i][1], atom->v[i][2]);
+        utils::logmesg(lmp, "{}  FOUND POS: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], xone[0], xone[1], xone[2]);
+        utils::logmesg(lmp, "{} ORIG DELTA: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], xb, yb, zb);
+        utils::logmesg(lmp, "{} CALC DELTA: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], delx, dely, delz);
+        throw;
       }
       if (delx * delx + dely * dely + delz * delz < odistsq) { // odistsq = overlap * overlap
         reject = 1;
@@ -535,7 +533,11 @@ bool FixClusterCrushDelete::genOneFull() noexcept(true)
     // gather reject flags from all of the procs
     int reject_any = 0;
     ::MPI_Allreduce(&reject, &reject_any, 1, MPI_INT, MPI_MAX, world);
-    if (reject_any != 0) { continue; }
+    if (reject_any != 0) {
+      continue;
+    } else {
+      ++rejected;
+    }
 
     // all tests passed
 

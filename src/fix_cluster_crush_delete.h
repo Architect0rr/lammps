@@ -72,6 +72,7 @@ class FixClusterCrushDelete : public Fix {
 
   int maxtry_call;
   double sigma;
+  bigint rejected;
 
   bool genOneFull() noexcept(true);
   void set_speed(int pID) noexcept(true);
