@@ -178,6 +178,48 @@ void FixCapture::init()
 
 /* ---------------------------------------------------------------------- */
 
+void FixCapture::pre_exchange()
+{
+  if (compute_temp->invoked_scalar != update->ntimestep) { compute_temp->compute_scalar(); }
+
+  ::memset(Fcounts, 0, FIX_CAPTURE_FLAGS_COUNT * sizeof(bigint));
+
+  for (int i = 1; i <= atom->ntypes; ++i) {
+    sigmas[i] = ::sqrt(compute_temp->scalar / atom->mass[i]);
+    for (int j = 0; j <= atom->ntypes; ++j) { rmins[i][j] = rmin(i, j > 0 ? j : i); }
+  }
+
+  group->vcm(igroup, group->mass(igroup), vmean);
+
+  // region->prematch();
+
+  for (int i = 0; i < atom->nlocal; ++i) {
+    allow = true;
+    if (((atom->mask[i] & groupbit) != 0)) {
+      // && (region->match(atom->x[i][0], atom->x[i][1], atom->x[i][2]) != 0)
+      test_xnonnum(i);
+      test_vnonnum(i);
+      test_superspeed<false>(&i);
+      test_superspeed<true>(&i);
+      test_overlap(i);
+    }
+  }
+
+  if ((action == ACTION::DELETE) && (Fcounts[FIX_CAPTURE_OVERSPEED_FLAG] > 0)) { post_delete(); }
+
+  bigint GFcounts[FIX_CAPTURE_FLAGS_COUNT]{};
+  ::MPI_Allreduce(&Fcounts, &GFcounts, FIX_CAPTURE_FLAGS_COUNT, MPI_LMP_BIGINT, MPI_SUM, world);
+
+  if (fileflag && (comm->me == 0)) {
+    fmt::print(fp, "{}", update->ntimestep);
+    for (const bigint GFcount : GFcounts) { fmt::print(fp, ",{}", GFcount); }
+    fmt::print(fp, "\n");
+    ::fflush(fp);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
 inline long double FixCapture::rmin(const int i, const int j) noexcept(true)
 {
   constexpr long double two_sqrt = 1.4142135623730950488016887242096L;         // sqrt(2)
@@ -186,9 +228,9 @@ inline long double FixCapture::rmin(const int i, const int j) noexcept(true)
   return two_one_third /
       ::pow((2 +
              two_sqrt *
-                 sqrt(2 +
-                      (atom->mass[i] * vmax_coeffs[i] + atom->mass[j] * vmax_coeffs[j]) *
-                          compute_temp->scalar)),
+                 ::sqrt(2 +
+                        (atom->mass[i] * vmax_coeffs[i] + atom->mass[j] * vmax_coeffs[j]) *
+                            compute_temp->scalar)),
             one_over_six);
 }
 
@@ -246,7 +288,8 @@ template <bool ISREL> void FixCapture::test_superspeed(int *atomid) noexcept(tru
     }
 
     captured();
-    utils::logmesg(lmp, "{}, {}####### SUPER ATOM VELOCITY ({}) ######{}\n", atom->tag[i], update->ntimestep, ISREL ? "REL" : "NOREL", comm->me);
+    utils::logmesg(lmp, "{}, {}####### SUPER ATOM VELOCITY ({}) ######{}\n", atom->tag[i],
+                   update->ntimestep, ISREL ? "REL" : "NOREL", comm->me);
     utils::logmesg(lmp, "{}           POS: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], x[0], x[1], x[2]);
     utils::logmesg(lmp, "{}      VELOCITY: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], old_v[0],
                    old_v[1], old_v[2]);
@@ -278,86 +321,28 @@ void FixCapture::test_xnonnum(int i) noexcept(true)
   if (isnonnumeric(atom->x[i])) {
     ++Fcounts[FIX_CAPTURE_xNaN_FLAG];
     captured();
-    utils::logmesg(lmp, "{}, {}####### NON-NUMERIC ATOM COORDS ######{}\n", atom->tag[i], update->ntimestep, comm->me);
+    utils::logmesg(lmp, "{}, {}####### NON-NUMERIC ATOM COORDS ######{}\n", atom->tag[i],
+                   update->ntimestep, comm->me);
     utils::logmesg(lmp, "{}     POS: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], atom->x[i][0],
                    atom->x[i][1], atom->x[i][2]);
     utils::logmesg(lmp, "{}VELOCITY: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], atom->v[i][0],
                    atom->v[i][1], atom->v[i][2]);
   }
 }
+
+/* ---------------------------------------------------------------------- */
 
 void FixCapture::test_vnonnum(int i) noexcept(true)
 {
   if (isnonnumeric(atom->v[i])) {
     ++Fcounts[FIX_CAPTURE_vNaN_FLAG];
     captured();
-    utils::logmesg(lmp, "{}, {}####### NON-NUMERIC ATOM VELOCITY ######{}\n", atom->tag[i], update->ntimestep, comm->me);
+    utils::logmesg(lmp, "{}, {}####### NON-NUMERIC ATOM VELOCITY ######{}\n", atom->tag[i],
+                   update->ntimestep, comm->me);
     utils::logmesg(lmp, "{}     POS: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], atom->x[i][0],
                    atom->x[i][1], atom->x[i][2]);
     utils::logmesg(lmp, "{}VELOCITY: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], atom->v[i][0],
                    atom->v[i][1], atom->v[i][2]);
-  }
-}
-
-/* ---------------------------------------------------------------------- */
-
-void FixCapture::pre_exchange()
-{
-  final_integrate();
-}
-
-/* ---------------------------------------------------------------------- */
-
-void FixCapture::final_integrate()
-{
-  if (compute_temp->invoked_scalar != update->ntimestep) { compute_temp->compute_scalar(); }
-
-  ::memset(Fcounts, 0, FIX_CAPTURE_FLAGS_COUNT * sizeof(bigint));
-
-  for (int i = 1; i <= atom->ntypes; ++i) {
-    sigmas[i] = ::sqrt(compute_temp->scalar / atom->mass[i]);
-    for (int j = 1; j <= atom->ntypes; ++j) { rmins[i][j] = rmin(i, j); }
-  }
-  if (comm->me == 0) {
-    utils::logmesg(lmp, "Sigma:");
-    for (int i = 1; i <= atom->ntypes; ++i) {
-      utils::logmesg(lmp, " {}-{:.3f}", i, sigmas[i]);
-    }
-    utils::logmesg(lmp, "\nrmins:\n");
-    for (int i = 1; i <= atom->ntypes; ++i) {
-      for (int j = i; j <= atom->ntypes; ++j) {
-        utils::logmesg(lmp, "{}-{} {:.3f}", i, j, rmins[i][j]);
-      }
-    }
-    utils::logmesg(lmp, "\n");
-  }
-
-  group->vcm(igroup, group->mass(igroup), vmean);
-
-  // region->prematch();
-
-  for (int i = 0; i < atom->nlocal; ++i) {
-    allow = true;
-    if (((atom->mask[i] & groupbit) != 0)) {
-      // && (region->match(atom->x[i][0], atom->x[i][1], atom->x[i][2]) != 0)
-      test_xnonnum(i);
-      test_vnonnum(i);
-      test_superspeed<false>(&i);
-      test_superspeed<true>(&i);
-      test_overlap(i);
-    }
-  }
-
-  if ((action == ACTION::DELETE) && (Fcounts[FIX_CAPTURE_OVERSPEED_FLAG] > 0)) { post_delete(); }
-
-  bigint GFcounts[FIX_CAPTURE_FLAGS_COUNT]{};
-  ::MPI_Allreduce(&Fcounts, &GFcounts, FIX_CAPTURE_FLAGS_COUNT, MPI_LMP_BIGINT, MPI_SUM, world);
-
-  if (fileflag && (comm->me == 0)) {
-    fmt::print(fp, "{}", update->ntimestep);
-    for (const bigint GFcount : GFcounts) { fmt::print(fp, ",{}", GFcount); }
-    fmt::print(fp, "\n");
-    ::fflush(fp);
   }
 }
 
@@ -366,16 +351,18 @@ void FixCapture::final_integrate()
 void FixCapture::test_overlap(int i) noexcept(true)
 {
   double **x = atom->x;
-  for (int j = i + 1; j < atom->nmax; ++j) {
+  // for (int j = i + 1; j < atom->nmax; ++j) {
+  for (int j = i + 1; j < atom->nlocal; ++j) {
     const double dx = x[i][0] - x[j][0];
     const double dy = x[i][1] - x[j][1];
     const double dz = x[i][2] - x[j][2];
-    const double rm = rmins[atom->type[i]][atom->type[j]];
+    const double rm = rmins[atom->type[i]][j < atom->nlocal ? atom->type[j] : 0];
     if (dx * dx + dy * dy + dz * dz < rm * rm) {
       ++Fcounts[FIX_CAPTURE_OVERLAP_FLAG];
       captured();
-      utils::logmesg(lmp, "{}, {}####### ATOM OVERLAP {} with {} ######{}\n", atom->tag[i], update->ntimestep,
-                     atom->tag[i], atom->tag[j], comm->me);
+      utils::logmesg(lmp, "{}, {}####### ATOM OVERLAP {} with {} ({})######{}\n", atom->tag[i],
+                     update->ntimestep, atom->tag[i], atom->tag[j],
+                     j < atom->nlocal ? "owned" : "not owned", comm->me);
       utils::logmesg(lmp, "{} {}      POS: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], atom->tag[i],
                      atom->x[i][0], atom->x[i][1], atom->x[i][2]);
       utils::logmesg(lmp, "{} {} VELOCITY: {:.3f} {:.3f} {:.3f}\n", atom->tag[i], atom->tag[i],

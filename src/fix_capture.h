@@ -28,10 +28,6 @@ namespace LAMMPS_NS {
 #define FIX_CAPTURE_OVERSPEED_FLAG 3
 #define FIX_CAPTURE_OVERSPEED_REL_FLAG 4
 #define FIX_CAPTURE_OVERLAP_FLAG 5
-// #define FIX_CAPTURE_TYPE_COUNT 3
-// #define FIX_CAPTURE_sigma 0
-// #define FIX_CAPTURE_vmean_total 1
-// #define FIX_CAPTURE_sigma_total 3
 
 enum class ACTION { COUNT, SLOW, DELETE };
 
@@ -41,7 +37,6 @@ class FixCapture : public Fix {
   ~FixCapture() noexcept(true) override;
   int setmask() override;
   void init() override;
-  void final_integrate() override;
   void pre_exchange() override;
 
  protected:
