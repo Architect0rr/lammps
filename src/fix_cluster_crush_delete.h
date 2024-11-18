@@ -16,7 +16,7 @@ FixStyle(cluster/crush_delete,FixClusterCrushDelete);
 #include "compute.h"
 #include "compute_cluster_size.h"
 #include "fix.h"
-#include "random_park.h"
+#include "fix_regen.h"
 #include "region.h"
 
 namespace LAMMPS_NS {
@@ -33,12 +33,11 @@ class FixClusterCrushDelete : public Fix {
   Region *region = nullptr;
   ComputeClusterSize *compute_cluster_size = nullptr;
   Compute *compute_temp = nullptr;
+  FixRegen *fix_regen = nullptr;
 
-  RanPark *xrandom = nullptr;
-  RanPark *vrandom = nullptr;
+  int xseed;
 
   FILE *fp;
-//   FILE *diagfile;
   int screenflag;
   int fileflag;
   int scaleflag;
@@ -48,40 +47,22 @@ class FixClusterCrushDelete : public Fix {
 
   int nloc;
   int *p2m;
-  int *pproc;    // number of atoms to move per rank
-  bigint *c2c;
+  int *pproc{};    // number of atoms to move per rank
+  bigint *c2c{};
 
-  double globbonds[3][2]{};
-  double subbonds[3][2]{};
-  double *coord{};
-  double lamda[3]{};
-  double *boxlo;
-  double *boxhi;
-  double xone[3]{};
-
-  bigint to_restore;
-  bigint added_prev;
   int at_once;
-
   bool fix_temp;
   double monomer_temperature;
-  double odistsq;
   double overlap;
   int maxtry;
   int ntype;
-
-  int maxtry_call;
   double sigma;
-  bigint rejected;
+  bool reneigh_forced;
+  bigint ninserted_prev;
+  bigint ninsert_prev;
 
-  bool genOneFull() noexcept(true);
-  void set_speed(int pID) noexcept(true);
   void deleteAtoms(int atoms2move_local) noexcept(true);
   void postDelete() noexcept(true);
-  void post_add(const int nlocal_previous) noexcept(true);
-  void postTeleport() noexcept(true);
-  bool checkown() noexcept(true);
-  bool isnonnumeric(const double *const vec3) noexcept(true);
 };
 
 }    // namespace LAMMPS_NS
