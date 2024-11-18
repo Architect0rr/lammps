@@ -330,6 +330,13 @@ void FixRegen::init()
 
 /* ---------------------------------------------------------------------- */
 
+void FixRegen::force_reneigh(const bigint n)
+{
+  next_reneighbor = n;
+}
+
+/* ---------------------------------------------------------------------- */
+
 void FixRegen::setup_pre_exchange()
 {
   if (ninserted < ninsert) { next_reneighbor = nfirst + ((update->ntimestep - nfirst)/nfreq)*nfreq + nfreq;

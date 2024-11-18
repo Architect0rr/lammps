@@ -204,7 +204,7 @@ void FixClusterCrushDelete::init()
     error->warning(FLERR, "More than one fix {}", style);
   }
 
-  const std::string fixcmd = fmt::format("CCDREGENFIX all deposit 1 {} 1 {} {} region {} near {} "
+  const std::string fixcmd = fmt::format("CCDREGENFIX all regen 1 {} 1 {} {} region {} near {} "
                                          "attempt {} vx {} {} vy {} {} vz {} {} units box",
                                          ntype, xseed, at_once, region->id, overlap, maxtry, -sigma,
                                          sigma, -sigma, sigma, -sigma, sigma);
@@ -296,6 +296,7 @@ int FixClusterCrushDelete::setmask()
   next_reneighbor = update->ntimestep + 1;
   reneigh_forced = true;
   fix_regen->ninsert += atoms2move_total;
+  fix_regen->force_reneigh(next_reneighbor);
 
   if (comm->me == 0) {
     // print status

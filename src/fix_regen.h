@@ -13,7 +13,7 @@
 
 #ifdef FIX_CLASS
 // clang-format off
-FixStyle(deposit,FixRegen);
+FixStyle(regen,FixRegen);
 // clang-format on
 #else
 
@@ -37,6 +37,7 @@ class FixRegen : public Fix {
   void restart(char *) override;
   void *extract(const char *, int &) override;
 
+  void force_reneigh(const bigint n);
   bigint ninsert;
   bigint ninserted;
 
