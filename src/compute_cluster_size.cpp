@@ -27,7 +27,8 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 ComputeClusterSize::ComputeClusterSize(LAMMPS *lmp, int narg, char **arg) :
-    Compute(lmp, narg, arg), nloc(0), nloc_atom(0), peratom_size(nullptr), dist(nullptr), nc_global(0)
+    Compute(lmp, narg, arg), nloc(0), nloc_atom(0), peratom_size(nullptr), dist(nullptr),
+    nc_global(0)
 {
   vector_flag = 1;
   extvector = 0;
@@ -52,7 +53,9 @@ ComputeClusterSize::ComputeClusterSize(LAMMPS *lmp, int narg, char **arg) :
 
   // Get the critical size
   size_cutoff = utils::inumeric(FLERR, arg[4], true, lmp);
-  if (size_cutoff < 1) { error->all(FLERR, "size_cutoff for compute cluster/size must be greater than 0"); }
+  if (size_cutoff < 1) {
+    error->all(FLERR, "size_cutoff for compute cluster/size must be greater than 0");
+  }
 
   size_vector = size_cutoff + 1;
   dist = memory->create(dist, (size_vector + 1) * sizeof(double), "compute:cluster/size:dist");
@@ -129,7 +132,6 @@ void ComputeClusterSize::compute_vector()
   }
 
   compute_peratom();
-
 }
 
 /* ---------------------------------------------------------------------- */
@@ -138,9 +140,7 @@ void ComputeClusterSize::compute_peratom()
 {
   invoked_peratom = update->ntimestep;
 
-  if ((nloc_atom < atom->nlocal) && (peratom_size != nullptr)) {
-    memory->destroy(peratom_size);
-  }
+  if ((nloc_atom < atom->nlocal) && (peratom_size != nullptr)) { memory->destroy(peratom_size); }
 
   if ((nloc_atom < atom->nlocal) && (peratom_size == nullptr)) {
     nloc_atom = atom->nlocal;
@@ -151,9 +151,7 @@ void ComputeClusterSize::compute_peratom()
 
   for (auto [size, cIDs] : cIDs_by_size) {
     for (auto cID : cIDs) {
-      for (auto pID : atoms_by_cID[cID]) {
-        peratom_size[pID] = size;
-      }
+      for (auto pID : atoms_by_cID[cID]) { peratom_size[pID] = size; }
     }
   }
 }
@@ -175,4 +173,11 @@ double ComputeClusterSize::memory_usage()
   return size_vector * sizeof(double) +
       static_cast<double>(atoms_by_cID_elementsMemory + atoms_by_cID_bucketOverhead +
                           cIDs_by_size_elementsMemory + cIDs_by_size_bucketOverhead);
+}
+
+/* ---------------------------------------------------------------------- */
+
+int ComputeClusterSize::get_size_cutoff() const noexcept(true)
+{
+  return size_cutoff;
 }

@@ -36,7 +36,9 @@ class ComputeClusterSize : public Compute {
   void compute_peratom() override;
   double memory_usage() override;
 
-  std::unordered_map<bigint, std::vector<int>> atoms_by_cID;    // Mapping cID  -> local idx
+  int get_size_cutoff() const noexcept(true);
+
+  std::unordered_map<bigint, std::vector<int>> atoms_by_cID;       // Mapping cID  -> local idx
   std::unordered_map<bigint, std::vector<bigint>> cIDs_by_size;    // Mapping size -> cIDs
 
  private:

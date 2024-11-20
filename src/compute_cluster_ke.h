@@ -13,32 +13,34 @@
 
 #ifdef COMPUTE_CLASS
 // clang-format off
-ComputeStyle(cluster/temp,ComputeClusterTemp);
+ComputeStyle(cluster/ke,ComputeClusterKE);
 // clang-format on
 #else
 
-#ifndef LMP_COMPUTE_CLUSTER_TEMP_H
-#define LMP_COMPUTE_CLUSTER_TEMP_H
+#ifndef LMP_COMPUTE_CLUSTER_KE_H
+#define LMP_COMPUTE_CLUSTER_KE_H
 
 #include "compute.h"
 #include "compute_cluster_size.h"
 
 namespace LAMMPS_NS {
 
-class ComputeClusterTemp : public Compute {
+class ComputeClusterKE : public Compute {
  public:
-  ComputeClusterTemp(class LAMMPS *lmp, int narg, char **arg);
-  ~ComputeClusterTemp() noexcept(true) override;
+  ComputeClusterKE(class LAMMPS *lmp, int narg, char **arg);
+  ~ComputeClusterKE() noexcept(true) override;
   void init() override;
   void compute_vector() override;
+  void compute_local() override;
   double memory_usage() override;
 
  private:
   ComputeClusterSize *compute_cluster_size = nullptr;
-  Compute *compute_cluster_ke = nullptr;
+  Compute *compute_ke_atom = nullptr;
 
-  double *temp = nullptr;    // array of temps of global clusters
-  int size_cutoff;           // size of max cluster
+  double *kes = nullptr;          // array of kes of global clusters
+  double *local_kes = nullptr;    // array of kes of local clusters
+  int size_cutoff;                // size of max cluster
 };
 
 }    // namespace LAMMPS_NS

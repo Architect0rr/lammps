@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include "compute_cluster_temps.h"
+#include "compute_cluster_te.h"
 #include "compute_cluster_size.h"
 
 #include "atom.h"
@@ -29,13 +29,16 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-ComputeClusterTemp::ComputeClusterTemp(LAMMPS *lmp, int narg, char **arg) : Compute(lmp, narg, arg)
+ComputeClusterTE::ComputeClusterTE(LAMMPS *lmp, int narg, char **arg) : Compute(lmp, narg, arg)
 {
   vector_flag = 1;
   size_vector = 0;
   extvector = 0;
+  local_flag = 1;
+  size_local_rows = 0;
+  size_local_cols = 0;
 
-  if (narg < 3) { utils::missing_cmd_args(FLERR, "compute cluster/temp", error); }
+  if (narg < 3) { utils::missing_cmd_args(FLERR, "compute cluster/pe", error); }
 
   // Parse arguments //
 
@@ -61,27 +64,38 @@ ComputeClusterTemp::ComputeClusterTemp(LAMMPS *lmp, int narg, char **arg) : Comp
   }
 
   // Get ke/atom compute
-  auto computes = lmp->modify->get_compute_by_style("cluster/ke");
-  if (computes.empty()) {
+  auto cpe_computes = lmp->modify->get_compute_by_style("cluster/pe");
+  if (cpe_computes.empty()) {
+    error->all(FLERR, "compute {}: Cannot find compute with style 'cluster/pe'", style);
+  }
+  compute_cluster_pe = cpe_computes[0];
+
+  auto cke_computes = lmp->modify->get_compute_by_style("cluster/ke");
+  if (cke_computes.empty()) {
     error->all(FLERR, "compute {}: Cannot find compute with style 'cluster/ke'", style);
   }
-  compute_cluster_ke = computes[0];
+  compute_cluster_ke = cke_computes[0];
+
+  size_local_rows = size_cutoff + 1;
+  memory->create(local_tes, size_local_rows + 1, "compute:cluster/pe:local_pes");
+  vector_local = local_tes;
 
   size_vector = size_cutoff + 1;
-  memory->create(temp, size_vector + 1, "compute:cluster/temp:temp");
-  vector = temp;
+  memory->create(tes, size_vector + 1, "compute:cluster/pe:pes");
+  vector = tes;
 }
 
 /* ---------------------------------------------------------------------- */
 
-ComputeClusterTemp::~ComputeClusterTemp() noexcept(true)
+ComputeClusterTE::~ComputeClusterTE() noexcept(true)
 {
-  if (temp != nullptr) { memory->destroy(temp); }
+  if (local_tes != nullptr) { memory->destroy(local_tes); }
+  if (tes != nullptr) { memory->destroy(tes); }
 }
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeClusterTemp::init()
+void ComputeClusterTE::init()
 {
   if ((modify->get_compute_by_style(style).size() > 1) && (comm->me == 0)) {
     error->warning(FLERR, "More than one compute {}", style);
@@ -90,31 +104,41 @@ void ComputeClusterTemp::init()
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeClusterTemp::compute_vector()
+void ComputeClusterTE::compute_vector()
 {
   invoked_vector = update->ntimestep;
 
-  if (compute_cluster_size->invoked_vector != update->ntimestep) {
-    compute_cluster_size->compute_vector();
-  }
+  compute_local();
+
+  ::memset(tes, 0.0, size_vector * sizeof(double));
+  ::MPI_Allreduce(local_tes, tes, size_vector, MPI_DOUBLE, MPI_SUM, world);
+}
+
+/* ---------------------------------------------------------------------- */
+
+void ComputeClusterTE::compute_local()
+{
+  invoked_local = update->ntimestep;
 
   if (compute_cluster_ke->invoked_vector != update->ntimestep) {
     compute_cluster_ke->compute_vector();
   }
-
-  const double *const kes = compute_cluster_ke->vector;
-  ::memset(temp, 0.0, size_vector * sizeof(double));
-  const double *const dist = compute_cluster_size->vector;
-  for (int i = 0; i < size_cutoff; ++i) {
-    if (dist[i] > 0) { temp[i] = 2 * kes[i] * dist[i] / ((dist[i] * i - 1) * domain->dimension); }
+  if (compute_cluster_pe->invoked_vector != update->ntimestep) {
+    compute_cluster_pe->compute_vector();
   }
+
+  const double *const per_cluster_pes = compute_cluster_ke->vector_local;
+  const double *const per_cluster_kes = compute_cluster_pe->vector_local;
+  ::memset(local_tes, 0.0, size_local_rows * sizeof(double));
+
+  for (int i = 0; i < size_vector; i++) { local_tes[i] = per_cluster_pes[i] + per_cluster_kes[i]; }
 }
 
 /* ----------------------------------------------------------------------
    memory usage of local atom-based array
 ------------------------------------------------------------------------- */
 
-double ComputeClusterTemp::memory_usage()
+double ComputeClusterTE::memory_usage()
 {
-  return static_cast<double>(size_vector * sizeof(double));
+  return static_cast<double>((size_local_rows + size_vector) * sizeof(double));
 }

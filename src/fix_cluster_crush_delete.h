@@ -51,6 +51,7 @@ class FixClusterCrushDelete : public Fix {
   bigint *c2c{};
 
   int at_once;
+  std::string groupname;
   bool fix_temp;
   double monomer_temperature;
   double overlap;
@@ -59,7 +60,6 @@ class FixClusterCrushDelete : public Fix {
   double sigma;
   bool reneigh_forced;
   bigint ninserted_prev;
-  bigint ninsert_prev;
 
   void deleteAtoms(int atoms2move_local) noexcept(true);
   void postDelete() noexcept(true);

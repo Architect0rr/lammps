@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include "compute_cluster_temps.h"
+#include "compute_cluster_pe.h"
 #include "compute_cluster_size.h"
 
 #include "atom.h"
@@ -29,13 +29,16 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-ComputeClusterTemp::ComputeClusterTemp(LAMMPS *lmp, int narg, char **arg) : Compute(lmp, narg, arg)
+ComputeClusterPE::ComputeClusterPE(LAMMPS *lmp, int narg, char **arg) : Compute(lmp, narg, arg)
 {
   vector_flag = 1;
   size_vector = 0;
   extvector = 0;
+  local_flag = 1;
+  size_local_rows = 0;
+  size_local_cols = 0;
 
-  if (narg < 3) { utils::missing_cmd_args(FLERR, "compute cluster/temp", error); }
+  if (narg < 3) { utils::missing_cmd_args(FLERR, "compute cluster/pe", error); }
 
   // Parse arguments //
 
@@ -61,27 +64,32 @@ ComputeClusterTemp::ComputeClusterTemp(LAMMPS *lmp, int narg, char **arg) : Comp
   }
 
   // Get ke/atom compute
-  auto computes = lmp->modify->get_compute_by_style("cluster/ke");
+  auto computes = lmp->modify->get_compute_by_style("pe/atom");
   if (computes.empty()) {
-    error->all(FLERR, "compute {}: Cannot find compute with style 'cluster/ke'", style);
+    error->all(FLERR, "compute {}: Cannot find compute with style 'pe/atom'", style);
   }
-  compute_cluster_ke = computes[0];
+  compute_pe_atom = computes[0];
+
+  size_local_rows = size_cutoff + 1;
+  memory->create(local_pes, size_local_rows + 1, "compute:cluster/pe:local_pes");
+  vector_local = local_pes;
 
   size_vector = size_cutoff + 1;
-  memory->create(temp, size_vector + 1, "compute:cluster/temp:temp");
-  vector = temp;
+  memory->create(pes, size_vector + 1, "compute:cluster/pe:pes");
+  vector = pes;
 }
 
 /* ---------------------------------------------------------------------- */
 
-ComputeClusterTemp::~ComputeClusterTemp() noexcept(true)
+ComputeClusterPE::~ComputeClusterPE() noexcept(true)
 {
-  if (temp != nullptr) { memory->destroy(temp); }
+  if (local_pes != nullptr) { memory->destroy(local_pes); }
+  if (pes != nullptr) { memory->destroy(pes); }
 }
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeClusterTemp::init()
+void ComputeClusterPE::init()
 {
   if ((modify->get_compute_by_style(style).size() > 1) && (comm->me == 0)) {
     error->warning(FLERR, "More than one compute {}", style);
@@ -90,23 +98,42 @@ void ComputeClusterTemp::init()
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeClusterTemp::compute_vector()
+void ComputeClusterPE::compute_vector()
 {
   invoked_vector = update->ntimestep;
+
+  compute_local();
+
+  ::memset(pes, 0.0, size_vector * sizeof(double));
+  ::MPI_Allreduce(local_pes, pes, size_vector, MPI_DOUBLE, MPI_SUM, world);
+
+  const double *dist = compute_cluster_size->vector;
+  for (int i = 0; i < size_vector; ++i) { pes[i] /= dist[i]; }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void ComputeClusterPE::compute_local()
+{
+  invoked_local = update->ntimestep;
 
   if (compute_cluster_size->invoked_vector != update->ntimestep) {
     compute_cluster_size->compute_vector();
   }
 
-  if (compute_cluster_ke->invoked_vector != update->ntimestep) {
-    compute_cluster_ke->compute_vector();
-  }
+  if (compute_pe_atom->invoked_peratom != update->ntimestep) { compute_pe_atom->compute_peratom(); }
 
-  const double *const kes = compute_cluster_ke->vector;
-  ::memset(temp, 0.0, size_vector * sizeof(double));
-  const double *const dist = compute_cluster_size->vector;
-  for (int i = 0; i < size_cutoff; ++i) {
-    if (dist[i] > 0) { temp[i] = 2 * kes[i] * dist[i] / ((dist[i] * i - 1) * domain->dimension); }
+  const double *const peratompes = compute_pe_atom->vector_atom;
+  ::memset(local_pes, 0.0, size_local_rows * sizeof(double));
+
+  for (const auto &[size, vec] : compute_cluster_size->cIDs_by_size) {
+    if (size < size_cutoff) {
+      for (const tagint cid : vec) {
+        for (const tagint pid : compute_cluster_size->atoms_by_cID[cid]) {
+          local_pes[size] += peratompes[pid];
+        }
+      }
+    }
   }
 }
 
@@ -114,7 +141,7 @@ void ComputeClusterTemp::compute_vector()
    memory usage of local atom-based array
 ------------------------------------------------------------------------- */
 
-double ComputeClusterTemp::memory_usage()
+double ComputeClusterPE::memory_usage()
 {
-  return static_cast<double>(size_vector * sizeof(double));
+  return static_cast<double>((size_local_rows + size_vector) * sizeof(double));
 }

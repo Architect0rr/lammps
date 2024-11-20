@@ -21,6 +21,7 @@ FixStyle(regen,FixRegen);
 #define LMP_FIX_REGEN_H
 
 #include "fix.h"
+#include "fix_kedff.h"
 
 namespace LAMMPS_NS {
 
@@ -37,15 +38,20 @@ class FixRegen : public Fix {
   void restart(char *) override;
   void *extract(const char *, int &) override;
 
-  void force_reneigh(const bigint n);
-  bigint ninsert;
-  bigint ninserted;
+  inline bigint get_ninsert() const noexcept(true) { return ninsert; }
+  inline bigint get_ninserted() const noexcept(true) { return ninserted; }
+  inline void add_ninsert(const bigint n) noexcept(true) { ninsert += n; }
+  inline void force_reneigh(const bigint n) noexcept(true) { next_reneighbor = n; }
 
  private:
+  bigint ninsert;
+  bigint ninserted;
   int ntype, nfreq, seed, at_once;
   int globalflag{}, localflag{}, maxattempt{}, rateflag{}, scaleflag{}, targetflag{};
   int mode{}, rigidflag{}, shakeflag{}, idnext{}, distflag{}, orientflag{}, warnflag{};
   int varflag{}, vvar{}, xvar{}, yvar{}, zvar{};
+  int tempflag{}, groupid{}, markflag{};
+  double temperature{}, vsigma{};
   double lo{}, hi{}, deltasq{}, nearsq{}, rate{}, sigma{};
   double vxlo{}, vxhi{}, vylo{}, vyhi{}, vzlo{}, vzhi{};
   double xlo, xhi, ylo, yhi, zlo, zhi, xmid{}, ymid{}, zmid{};
@@ -55,6 +61,8 @@ class FixRegen : public Fix {
   char *idrigid, *idshake;
   char *vstr{}, *xstr{}, *ystr{}, *zstr{};
   char *xstr_copy{}, *ystr_copy{}, *zstr_copy{};
+
+  FixKedff *fix_keddf = nullptr;
 
   class Molecule **onemols;
   int nmol{}, natom_max;

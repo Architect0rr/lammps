@@ -18,6 +18,7 @@
 #include "domain.h"
 #include "error.h"
 #include "fix.h"
+#include "fix_store_atom.h"
 #include "group.h"
 #include "memory.h"
 #include "modify.h"
@@ -246,7 +247,7 @@ void FixCapture::init()
 
 template <bool ISREL>
 [[gnu::hot]] inline bool FixCapture::super_cond(const double *const v, const double *const vmeanx,
-                                   const double sigma) const noexcept(true)
+                                                const double sigma) const noexcept(true)
 {
   if constexpr (ISREL) {
     return ::fabs(*v - *vmeanx) > nsigma * sigma;
@@ -365,7 +366,7 @@ template <bool ISREL> [[gnu::hot]] void FixCapture::test_superspeed(int *atomid)
 
 /* ---------------------------------------------------------------------- */
 
-[[gnu::hot]]  void FixCapture::test_overlap(int i) noexcept(true)
+[[gnu::hot]] void FixCapture::test_overlap(int i) noexcept(true)
 {
   double **x = atom->x;
   // for (int j = i + 1; j < atom->nmax; ++j) {

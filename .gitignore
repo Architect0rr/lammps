@@ -62,3 +62,5 @@ src/Makefile.package.settings-e
 /install
 .Rhistory
 .trunk
+.aider*
+.env

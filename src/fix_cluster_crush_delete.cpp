@@ -20,6 +20,7 @@
 #include "error.h"
 #include "fix.h"
 #include "fix_regen.h"
+#include "group.h"
 #include "memory.h"
 #include "modify.h"
 #include "update.h"
@@ -36,14 +37,10 @@ constexpr int DEFAULT_MAXTRY = 1000;
 
 FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) :
     Fix(lmp, narg, arg), screenflag(1), fileflag(0), scaleflag(0), next_step(0), nloc(0),
-    p2m(nullptr), at_once(1), fix_temp(false), maxtry(::DEFAULT_MAXTRY), ntype(0), sigma(0),
-    reneigh_forced(false), ninserted_prev(0), ninsert_prev(0)
+    p2m(nullptr), at_once(1), groupname(std::string()), fix_temp(false), maxtry(::DEFAULT_MAXTRY),
+    ntype(0), sigma(0), reneigh_forced(false), ninserted_prev(0)
 {
-
-  // peratom_flag = 1;
-  // size_peratom_cols = 0;
   restart_pbc = 1;
-  // pre_exchange_migrate = 1;
 
   nevery = 1;
 
@@ -129,7 +126,10 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) 
         }
       }
       iarg += 2;
+    } else if (::strcmp(arg[iarg], "group") == 0) {
+      groupname = arg[iarg + 1];
 
+      iarg += 2;
     } else if (::strcmp(arg[iarg], "append") == 0) {
       if (comm->me == 0) {
         // Append output to file
@@ -204,11 +204,13 @@ void FixClusterCrushDelete::init()
     error->warning(FLERR, "More than one fix {}", style);
   }
 
-  const std::string fixcmd = fmt::format("CCDREGENFIX all regen 1 {} 1 {} {} region {} near {} "
-                                         "attempt {} vx {} {} vy {} {} vz {} {} units box",
-                                         ntype, xseed, at_once, region->id, overlap, maxtry, -sigma,
-                                         sigma, -sigma, sigma, -sigma, sigma);
+  std::string fixcmd =
+      fmt::format("CCDREGENFIX all regen 1 {} 1 {} {} region {} near {} "
+                  "attempt {} temp {} units box",
+                  ntype, xseed, at_once, region->id, overlap, maxtry, monomer_temperature);
+  if (groupname.length() > 0) { fixcmd += fmt::format(" group {}", groupname); }
   fix_regen = dynamic_cast<FixRegen *>(modify->add_fix(fixcmd));
+  fix_regen->init();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -281,13 +283,13 @@ int FixClusterCrushDelete::setmask()
     if (comm->me == 0) {
       if (screenflag != 0) { utils::logmesg(lmp, "No clusters with size exceeding {}\n", kmax); }
       if (fileflag != 0) {
+        bigint ninserted = fix_regen->get_ninserted();
         fmt::print(fp, "{},{},0,0,{},{}\n", update->ntimestep, atom->natoms,
-                   fix_regen->ninserted - ninserted_prev, fix_regen->ninsert - ninsert_prev);
+                   ninserted - ninserted_prev, fix_regen->get_ninsert() - ninserted);
         ::fflush(fp);
       }
     }
-    ninserted_prev = fix_regen->ninserted;
-    ninsert_prev = fix_regen->ninsert;
+    ninserted_prev = fix_regen->get_ninserted();
     return;
   }
 
@@ -295,7 +297,7 @@ int FixClusterCrushDelete::setmask()
   postDelete();
   next_reneighbor = update->ntimestep + 1;
   reneigh_forced = true;
-  fix_regen->ninsert += atoms2move_total;
+  fix_regen->add_ninsert(atoms2move_total);
   fix_regen->force_reneigh(next_reneighbor);
 
   if (comm->me == 0) {
@@ -305,15 +307,15 @@ int FixClusterCrushDelete::setmask()
                      atoms2move_total);
     }
     if (fileflag != 0) {
+      bigint ninserted = fix_regen->get_ninserted();
       fmt::print(fp, "{},{},{},{},{},{}\n", update->ntimestep, atom->natoms, clusters2crush_total,
-                 atoms2move_total, fix_regen->ninserted - ninserted_prev,
-                 fix_regen->ninsert - ninsert_prev);
+                 atoms2move_total, ninserted - ninserted_prev,
+                 fix_regen->get_ninsert() - ninserted);
       ::fflush(fp);
     }
   }
 
-  ninserted_prev = fix_regen->ninserted;
-  ninsert_prev = fix_regen->ninsert;
+  ninserted_prev = fix_regen->get_ninserted();
 
 }    // void FixClusterCrush::pre_exchange()
 
