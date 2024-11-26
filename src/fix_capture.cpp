@@ -18,7 +18,6 @@
 #include "domain.h"
 #include "error.h"
 #include "fix.h"
-#include "fix_store_atom.h"
 #include "group.h"
 #include "memory.h"
 #include "modify.h"

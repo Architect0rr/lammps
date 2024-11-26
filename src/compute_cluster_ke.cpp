@@ -18,6 +18,7 @@
 #include "comm.h"
 #include "domain.h"
 #include "error.h"
+// #include "group.h"
 #include "memory.h"
 #include "modify.h"
 #include "update.h"
@@ -29,7 +30,7 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-ComputeClusterKE::ComputeClusterKE(LAMMPS *lmp, int narg, char **arg) : Compute(lmp, narg, arg)
+ComputeClusterKE::ComputeClusterKE(LAMMPS *lmp, int narg, char **arg) : Compute(lmp, narg, arg)/*, substract_vcm(0)*/
 {
   vector_flag = 1;
   size_vector = 0;
@@ -49,19 +50,33 @@ ComputeClusterKE::ComputeClusterKE(LAMMPS *lmp, int narg, char **arg) : Compute(
                style, arg[3]);
   }
 
-  // Get the critical size
   size_cutoff = compute_cluster_size->get_size_cutoff();
-  if ((narg >= 5) && (::strcmp(arg[4], "inherit") != 0)) {
-    int t_size_cutoff = utils::inumeric(FLERR, arg[4], true, lmp);
-    if (t_size_cutoff < 1) {
-      error->all(FLERR, "size_cutoff for compute {} must be greater than 0", style);
-    }
-    if (t_size_cutoff > size_cutoff) {
-      error->all(FLERR,
-                 "size_cutoff for compute {} cannot be greater than it of compute cluster/size",
-                 style);
+
+  int iarg = 4;
+  while (iarg < narg) {
+    if (iarg + 2 > narg) { error->all(FLERR, "Illegal compute cluster/ke command"); }
+    if (::strcmp(arg[iarg], "cut") == 0) {
+      int t_size_cutoff = utils::inumeric(FLERR, arg[iarg + 1], false, lmp);
+      if (t_size_cutoff < 1) {
+        error->all(FLERR, "size_cutoff for compute {} must be greater than 0", style);
+      }
+      if (t_size_cutoff > size_cutoff) {
+        error->all(FLERR,
+                  "size_cutoff for compute {} cannot be greater than it of compute cluster/size",
+                  style);
+      }
+      iarg += 2;
+    // } else if (::strcmp(arg[iarg], "substract_vcm") == 0) {
+    //   substract_vcm = utils::logical(FLERR, arg[iarg + 1], false, lmp);
+    //   iarg += 2;
+    } else {
+      error->all(FLERR, "Illegal fix langevin command");
     }
   }
+
+  // double vcm[3]{};
+  // double masstotal = group->mass(igroup);
+  // group->vcm(igroup, masstotal, vcm);
 
   // Get ke/atom compute
   auto computes = lmp->modify->get_compute_by_style("ke/atom");

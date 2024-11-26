@@ -106,7 +106,7 @@ void ComputeClusterTemp::compute_vector()
   ::memset(temp, 0.0, size_vector * sizeof(double));
   const double *const dist = compute_cluster_size->vector;
   for (int i = 0; i < size_cutoff; ++i) {
-    if (dist[i] > 0) { temp[i] = 2 * kes[i] * dist[i] / ((dist[i] * i - 1) * domain->dimension); }
+    if (dist[i] > 0) { temp[i] /= i * domain->dimension / 2; }
   }
 }
 

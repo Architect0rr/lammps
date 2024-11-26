@@ -15,7 +15,6 @@ FixStyle(capture,FixCapture);
 
 #include "compute.h"
 #include "fix.h"
-#include "fix_store_atom.h"
 #include "random_park.h"
 #include "region.h"
 

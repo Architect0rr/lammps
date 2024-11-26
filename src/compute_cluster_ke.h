@@ -34,6 +34,8 @@ class ComputeClusterKE : public Compute {
   void compute_local() override;
   double memory_usage() override;
 
+//   int substract_vcm;
+
  private:
   ComputeClusterSize *compute_cluster_size = nullptr;
   Compute *compute_ke_atom = nullptr;
