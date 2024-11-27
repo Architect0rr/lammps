@@ -27,11 +27,7 @@ class DumpVector : public Dump {
   void write_header(bigint) override;
   void pack(tagint *) override;
   void write_data(int, double *) override;
-  template <typename TYPE> inline TYPE **create_ptr_array(TYPE **&array, int n, const char *name)
-  {
-    array = n <= 0 ? nullptr : static_cast<TYPE **>(memory->smalloc(sizeof(TYPE *) * n, name));
-    return array;
-  }
+  void openfile(int compute_index); // New method to open file based on compute index
 };
 
 } // namespace LAMMPS_NS

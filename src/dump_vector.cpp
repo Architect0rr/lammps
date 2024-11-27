@@ -37,11 +37,21 @@ void DumpVector::init_style() {
 }
 
 void DumpVector::write_header(bigint ndump) {
-  // Write the header for the CSV file
+  // Write the header for the CSV file for each compute
   if (filewriter) {
-    fprintf(fp, "TIMESTEP,%lld\n", update->ntimestep);
-    fprintf(fp, "VECTOR DATA\n");
+    for (int i = 0; i < num_computes; i++) {
+      openfile(i); // Open a file for each compute
+      fprintf(fp, "TIMESTEP,%lld\n", update->ntimestep);
+      fprintf(fp, "VECTOR DATA\n");
+    }
   }
+}
+
+void DumpVector::openfile(int compute_index) {
+  // Open a separate file for each compute based on its index
+  std::string filename = fmt::format("dump_vector_{}.csv", compute_index);
+  fp = fopen(filename.c_str(), "w");
+  if (fp == nullptr) error->one(FLERR, "Cannot open dump file: {}", filename);
 }
 
 void DumpVector::pack(tagint *ids) {
@@ -57,10 +67,13 @@ void DumpVector::pack(tagint *ids) {
 }
 
 void DumpVector::write_data(int n, double *mybuf) {
-  // Write the vector data to the CSV file
+  // Write the vector data to the CSV file for each compute
   if (filewriter) {
-    for (int i = 0; i < write_cutoff; i++) {
-      fprintf(fp, "%g\n", vector_data[i]);
+    for (int i = 0; i < num_computes; i++) {
+      for (int j = 0; j < write_cutoff; j++) {
+        fprintf(fp, "%g\n", vector_data[j]);
+      }
+      fclose(fp); // Close the file after writing
     }
   }
 }
