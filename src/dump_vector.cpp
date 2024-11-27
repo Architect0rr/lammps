@@ -13,9 +13,14 @@ using namespace LAMMPS_NS;
 DumpVector::DumpVector(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg) {
   if (narg < 4) error->all(FLERR, "Illegal dump vector command");
 
-  my_compute = modify->get_compute_by_id(arg[4]);
-  if (my_compute == nullptr) {
-    error->all(FLERR, "{}: Cannot find compute with id: {}", style, arg[4]);
+  num_computes = narg - 3; // Number of computes passed in arguments
+  computes = new Compute*[num_computes]; // Allocate memory for computes array
+
+  for (int i = 0; i < num_computes; i++) {
+    computes[i] = modify->get_compute_by_id(arg[i + 3]);
+    if (computes[i] == nullptr) {
+      error->all(FLERR, "{}: Cannot find compute with id: {}", style, arg[i + 3]);
+    }
   }
 
   write_cutoff = 10; // Set a default value for how many elements to write
@@ -24,6 +29,7 @@ DumpVector::DumpVector(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
 
 DumpVector::~DumpVector() {
   if (vector_data != nullptr) { memory->destroy(vector_data); }
+  delete[] computes; // Free allocated memory for computes array
 }
 
 void DumpVector::init_style() {
@@ -39,12 +45,14 @@ void DumpVector::write_header(bigint ndump) {
 }
 
 void DumpVector::pack(tagint *ids) {
-  if (my_compute->invoked_vector != update->ntimestep) {
-    my_compute->compute_vector();
-  }
-  // Copy the vector data to the member variable
-  for (int i = 0; i < write_cutoff; i++) {
-    vector_data[i] = my_compute->vector[i];
+  for (int i = 0; i < num_computes; i++) {
+    if (computes[i]->invoked_vector != update->ntimestep) {
+      computes[i]->compute_vector();
+    }
+    // Copy the vector data to the member variable
+    for (int j = 0; j < write_cutoff; j++) {
+      vector_data[j] = computes[i]->vector[j];
+    }
   }
 }
 

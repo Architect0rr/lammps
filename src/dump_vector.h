@@ -18,7 +18,8 @@ class DumpVector : public Dump {
   ~DumpVector() override;
 
  protected:
-  Compute *my_compute; // pointer to the vector data
+  Compute **computes; // array to store pointers to the vector data computes
+  int num_computes;   // number of computes
   double *vector_data; // pointer to store vector data
   int write_cutoff;    // number of elements to write
 
