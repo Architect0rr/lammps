@@ -9,6 +9,7 @@ DumpStyle(vector,DumpVector);
 
 #include "compute.h"
 #include "dump.h"
+#include "memory.h"
 
 namespace LAMMPS_NS {
 
@@ -18,10 +19,10 @@ class DumpVector : public Dump {
   ~DumpVector() override;
 
  protected:
-  Compute **computes;     // array to store pointers to the vector data computes
-  int num_computes;       // number of computes
-  double *vector_data;    // pointer to store vector data
-  int write_cutoff;       // number of elements to write
+  Compute **computes{};     // array to store pointers to the vector data computes
+  int num_computes;         // number of computes
+  double *vector_data{};    // pointer to store vector data
+  int write_cutoff;         // number of elements to write
 
   void init_style() override;
   void write_header(bigint) override;
