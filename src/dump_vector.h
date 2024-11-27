@@ -30,11 +30,6 @@ class DumpVector : public Dump {
   void pack(tagint *) override;
   void write_data(int, double *) override;
   void openfile(int compute_index);    // New method to open file based on compute index
-  template <typename TYPE> inline TYPE **create_ptr_array(TYPE **&array, int n, const char *name)
-  {
-    array = n <= 0 ? nullptr : static_cast<TYPE **>(memory->smalloc(sizeof(TYPE *) * n, name));
-    return array;
-  }
 };
 
 }    // namespace LAMMPS_NS
