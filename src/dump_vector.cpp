@@ -19,11 +19,11 @@ DumpVector::DumpVector(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
   }
 
   write_cutoff = 10; // Set a default value for how many elements to write
-  vector_data = new double[write_cutoff]; // Allocate memory for vector data
+  memory->create(vector_data, write_cutoff, "vector"); // Allocate memory for vector data
 }
 
 DumpVector::~DumpVector() {
-  delete[] vector_data; // Free allocated memory
+  if (vector_data != nullptr) { memory->destroy(vector_data); }
 }
 
 void DumpVector::init_style() {
