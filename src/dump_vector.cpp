@@ -13,6 +13,7 @@ DumpVector::DumpVector(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
 
   num_computes = narg - 3;                                 // Number of computes passed in arguments
   create_ptr_array(computes, num_computes, "computes");    // Allocate memory for computes array
+  create_ptr_array(fps, num_computes, "file pointers");     // Allocate memory for file pointers
 
   for (int i = 0; i < num_computes; i++) {
     computes[i] = modify->get_compute_by_id(arg[i + 3]);
@@ -29,6 +30,12 @@ DumpVector::~DumpVector()
 {
   if (vector_data != nullptr) { memory->destroy(vector_data); }
   if (computes != nullptr) { memory->destroy(computes); }
+  if (fps != nullptr) {
+    for (int i = 0; i < num_computes; i++) {
+      if (fps[i] != nullptr) { fclose(fps[i]); }
+    }
+    memory->destroy(fps);
+  }
 }
 
 void DumpVector::init_style()
@@ -42,8 +49,8 @@ void DumpVector::write_header(bigint /*ndump*/)
   if (filewriter != 0) {
     for (int i = 0; i < num_computes; i++) {
       openfile(i);    // Open a file for each compute
-      fprintf(fp, "TIMESTEP,%ld\n", update->ntimestep);
-      fprintf(fp, "VECTOR DATA\n");
+      fprintf(fps[i], "TIMESTEP,%ld\n", update->ntimestep);
+      fprintf(fps[i], "VECTOR DATA\n");
     }
   }
 }
@@ -52,8 +59,8 @@ void DumpVector::openfile(int compute_index)
 {
   // Open a separate file for each compute based on its index
   std::string filename = fmt::format("dump_vector_{}.csv", compute_index);
-  fp = fopen(filename.c_str(), "w");
-  if (fp == nullptr) { error->one(FLERR, "Cannot open dump file: {}", filename); }
+  fps[compute_index] = fopen(filename.c_str(), "w");
+  if (fps[compute_index] == nullptr) { error->one(FLERR, "Cannot open dump file: {}", filename); }
 }
 
 void DumpVector::pack(tagint * /*ids*/)
@@ -70,8 +77,8 @@ void DumpVector::write_data(int /*n*/, double * /*mybuf*/)
   // Write the vector data to the CSV file for each compute
   if (filewriter != 0) {
     for (int i = 0; i < num_computes; i++) {
-      for (int j = 0; j < write_cutoff; j++) { fprintf(fp, "%g\n", vector_data[j]); }
-      fclose(fp);    // Close the file after writing
+      for (int j = 0; j < write_cutoff; j++) { fprintf(fps[i], "%g\n", vector_data[j]); }
+      fclose(fps[i]);    // Close the file after writing
     }
   }
 }

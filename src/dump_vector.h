@@ -23,6 +23,7 @@ class DumpVector : public Dump {
   int num_computes;         // number of computes
   double *vector_data{};    // pointer to store vector data
   int write_cutoff;         // number of elements to write
+  FILE **fps{};             // array to store file pointers for each compute
 
   void init_style() override;
   void write_header(bigint) override;
