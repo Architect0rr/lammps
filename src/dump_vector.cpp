@@ -1,6 +1,7 @@
 #include "dump_vector.h"
 #include "compute.h"
 #include "error.h"
+#include "fmt/base.h"
 #include "memory.h"
 #include "modify.h"
 #include "update.h"
@@ -13,7 +14,7 @@ DumpVector::DumpVector(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
 
   num_computes = narg - 3;                                 // Number of computes passed in arguments
   create_ptr_array(computes, num_computes, "computes");    // Allocate memory for computes array
-  create_ptr_array(fps, num_computes, "file pointers");     // Allocate memory for file pointers
+  create_ptr_array(fps, num_computes, "file pointers");    // Allocate memory for file pointers
 
   for (int i = 0; i < num_computes; i++) {
     computes[i] = modify->get_compute_by_id(arg[i + 3]);
