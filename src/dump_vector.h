@@ -4,7 +4,6 @@ DumpStyle(vector,DumpVector);
 // clang-format on
 #else
 
-
 #ifndef LMP_DUMP_VECTOR_H
 #define LMP_DUMP_VECTOR_H
 
@@ -20,13 +19,13 @@ class DumpVector : public Dump {
 
  protected:
   Compute *my_compute; // pointer to the vector data
-  int write_cutoff;
+  double *vector_data; // pointer to store vector data
+  int write_cutoff;    // number of elements to write
 
   void init_style() override;
   void write_header(bigint) override;
   void pack(tagint *) override;
   void write_data(int, double *) override;
-  void write_csv(int, double *);
 };
 
 } // namespace LAMMPS_NS

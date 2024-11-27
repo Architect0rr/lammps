@@ -11,7 +11,6 @@
 using namespace LAMMPS_NS;
 
 DumpVector::DumpVector(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg) {
-
   if (narg < 4) error->all(FLERR, "Illegal dump vector command");
 
   my_compute = modify->get_compute_by_id(arg[4]);
@@ -19,13 +18,16 @@ DumpVector::DumpVector(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
     error->all(FLERR, "{}: Cannot find compute with id: {}", style, arg[4]);
   }
 
-  write_cutoff = 10;
+  write_cutoff = 10; // Set a default value for how many elements to write
+  vector_data = new double[write_cutoff]; // Allocate memory for vector data
 }
 
-DumpVector::~DumpVector() {}
+DumpVector::~DumpVector() {
+  delete[] vector_data; // Free allocated memory
+}
 
 void DumpVector::init_style() {
-  // Initialize the vector data
+  // Initialize the vector data if needed
 }
 
 void DumpVector::write_header(bigint ndump) {
@@ -40,13 +42,17 @@ void DumpVector::pack(tagint *ids) {
   if (my_compute->invoked_vector != update->ntimestep) {
     my_compute->compute_vector();
   }
+  // Copy the vector data to the member variable
+  for (int i = 0; i < write_cutoff; i++) {
+    vector_data[i] = my_compute->vector[i];
+  }
 }
 
 void DumpVector::write_data(int n, double *mybuf) {
   // Write the vector data to the CSV file
   if (filewriter) {
     for (int i = 0; i < write_cutoff; i++) {
-      fprintf(fp, "%g\n", my_compute->vector[i]);
+      fprintf(fp, "%g\n", vector_data[i]);
     }
   }
 }
