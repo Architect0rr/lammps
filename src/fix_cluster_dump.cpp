@@ -6,133 +6,129 @@
 ------------------------------------------------------------------------- */
 
 #include "fix_cluster_dump.h"
+#include "fmt/base.h"
+#include <cstring>
 
 #include "comm.h"
+#include "compute_cluster_size.h"
 #include "error.h"
 #include "fix.h"
-#include "fmt/core.h"
+#include "memory.h"
 #include "modify.h"
 #include "update.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
 
+#define DUMP_FLOAT_PRECISION ",{:.5f}"
+
 /* ---------------------------------------------------------------------- */
 
-FixClusterDump::FixClusterDump(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
+FixClusterDump::FixClusterDump(LAMMPS *lmp, int narg, char **arg) :
+    Fix(lmp, narg, arg), num_vectors(0), num_scalars(0)
 {
-
-  restart_pbc = 1;
-
   nevery = 1;
 
-  if (narg < 14) { utils::missing_cmd_args(FLERR, "cluster/dump", error); }
+  if (narg < 8) { utils::missing_cmd_args(FLERR, "cluster/dump", error); }
 
   // Parse arguments //
 
   // Get the nevery
   nevery = utils::inumeric(FLERR, arg[3], true, lmp);
-  if (nevery < 1) { error->all(FLERR, "nevery for cluster/dump nust be greater than 0"); }
+  if (nevery < 1) { error->all(FLERR, "nevery for {} nust be greater than 0", style); }
 
-  // Get the critical size
-  size_cutoff = utils::inumeric(FLERR, arg[4], true, lmp);
-  if (size_cutoff < 1) { error->all(FLERR, "size_cutoff for cluster/dump must be greater than 0"); }
-
-  // Get cluster/size compute
-  compute_cluster_size = lmp->modify->get_compute_by_id(arg[5]);
+  ComputeClusterSize *compute_cluster_size =
+      dynamic_cast<ComputeClusterSize *>(modify->get_compute_by_id(arg[4]));
   if (compute_cluster_size == nullptr) {
-    error->all(FLERR, "cluster/dump: Cannot find compute of style 'cluster/size' with id: {}",
-               arg[5]);
+    error->all(FLERR, "{}: Cannot find compute cluster/size with id: {}", style, arg[4]);
+  }
+  size_cutoff = compute_cluster_size->get_size_cutoff();
+
+  // Get the cutoff write size
+  int const t_size_cutoff = utils::inumeric(FLERR, arg[5], true, lmp);
+  if (t_size_cutoff < 1) { error->all(FLERR, "size_cutoff for {} must be greater than 0", style); }
+  size_cutoff = MIN(size_cutoff, t_size_cutoff);
+
+  constexpr int compute_list_start_arg = 6;
+  bool count_vector = true;
+  int scalar_start_arg = 0;
+  for (int i = compute_list_start_arg; i < narg; ++i) {
+    if (::strcmp(arg[i], "vector") == 0) {
+      if (!count_vector) { error->all(FLERR, "{}: vectors if exists must be first", style); }
+      continue;
+    }
+    if (::strcmp(arg[i], "scalar") == 0) {
+      count_vector = false;
+      scalar_start_arg = i + 1;
+      continue;
+    }
+    if (count_vector) {
+      ++num_vectors;
+    } else {
+      ++num_scalars;
+    }
   }
 
-  // Get cluster/temp compute
-  compute_cluster_temp = lmp->modify->get_compute_by_id(arg[6]);
-  if (compute_cluster_temp == nullptr) {
-    error->all(FLERR, "cluster/dump: Cannot find compute of style 'cluster/temp' with id: {}",
-               arg[6]);
-  }
-
-  // Get supersaturation/mono compute
-  compute_supersaturation_mono = lmp->modify->get_compute_by_id(arg[7]);
-  if (compute_supersaturation_mono == nullptr) {
-    error->all(FLERR,
-               "cluster/dump: Cannot find compute of style 'supersaturation/mono' with id: {}",
-               arg[7]);
-  }
-
-  // Get supersaturation/density compute
-  compute_supersaturation_density = lmp->modify->get_compute_by_id(arg[8]);
-  if (compute_supersaturation_density == nullptr) {
-    error->all(FLERR,
-               "cluster/dump: Cannot find compute of style 'supersaturation/density' with id: {}",
-               arg[8]);
-  }
-
-  // Get cluster/ke compute
-  compute_cluster_ke = lmp->modify->get_compute_by_id(arg[9]);
-  if (compute_cluster_ke == nullptr) {
-    error->all(FLERR, "cluster/dump: Cannot find compute of style 'cluster/temp' with id: {}",
-               arg[9]);
-  }
-
-  // // Get ke/mono compute
-  // fix_kedff = dynamic_cast<FixKedff *>(lmp->modify->get_fix_by_id(arg[14]));
-  // if (fix_kedff == nullptr) {
-  //   error->all(FLERR, "cluster/dump: Cannot find fix of style 'kedff' with id: {}", arg[14]);
-  // }
+  create_ptr_array(file_vectors, num_vectors, "vector_files");
+  create_ptr_array(compute_vectors, num_vectors, "vector_computes");
+  create_ptr_array(compute_scalars, num_scalars, "scalar_computes");
 
   if (comm->me == 0) {
-    cldist = ::fopen(arg[10], "a");
-    if (cldist == nullptr) {
-      error->one(FLERR, "Cannot open file {}: {}", arg[10], utils::getsyserror());
+    if (num_vectors > 0) {
+      constexpr int vector_start_arg = 7;
+      for (int i = 0; i < num_vectors; ++i) {
+        const char *current_arg = arg[i + vector_start_arg];
+        compute_vectors[i] = modify->get_compute_by_id(current_arg);
+        if (compute_vectors[i] == nullptr) {
+          error->all(FLERR, "{}: cannot find Compute with id: {}", style, current_arg);
+        }
+        file_vectors[i] = ::fopen(fmt::format("{}.csv", current_arg).c_str(), "a");
+        if (file_vectors[i] == nullptr) {
+          error->one(FLERR, "{}: Cannot open file {}: {}", style,
+                     fmt::format("{}.csv", current_arg), utils::getsyserror());
+        }
+      }
     }
 
-    cltemp = ::fopen(arg[11], "a");
-    if (cltemp == nullptr) {
-      error->one(FLERR, "Cannot open file {}: {}", arg[11], utils::getsyserror());
+    if (num_scalars > 0) {
+      file_scalars = ::fopen("scalars.csv", "a");
+      if (file_scalars == nullptr) {
+        error->one(FLERR, "{}: Cannot open file {}: {}", style, "scalars.csv",
+                   utils::getsyserror());
+      }
+      fmt::print(file_scalars, "ntimestep");
+      for (int i = 0; i < num_scalars; ++i) {
+        const char *current_arg = arg[i + scalar_start_arg];
+        compute_scalars[i] = modify->get_compute_by_id(current_arg);
+        if (compute_scalars[i] == nullptr) {
+          error->all(FLERR, "{}: cannot find Compute with id: {}", style, current_arg);
+        }
+        fmt::print(file_scalars, ",{}", current_arg);
+      }
+      fmt::print(file_scalars, "\n");
+      ::fflush(file_scalars);
     }
-
-    clke = ::fopen(arg[12], "a");
-    if (clke == nullptr) {
-      error->one(FLERR, "Cannot open file {}: {}", arg[12], utils::getsyserror());
-    }
-
-    scalars = ::fopen(arg[13], "a");
-    if (scalars == nullptr) {
-      error->one(FLERR, "Cannot open file {}: {}", arg[13], utils::getsyserror());
-    }
-    fmt::print(scalars, "ntimestep,T,Srho,S1\n");
-    ::fflush(scalars);
   }
-
-  // Get temp compute
-  auto computes = lmp->modify->get_compute_by_style("temp");
-  if (computes.empty()) { error->all(FLERR, "cluster/dump: Cannot find compute of style 'temp'"); }
-  compute_temp = computes[0];
 }
 
 /* ---------------------------------------------------------------------- */
 
 FixClusterDump::~FixClusterDump() noexcept(true)
 {
-  if (comm->me == 0) {
-    if (cldist != nullptr) {
-      ::fflush(cldist);
-      ::fclose(cldist);
-    }
-    if (cltemp != nullptr) {
-      ::fflush(cltemp);
-      ::fclose(cltemp);
-    }
-    if (clke != nullptr) {
-      ::fflush(clke);
-      ::fclose(clke);
-    }
-    if (scalars != nullptr) {
-      ::fflush(scalars);
-      ::fclose(scalars);
+  for (int i = 0; i < num_vectors; ++i) {
+    if (file_vectors[i] != nullptr) {
+      ::fflush(file_vectors[i]);
+      ::fclose(file_vectors[i]);
     }
   }
+  if (file_vectors != nullptr) { memory->destroy(file_vectors); }
+  if (file_scalars != nullptr) {
+    ::fflush(file_scalars);
+    ::fclose(file_scalars);
+  }
+
+  if (compute_vectors != nullptr) { memory->destroy(compute_vectors); }
+  if (compute_scalars != nullptr) { memory->destroy(compute_scalars); }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -157,60 +153,37 @@ int FixClusterDump::setmask()
 
 void FixClusterDump::end_of_step()
 {
-  if (compute_temp->invoked_scalar != update->ntimestep) { compute_temp->compute_scalar(); }
-
-  if (compute_cluster_size->invoked_vector != update->ntimestep) {
-    compute_cluster_size->compute_vector();
+  for (int i = 0; i < num_vectors; ++i) {
+    if (compute_vectors[i]->invoked_vector != update->ntimestep) {
+      compute_vectors[i]->compute_vector();
+    }
   }
 
-  if (compute_cluster_temp->invoked_vector != update->ntimestep) {
-    compute_cluster_temp->compute_vector();
+  for (int i = 0; i < num_scalars; ++i) {
+    if (compute_scalars[i]->invoked_scalar != update->ntimestep) {
+      compute_scalars[i]->compute_scalar();
+    }
   }
-
-  if (compute_cluster_ke->invoked_vector != update->ntimestep) {
-    compute_cluster_ke->compute_vector();
-  }
-
-  // if (fix_kedff->invoked_endofstep != update->ntimestep) { fix_kedff->end_of_step(); }
-
-  if (compute_supersaturation_density->invoked_scalar != update->ntimestep) {
-    compute_supersaturation_density->compute_scalar();
-  }
-
-  if (compute_supersaturation_mono->invoked_scalar != update->ntimestep) {
-    compute_supersaturation_mono->compute_scalar();
-  }
-
-  const bigint dist_size = compute_cluster_size->size_vector - 1;
-  const bigint write_cutoff = MIN(size_cutoff, dist_size);
-
-  const double *const dist = compute_cluster_size->vector;
-  const double *const temp = compute_cluster_temp->vector;
-  const double *const ke = compute_cluster_ke->vector;
 
   if (comm->me == 0) {
-
-    fmt::print(cldist, "{},", update->ntimestep);
-    for (bigint i = 1; i < write_cutoff; ++i) {
-      fmt::print(cldist, "{},", static_cast<bigint>(dist[i]));
+    if (num_vectors > 0) {
+      for (int i = 0; i < num_vectors; ++i) {
+        FILE *current_file = file_vectors[i];
+        double *current_vec = compute_vectors[i]->vector;
+        fmt::print(current_file, "{}", update->ntimestep);
+        for (int j = 1; j <= size_cutoff; ++j) { fmt::print(current_file, ",{}", current_vec[j]); }
+        fmt::print(current_file, "\n");
+        ::fflush(current_file);
+      }
     }
-    fmt::print(cldist, "{}\n", static_cast<bigint>(dist[write_cutoff]));
-    ::fflush(cldist);
 
-    fmt::print(cltemp, "{},", update->ntimestep);
-    for (bigint i = 1; i < write_cutoff; ++i) { fmt::print(cltemp, "{:.5f},", temp[i]); }
-    fmt::print(cltemp, "{:.5f}\n", temp[write_cutoff]);
-    ::fflush(cltemp);
-
-    fmt::print(clke, "{},", update->ntimestep);
-    for (bigint i = 1; i < write_cutoff; ++i) { fmt::print(clke, "{:.5f},", ke[i]); }
-    fmt::print(clke, "{:.5f}\n", ke[write_cutoff]);
-    ::fflush(clke);
-
-    fmt::print(scalars, "{},{:.5f},{:.5f},{:.5f}\n", update->ntimestep, compute_temp->scalar,
-               compute_supersaturation_density->scalar, compute_supersaturation_mono->scalar);
-    //fix_kedff->engs_global[0], fix_kedff->engs_global[1]);
-    ::fflush(scalars);
+    if (num_scalars > 0) {
+      fmt::print(file_scalars, "{}", update->ntimestep);
+      for (int i = 0; i < num_scalars; ++i) {
+        fmt::print(file_scalars, DUMP_FLOAT_PRECISION, compute_scalars[i]->scalar);
+      }
+      fmt::print(file_scalars, "\n");
+      ::fflush(file_scalars);
+    }
   }
-
 }    // void FixClusterCrush::end_of_step()

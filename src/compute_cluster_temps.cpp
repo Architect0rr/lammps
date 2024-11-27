@@ -42,8 +42,8 @@ ComputeClusterTemp::ComputeClusterTemp(LAMMPS *lmp, int narg, char **arg) : Comp
   // Get cluster/size compute
   compute_cluster_size = dynamic_cast<ComputeClusterSize *>(lmp->modify->get_compute_by_id(arg[3]));
   if (compute_cluster_size == nullptr) {
-    error->all(FLERR, "compute {}: Cannot find compute with style 'cluster/size' with id: {}",
-               style, arg[3]);
+    error->all(FLERR, "{}: Cannot find compute with style 'cluster/size' with id: {}", style,
+               arg[3]);
   }
 
   // Get the critical size
@@ -51,24 +51,20 @@ ComputeClusterTemp::ComputeClusterTemp(LAMMPS *lmp, int narg, char **arg) : Comp
   if ((narg >= 4) && (::strcmp(arg[4], "inherit") != 0)) {
     int t_size_cutoff = utils::inumeric(FLERR, arg[4], true, lmp);
     if (t_size_cutoff < 1) {
-      error->all(FLERR, "size_cutoff for compute {} must be greater than 0", style);
+      error->all(FLERR, "size_cutoff for {} must be greater than 0", style);
     }
-    if (t_size_cutoff > size_cutoff) {
-      error->all(FLERR,
-                 "size_cutoff for compute {} cannot be greater than it of compute cluster/size",
-                 style);
-    }
+    size_cutoff = MIN(size_cutoff, t_size_cutoff);
   }
 
   // Get ke/atom compute
   auto computes = lmp->modify->get_compute_by_style("cluster/ke");
   if (computes.empty()) {
-    error->all(FLERR, "compute {}: Cannot find compute with style 'cluster/ke'", style);
+    error->all(FLERR, "{}: Cannot find compute with style 'cluster/ke'", style);
   }
   compute_cluster_ke = computes[0];
 
   size_vector = size_cutoff + 1;
-  memory->create(temp, size_vector + 1, "compute:cluster/temp:temp");
+  memory->create(temp, size_vector + 1, "cluster/temp:temp");
   vector = temp;
 }
 

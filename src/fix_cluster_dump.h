@@ -15,7 +15,7 @@ FixStyle(cluster/dump,FixClusterDump);
 
 #include "compute.h"
 #include "fix.h"
-#include "fix_kedff.h"
+#include "memory.h"
 
 namespace LAMMPS_NS {
 
@@ -28,20 +28,21 @@ class FixClusterDump : public Fix {
   void end_of_step() override;
 
  protected:
-  Compute *compute_temp = nullptr;
-  Compute *compute_cluster_size = nullptr;
-  Compute *compute_cluster_temp = nullptr;
-  Compute *compute_cluster_ke = nullptr;
-  Compute *compute_supersaturation_mono = nullptr;
-  Compute *compute_supersaturation_density = nullptr;
-  //   FixKedff *fix_kedff = nullptr;
+  Compute **compute_vectors{};
+  Compute **compute_scalars{};
+  int num_vectors;
+  int num_scalars;
 
-  FILE *cldist;
-  FILE *cltemp;
-  FILE *clke;
-  FILE *scalars;
+  FILE **file_vectors{};
+  FILE *file_scalars;
 
   int size_cutoff;
+
+  template <typename TYPE> inline TYPE **create_ptr_array(TYPE **&array, int n, const char *name)
+  {
+    array = n <= 0 ? nullptr : static_cast<TYPE **>(memory->smalloc(sizeof(TYPE *) * n, name));
+    return array;
+  }
 };
 
 }    // namespace LAMMPS_NS

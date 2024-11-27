@@ -1,3 +1,16 @@
+/* -*- c++ -*- ----------------------------------------------------------
+   LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
+   https://www.lammps.org/, Sandia National Laboratories
+   LAMMPS development team: developers@lammps.org
+
+   Copyright (2003) Sandia Corporation.  Under the terms of Contract
+   DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+   certain rights in this software.  This software is distributed under
+   the GNU General Public License.
+
+   See the README file in the top-level LAMMPS directory.
+------------------------------------------------------------------------- */
+
 #ifdef DUMP_CLASS
 // clang-format off
 DumpStyle(vector,DumpVector);
@@ -19,17 +32,27 @@ class DumpVector : public Dump {
   ~DumpVector() override;
 
  protected:
-  Compute **computes{};     // array to store pointers to the vector data computes
-  int num_computes;         // number of computes
+  Compute **compute_vectors{};    // array to store pointers to the vector data computes
+  Compute **compute_scalars{};
+
+  int num_vectors{};        // number of computes
   double *vector_data{};    // pointer to store vector data
-  int write_cutoff;         // number of elements to write
-  FILE **fps{};             // array to store file pointers for each compute
+  FILE **file_vectors{};
+  int write_cutoff;    // number of elements to write
+  int num_scalars{};
+
+  FILE *file_scalars;
 
   void init_style() override;
   void write_header(bigint) override;
-  void pack(tagint *) override;
-  void write_data(int, double *) override;
-  void openfile(int compute_index);    // New method to open file based on compute index
+  void pack(tagint *) override {}
+  void write() override;
+  void write_data(int, double *) override {}
+  template <typename TYPE> inline TYPE **create_ptr_array(TYPE **&array, int n, const char *name)
+  {
+    array = n <= 0 ? nullptr : static_cast<TYPE **>(memory->smalloc(sizeof(TYPE *) * n, name));
+    return array;
+  }
 };
 
 }    // namespace LAMMPS_NS
