@@ -14,7 +14,7 @@ DumpVector::DumpVector(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
   if (narg < 4) error->all(FLERR, "Illegal dump vector command");
 
   num_computes = narg - 3; // Number of computes passed in arguments
-  computes = new Compute*[num_computes]; // Allocate memory for computes array
+  create_ptr_array(computes, num_computes, "computes"); // Allocate memory for computes array
 
   for (int i = 0; i < num_computes; i++) {
     computes[i] = modify->get_compute_by_id(arg[i + 3]);
@@ -29,7 +29,7 @@ DumpVector::DumpVector(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
 
 DumpVector::~DumpVector() {
   if (vector_data != nullptr) { memory->destroy(vector_data); }
-  delete[] computes; // Free allocated memory for computes array
+  if (computes != nullptr) { memory->destroy(computes); }
 }
 
 void DumpVector::init_style() {
