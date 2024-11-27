@@ -1,7 +1,15 @@
+#ifdef DUMP_CLASS
+// clang-format off
+DumpStyle(vector,DumpVector);
+// clang-format on
+#else
+
+
 #ifndef LMP_DUMP_VECTOR_H
 #define LMP_DUMP_VECTOR_H
 
 #include "dump.h"
+#include "compute.h"
 
 namespace LAMMPS_NS {
 
@@ -11,8 +19,8 @@ class DumpVector : public Dump {
   ~DumpVector() override;
 
  protected:
-  int vector_index;  // index of the vector to dump
-  double *vector_data; // pointer to the vector data
+  Compute *my_compute; // pointer to the vector data
+  int write_cutoff;
 
   void init_style() override;
   void write_header(bigint) override;
@@ -23,4 +31,5 @@ class DumpVector : public Dump {
 
 } // namespace LAMMPS_NS
 
+#endif
 #endif
