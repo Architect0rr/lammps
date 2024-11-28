@@ -13,10 +13,9 @@
 
 #include "compute_cluster_volume.h"
 #include "compute_cluster_size.h"
+#include <cmath>
 
-#include "atom.h"
 #include "comm.h"
-#include "domain.h"
 #include "error.h"
 #include "memory.h"
 #include "modify.h"
