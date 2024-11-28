@@ -30,7 +30,7 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 ComputeClusterVolume::ComputeClusterVolume(LAMMPS *lmp, int narg, char **arg) :
-    Compute(lmp, narg, arg),
+    Compute(lmp, narg, arg)
 {
   vector_flag = 1;
   size_vector = 0;
