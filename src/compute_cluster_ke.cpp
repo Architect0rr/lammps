@@ -14,9 +14,7 @@
 #include "compute_cluster_ke.h"
 #include "compute_cluster_size.h"
 
-#include "atom.h"
 #include "comm.h"
-#include "domain.h"
 #include "error.h"
 // #include "group.h"
 #include "memory.h"
@@ -30,7 +28,8 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-ComputeClusterKE::ComputeClusterKE(LAMMPS *lmp, int narg, char **arg) : Compute(lmp, narg, arg)/*, substract_vcm(0)*/
+ComputeClusterKE::ComputeClusterKE(LAMMPS *lmp, int narg, char **arg) :
+    Compute(lmp, narg, arg) /*, substract_vcm(0)*/
 {
   vector_flag = 1;
   size_vector = 0;
@@ -62,13 +61,13 @@ ComputeClusterKE::ComputeClusterKE(LAMMPS *lmp, int narg, char **arg) : Compute(
       }
       if (t_size_cutoff > size_cutoff) {
         error->all(FLERR,
-                  "size_cutoff for compute {} cannot be greater than it of compute cluster/size",
-                  style);
+                   "size_cutoff for compute {} cannot be greater than it of compute cluster/size",
+                   style);
       }
       iarg += 2;
-    // } else if (::strcmp(arg[iarg], "substract_vcm") == 0) {
-    //   substract_vcm = utils::logical(FLERR, arg[iarg + 1], false, lmp);
-    //   iarg += 2;
+      // } else if (::strcmp(arg[iarg], "substract_vcm") == 0) {
+      //   substract_vcm = utils::logical(FLERR, arg[iarg + 1], false, lmp);
+      //   iarg += 2;
     } else {
       error->all(FLERR, "Illegal fix langevin command");
     }

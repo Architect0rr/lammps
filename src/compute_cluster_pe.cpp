@@ -14,9 +14,7 @@
 #include "compute_cluster_pe.h"
 #include "compute_cluster_size.h"
 
-#include "atom.h"
 #include "comm.h"
-#include "domain.h"
 #include "error.h"
 #include "memory.h"
 #include "modify.h"

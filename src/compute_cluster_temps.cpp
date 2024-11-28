@@ -14,7 +14,6 @@
 #include "compute_cluster_temps.h"
 #include "compute_cluster_size.h"
 
-#include "atom.h"
 #include "comm.h"
 #include "domain.h"
 #include "error.h"
@@ -23,7 +22,6 @@
 #include "update.h"
 
 #include <cstring>
-#include <unordered_map>
 
 using namespace LAMMPS_NS;
 
