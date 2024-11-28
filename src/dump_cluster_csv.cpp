@@ -5,7 +5,7 @@
    LAMMPS development team: developers@lammps.org
 ------------------------------------------------------------------------- */
 
-#include "dump_vector.h"
+#include "dump_cluster_csv.h"
 #include "comm.h"
 #include "compute.h"
 #include "compute_cluster_size.h"
@@ -22,24 +22,29 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-DumpVector::DumpVector(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
+DumpClusterCSV::DumpClusterCSV(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
 {
-  if (narg < 4) { error->all(FLERR, "Illegal dump vector command"); }
+  if (narg < 9) { error->all(FLERR, "Illegal dump vector command"); }
   clearstep = 1;
+  first_flag = 0;
+  write_header_flag = 1;
+  time_flag = 1;
+  has_id = 0;
+  filewriter = static_cast<int>(comm->me == 0);
 
   ComputeClusterSize *compute_cluster_size =
-      dynamic_cast<ComputeClusterSize *>(modify->get_compute_by_id(arg[4]));
+      dynamic_cast<ComputeClusterSize *>(modify->get_compute_by_id(arg[5]));
   if (compute_cluster_size == nullptr) {
     error->all(FLERR, "{}: Cannot find compute cluster/size with id: {}", style, arg[4]);
   }
   write_cutoff = compute_cluster_size->get_size_cutoff();
 
   // Get the cutoff write size
-  int const t_size_cutoff = utils::inumeric(FLERR, arg[5], true, lmp);
+  int const t_size_cutoff = utils::inumeric(FLERR, arg[6], true, lmp);
   if (t_size_cutoff < 1) { error->all(FLERR, "size_cutoff for {} must be greater than 0", style); }
   write_cutoff = MIN(write_cutoff, t_size_cutoff);
 
-  constexpr int compute_list_start_arg = 6;
+  constexpr int compute_list_start_arg = 7;
   bool count_vector = true;
   int scalar_start_arg = 0;
   for (int i = compute_list_start_arg; i < narg; ++i) {
@@ -63,15 +68,15 @@ DumpVector::DumpVector(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
   create_ptr_array(compute_vectors, num_vectors, "vector_computes");
   create_ptr_array(compute_scalars, num_scalars, "scalar_computes");
 
-  if (comm->me == 0) {
-    if (num_vectors > 0) {
-      constexpr int vector_start_arg = 7;
-      for (int i = 0; i < num_vectors; ++i) {
-        const char *current_arg = arg[i + vector_start_arg];
-        compute_vectors[i] = modify->get_compute_by_id(current_arg);
-        if (compute_vectors[i] == nullptr) {
-          error->all(FLERR, "{}: cannot find Compute with id: {}", style, current_arg);
-        }
+  if (num_vectors > 0) {
+    constexpr int vector_start_arg = 8;
+    for (int i = 0; i < num_vectors; ++i) {
+      const char *current_arg = arg[i + vector_start_arg];
+      compute_vectors[i] = modify->get_compute_by_id(current_arg);
+      if (compute_vectors[i] == nullptr) {
+        error->all(FLERR, "{}: cannot find Compute with id: {}", style, current_arg);
+      }
+      if (filewriter != 0) {
         file_vectors[i] = ::fopen(fmt::format("{}.csv", current_arg).c_str(), "a");
         if (file_vectors[i] == nullptr) {
           error->one(FLERR, "{}: Cannot open file {}: {}", style,
@@ -79,20 +84,22 @@ DumpVector::DumpVector(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
         }
       }
     }
+  }
 
-    if (num_scalars > 0) {
+  if (num_scalars > 0) {
+    if (filewriter != 0) {
       file_scalars = ::fopen("scalars.csv", "a");
       if (file_scalars == nullptr) {
         error->one(FLERR, "{}: Cannot open file {}: {}", style, "scalars.csv",
                    utils::getsyserror());
       }
+    }
 
-      for (int i = 0; i < num_scalars; ++i) {
-        const char *current_arg = arg[i + scalar_start_arg];
-        compute_scalars[i] = modify->get_compute_by_id(current_arg);
-        if (compute_scalars[i] == nullptr) {
-          error->all(FLERR, "{}: Cannot find compute with id: {}", style, current_arg);
-        }
+    for (int i = 0; i < num_scalars; ++i) {
+      const char *current_arg = arg[i + scalar_start_arg];
+      compute_scalars[i] = modify->get_compute_by_id(current_arg);
+      if (compute_scalars[i] == nullptr) {
+        error->all(FLERR, "{}: Cannot find compute with id: {}", style, current_arg);
       }
     }
   }
@@ -100,7 +107,7 @@ DumpVector::DumpVector(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
 
 /* ---------------------------------------------------------------------- */
 
-DumpVector::~DumpVector()
+DumpClusterCSV::~DumpClusterCSV()
 {
   for (int i = 0; i < num_vectors; ++i) {
     if (file_vectors[i] != nullptr) {
@@ -118,16 +125,16 @@ DumpVector::~DumpVector()
   if (compute_scalars != nullptr) { memory->destroy(compute_scalars); }
 }
 
-void DumpVector::init_style()
+void DumpClusterCSV::init_style()
 {
   // Initialize the vector data if needed
 }
 
-void DumpVector::write_header(bigint /*ndump*/)
+void DumpClusterCSV::write_header(bigint /*ndump*/)
 {
   // Write the header for the CSV file for each compute
-  if (filewriter != 0) {
-    if (num_scalars > 0) {
+  if (num_scalars > 0) {
+    if (filewriter != 0) {
       fmt::print(file_scalars, "ntimestep");
       for (int i = 0; i < num_scalars; ++i) {
         fmt::print(file_scalars, ",{}", compute_scalars[i]->id);
@@ -140,7 +147,7 @@ void DumpVector::write_header(bigint /*ndump*/)
 
 /* ---------------------------------------------------------------------- */
 
-void DumpVector::write()
+void DumpClusterCSV::write()
 {
   // Write the vector data to the CSV file for each compute
   for (int i = 0; i < num_vectors; ++i) {
