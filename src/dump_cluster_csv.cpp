@@ -8,7 +8,7 @@
 #include "dump_cluster_csv.h"
 #include "comm.h"
 #include "compute.h"
-#include "compute_cluster_size.h"
+#include "compute_cluster_size_ext.h"
 #include "error.h"
 #include "fmt/base.h"
 #include "memory.h"
@@ -32,8 +32,8 @@ DumpClusterCSV::DumpClusterCSV(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, na
   has_id = 0;
   filewriter = static_cast<int>(comm->me == 0);
 
-  ComputeClusterSize *compute_cluster_size =
-      dynamic_cast<ComputeClusterSize *>(modify->get_compute_by_id(arg[5]));
+  ComputeClusterSizeExt *compute_cluster_size =
+      dynamic_cast<ComputeClusterSizeExt *>(modify->get_compute_by_id(arg[5]));
   if (compute_cluster_size == nullptr) {
     error->all(FLERR, "{}: Cannot find compute cluster/size with id: {}", style, arg[4]);
   }
