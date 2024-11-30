@@ -88,6 +88,7 @@ void ComputeClusterAtomCopy::compute_peratom()
   int i, j, ii, jj, inum, jnum;
   double xtmp, ytmp, ztmp, delx, dely, delz, rsq;
   int *ilist, *jlist, *numneigh, **firstneigh;
+  double **x = atom->x;
 
   invoked_peratom = update->ntimestep;
 
