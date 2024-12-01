@@ -12,6 +12,7 @@
 ------------------------------------------------------------------------- */
 
 #include "compute_cluster_size_ext.h"
+#include <cstddef>
 #include <utility>
 
 #include "atom.h"
@@ -24,8 +25,6 @@
 #include <cstring>
 
 using namespace LAMMPS_NS;
-
-#define ComputeClusterSizeIm_ALLOC_COEFF 1.2
 
 /* ---------------------------------------------------------------------- */
 
@@ -105,14 +104,14 @@ void ComputeClusterSizeExt::init()
   memory->create(dist, size_vector, "compute:cluster/size:dist");
   vector = dist;
 
-  nloc = static_cast<int>(atom->nlocal * ComputeClusterSizeIm_ALLOC_COEFF);
+  nloc = static_cast<int>(atom->nlocal * LMP_NUCC_ALLOC_COEFF);
   cluster_map.reserve(nloc);
   // cluster_map->reserve(nloc);
   // alloc->pool_size_ = nloc;
   memory->create(clusters, nloc, "clusters");
   memory->create(ns, 2 * nloc, "ns");
 
-  natom_loc = static_cast<int>(2 * atom->natoms * ComputeClusterSizeIm_ALLOC_COEFF);
+  natom_loc = static_cast<int>(2 * atom->natoms * LMP_NUCC_ALLOC_COEFF);
   memory->create(gathered, natom_loc, "gathered");
 
   initialized_flag = 1;
@@ -163,7 +162,7 @@ void ComputeClusterSizeExt::compute_vector()
   ::memset(dist, 0.0, size_vector * sizeof(double));
 
   if (atom->nlocal > nloc) {
-    nloc = static_cast<int>(atom->nlocal * ComputeClusterSizeIm_ALLOC_COEFF);
+    nloc = static_cast<int>(atom->nlocal * LMP_NUCC_ALLOC_COEFF);
     cmap.reserve(nloc);
     // alloc->pool_size_ = nloc;
     memory->grow(clusters, nloc, "clusters");
@@ -175,14 +174,15 @@ void ComputeClusterSizeExt::compute_vector()
     if ((atom->mask[i] & groupbit) != 0) {
       int const clid = static_cast<int>(cluster_ids[i]);
       if (cmap.count(clid) == 0) {
-        int const idx = cmap.size();
-        ns[idx] = clid;
-        ns[idx + 1] = 0;
-        clusters[idx] = {0, 0, -1, 0, 0, 0};
-        cmap[clid] = {ns + 2 * idx, clusters + idx};
+        int const clidx = cmap.size();
+        cmap[clid] = clidx;
+        ns[clidx] = clid;
+        ns[clidx + 1] = 0;
+        clusters[clidx] = {0, 0, -1, 0, 0, 0};
       }
-      cmap[clid].ptr->atoms[cmap[clid].n[1]++] =
-          i;    // possible segfault if actual cluster size exceeds LMP_NUCC_CLUSTER_MAX_SIZE + LMP_NUCC_CLUSTER_MAX_GHOST
+      // possible segfault if actual cluster size exceeds LMP_NUCC_CLUSTER_MAX_SIZE + LMP_NUCC_CLUSTER_MAX_GHOST
+      const int clidx = cmap[clid];
+      clusters[clidx].atoms[ns[2 * clidx + 1]++] = i;
     }
   }
 
@@ -191,12 +191,14 @@ void ComputeClusterSizeExt::compute_vector()
     if ((atom->mask[i] & groupbit) != 0) {
       int const clid = static_cast<int>(cluster_ids[i]);
       if (cmap.count(clid) > 0) {
-        cmap[clid].ptr->ghost[cmap[clid].ptr->nghost++] =
-            i;    // also possible segfault if number of ghost exceeds LMP_NUCC_CLUSTER_MAX_GHOST
+        cluster_data &clstr = clusters[cmap[clid]];
+        // also possible segfault if number of ghost exceeds LMP_NUCC_CLUSTER_MAX_GHOST
+        clstr.ghost[clstr.nghost++] = i;
       }
     }
   }
 
+  // communicate about number of unique clusters
   int ncluster_local = 2 * cmap.size();
   ::MPI_Allgather(&ncluster_local, 1, MPI_INT, counts_global, 1, MPI_INT, world);
 
@@ -207,34 +209,35 @@ void ComputeClusterSizeExt::compute_vector()
   }
 
   if (tcon > natom_loc) {
-    natom_loc = static_cast<int>(tcon * ComputeClusterSizeIm_ALLOC_COEFF);
+    natom_loc = static_cast<int>(tcon * LMP_NUCC_ALLOC_COEFF);
     memory->grow(gathered, natom_loc, "gathered");
   }
 
+  // communicate about local cluster sizes
   ::MPI_Allgatherv(ns, ncluster_local, MPI_INT, gathered, counts_global, displs, MPI_INT, world);
 
+  // fill local data
   for (int i = 0; i < comm->nprocs; ++i) {
     for (int j = 0; j < counts_global[i] - 1; j += 2) {
       int const k = displs[i] + j;
       if (cmap.count(gathered[k]) > 0) {
-        cluster_data &cptr = *(cmap[gathered[k]].ptr);
-        cptr.owners[cptr.nowners++] = i;
-        cptr.g_size += gathered[k + 1];
-        if (gathered[k + 1] > cptr.nhost) {
-          cptr.host = i;
-          cptr.nhost = gathered[k + 1];
+        cluster_data &clstr = clusters[cmap[gathered[k]]];
+        clstr.owners[clstr.nowners++] = i;
+        clstr.g_size += gathered[k + 1];
+        if (gathered[k + 1] > clstr.nhost) {
+          clstr.host = i;
+          clstr.nhost = gathered[k + 1];
         }
       }
     }
   }
 
-  for (auto &[clid, cptr] : cmap) {
-    cluster_data &cpptr = *(cptr.ptr);
-    cpptr.l_size = cptr.n[0];
-    ::memcpy(cpptr.atoms + cpptr.l_size, cpptr.ghost, cpptr.nghost * sizeof(int));
-    if ((cptr.ptr->host < 0) && (cptr.ptr->g_size < size_cutoff)) {
-      dist_local[cptr.ptr->g_size] += 1;
-    }
+  // adjust local data and fill local size distribution
+  for (auto &[clid, clidx] : cmap) {
+    cluster_data &clstr = clusters[clidx];
+    clstr.l_size = ns[static_cast<ptrdiff_t>(2) * clidx];
+    ::memcpy(clstr.atoms + clstr.l_size, clstr.ghost, clstr.nghost * sizeof(int));
+    if ((clstr.host < 0) && (clstr.g_size < size_cutoff)) { dist_local[clstr.g_size] += 1; }
   }
 
   ::MPI_Allreduce(dist_local, dist, size_vector, MPI_DOUBLE, MPI_SUM, world);
@@ -249,7 +252,7 @@ double ComputeClusterSizeExt::memory_usage()
   double sum = static_cast<unsigned long>(size_vector) * 2 * sizeof(double);
   sum += static_cast<unsigned long>(comm->nprocs) * 2 * sizeof(int);
   sum += static_cast<unsigned long>(nloc) *
-      (sizeof(cluster_data) + 2 * sizeof(int) + sizeof(std::pair<int, cluster_ptr>));
+      (sizeof(cluster_data) + 2 * sizeof(int) + sizeof(std::pair<const int, int>));
   sum += static_cast<unsigned long>(natom_loc) * sizeof(int);
   return sum;
 }

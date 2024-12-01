@@ -20,10 +20,10 @@ ComputeStyle(cluster/size/ext,ComputeClusterSizeExt);
 #ifndef LMP_COMPUTE_CLUSTER_SIZE_ExT_H
 #define LMP_COMPUTE_CLUSTER_SIZE_ExT_H
 
+#define LMP_NUCC_ALLOC_COEFF 1.2
 #define LMP_NUCC_CLUSTER_MAX_OWNERS 128
 #define LMP_NUCC_CLUSTER_MAX_SIZE 300
 #define LMP_NUCC_CLUSTER_MAX_GHOST 30
-
 #include "compute.h"
 
 #include <unordered_map>
@@ -44,11 +44,6 @@ struct cluster_data {
   int ghost[LMP_NUCC_CLUSTER_MAX_GHOST];    // local ids of ghost atoms
 };
 
-struct cluster_ptr {
-  int *n;
-  cluster_data *ptr;
-};
-
 class ComputeClusterSizeExt : public Compute {
  public:
   friend class ComputeClusterVolume;
@@ -66,7 +61,7 @@ class ComputeClusterSizeExt : public Compute {
   // MemoryKeeper* keeper;
   // CustomAllocator<std::pair<const int, cluster_ptr>>* alloc;
   // std::unordered_map<int, cluster_ptr, std::hash<int>, std::equal_to<int>, CustomAllocator<std::pair<const int, cluster_ptr>>>* cluster_map;
-  std::unordered_map<int, cluster_ptr> cluster_map;
+  std::unordered_map<int, int> cluster_map;
 
   int nloc;                // number of reserved elements in atoms_by_cID and cIDs_by_size
   double *dist;            // cluster size distribution (vector == dist)
