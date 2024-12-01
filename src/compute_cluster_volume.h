@@ -21,11 +21,11 @@ ComputeStyle(cluster/volume,ComputeClusterVolume);
 #define LMP_COMPUTE_CLUSTER_VOLUME_H
 
 #include "compute.h"
-#include "compute_cluster_size.h"
+#include "compute_cluster_size_ext.h"
 
 namespace LAMMPS_NS {
 
-enum class VOLUMEMODE { RECTANGLE = 0, SPHERE = 1 };
+enum class VOLUMEMODE { RECTANGLE = 0, SPHERE = 1, CALC = 2 };
 
 class ComputeClusterVolume : public Compute {
  public:
@@ -37,16 +37,17 @@ class ComputeClusterVolume : public Compute {
   double memory_usage() override;
 
  private:
-  ComputeClusterSize *compute_cluster_size = nullptr;
+  ComputeClusterSizeExt *compute_cluster_size = nullptr;
 
-  VOLUMEMODE mode = VOLUMEMODE::RECTANGLE;
+  VOLUMEMODE mode;
+  double subbonds[6]{};
   double *kes = nullptr;          // array of kes of global clusters
   double *local_kes = nullptr;    // array of kes of local clusters
   int size_cutoff;                // size of max cluster
-  static double occupied_volume(const double **const centers, const int *const list, const int n,
-                                const double r, const double voxel_size);
-  static double occupied_volume2(const double **const centers, const int *const list, const int n,
-                                 const double r, const double voxel_size);
+  double occupied_volume(const double **const centers, const int *const list, const int n,
+                         const double r, const double voxel_size) const;
+  double occupied_volume2(const double **const centers, const int *const list, const int n,
+                          const double r, const double voxel_size) const;
 };
 
 }    // namespace LAMMPS_NS

@@ -20,7 +20,6 @@
 #include "memory.h"
 #include "modify.h"
 #include "update.h"
-#include "valgrind/callgrind.h"
 
 #include <cstring>
 
@@ -31,12 +30,18 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 ComputeClusterSizeExt::ComputeClusterSizeExt(LAMMPS *lmp, int narg, char **arg) :
-    Compute(lmp, narg, arg), nloc(0), dist(nullptr), nc_global(0), nloc_max(0)
+    Compute(lmp, narg, arg), nloc(0), dist(nullptr), nc_global(0), natom_loc(0)
 {
   vector_flag = 1;
   extvector = 0;
   size_vector = 0;
   size_vector_variable = 1;
+
+  if (comm->nprocs > LMP_NUCC_CLUSTER_MAX_OWNERS) {
+    error->all(
+        FLERR,
+        "Number of processor exceeds MAX_OWNER limit. Recompile with higher MAX_OWNER limit.");
+  }
 
   if (narg < 4) { utils::missing_cmd_args(FLERR, "compute cluster/size", error); }
 
@@ -57,6 +62,14 @@ ComputeClusterSizeExt::ComputeClusterSizeExt(LAMMPS *lmp, int narg, char **arg) 
     error->all(FLERR, "size_cutoff for compute cluster/size must be greater than 0");
   }
 
+  // alloc = new CustomAllocator<std::pair<const int, cluster_ptr>>(1024, memory, keeper);
+  // cluster_map =
+  //   new std::u
+  // keeper = new MemoryKeeper(memory);
+  // alloc = new CustomAllocator<std::pair<const int, cluster_ptr>>(1024, memory, keeper);
+  // cluster_map =
+  //   new std::unordered_map<int, cluster_ptr, std::hash<int>, std::equal_to<int>, CustomAllocator<std::pair<const int, cluster_ptr>>>(*alloc);
+
   size_vector = size_cutoff + 1;
 }
 
@@ -71,6 +84,10 @@ ComputeClusterSizeExt::~ComputeClusterSizeExt() noexcept(true)
   if (clusters != nullptr) { memory->destroy(clusters); }
   if (ns != nullptr) { memory->destroy(ns); }
   if (gathered != nullptr) { memory->destroy(gathered); }
+
+  // delete cluster_map;
+  // delete alloc;
+  // delete keeper;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -90,14 +107,41 @@ void ComputeClusterSizeExt::init()
 
   nloc = static_cast<int>(atom->nlocal * ComputeClusterSizeIm_ALLOC_COEFF);
   cluster_map.reserve(nloc);
+  // cluster_map->reserve(nloc);
+  // alloc->pool_size_ = nloc;
   memory->create(clusters, nloc, "clusters");
   memory->create(ns, 2 * nloc, "ns");
 
-  nloc_max = static_cast<int>(2 * atom->natoms * ComputeClusterSizeIm_ALLOC_COEFF);
-  memory->create(gathered, nloc_max, "gathered");
+  natom_loc = static_cast<int>(2 * atom->natoms * ComputeClusterSizeIm_ALLOC_COEFF);
+  memory->create(gathered, natom_loc, "gathered");
 
   initialized_flag = 1;
 }
+
+/* ---------------------------------------------------------------------- */
+
+// void ComputeClusterSizeExt::test_allocator() const
+// {
+//   constexpr ssize_t pool_size = 1024;
+//   constexpr size_t len = 3000;
+
+//   // Create a custom allocator instance
+//   MemoryKeeper keeper(memory);
+//   CustomAllocator<std::pair<const int, int>> allocator(pool_size, memory, &keeper);
+
+//   // Create an unordered_map using the custom allocator
+//   std::unordered_map<int, int, std::hash<int>, std::equal_to<int>,
+//                       CustomAllocator<std::pair<const int, int>>> map(allocator);
+
+//   // Populate the map
+//   for (int i = 0; i < len; ++i) {
+//       if (map.count(i) == 0) {
+//           map[i] = len-i;
+//       }
+//   }
+
+//   utils::logmesg(lmp, "Map test passed successfully");
+// }
 
 /* ---------------------------------------------------------------------- */
 
@@ -105,12 +149,14 @@ void ComputeClusterSizeExt::compute_vector()
 {
   invoked_vector = update->ntimestep;
 
+  auto &cmap = cluster_map;
+
   if (compute_cluster_atom->invoked_peratom != update->ntimestep) {
     compute_cluster_atom->compute_peratom();
   }
 
   const double *const cluster_ids = compute_cluster_atom->vector_atom;
-  cluster_map.clear();
+  cmap.clear();
   ::memset(counts_global, 0, comm->nprocs * sizeof(int));
   ::memset(displs, 0, comm->nprocs * sizeof(int));
   ::memset(dist_local, 0.0, size_vector * sizeof(double));
@@ -118,7 +164,8 @@ void ComputeClusterSizeExt::compute_vector()
 
   if (atom->nlocal > nloc) {
     nloc = static_cast<int>(atom->nlocal * ComputeClusterSizeIm_ALLOC_COEFF);
-    cluster_map.reserve(nloc);
+    cmap.reserve(nloc);
+    // alloc->pool_size_ = nloc;
     memory->grow(clusters, nloc, "clusters");
     memory->grow(ns, 2 * nloc, "ns");
   }
@@ -127,20 +174,30 @@ void ComputeClusterSizeExt::compute_vector()
   for (int i = 0; i < atom->nlocal; ++i) {
     if ((atom->mask[i] & groupbit) != 0) {
       int const clid = static_cast<int>(cluster_ids[i]);
-      if (cluster_map.count(clid) == 0) {
-        int const idx = cluster_map.size();
+      if (cmap.count(clid) == 0) {
+        int const idx = cmap.size();
         ns[idx] = clid;
         ns[idx + 1] = 0;
-        clusters[idx] = {0, -1, 0, 0};
-        cluster_map[clid] = {ns + 2 * idx, clusters + idx};
+        clusters[idx] = {0, 0, -1, 0, 0, 0};
+        cmap[clid] = {ns + 2 * idx, clusters + idx};
       }
-      cluster_map[clid].ptr->atoms[cluster_map[clid].n[1]++] = i;
-      ++cluster_map[clid].ptr->nhost;
-      ++cluster_map[clid].ptr->g_size;
+      cmap[clid].ptr->atoms[cmap[clid].n[1]++] =
+          i;    // possible segfault if actual cluster size exceeds LMP_NUCC_CLUSTER_MAX_SIZE + LMP_NUCC_CLUSTER_MAX_GHOST
     }
   }
 
-  int ncluster_local = 2 * cluster_map.size();
+  // add ghost atoms
+  for (int i = atom->nlocal; i < atom->nmax; ++i) {
+    if ((atom->mask[i] & groupbit) != 0) {
+      int const clid = static_cast<int>(cluster_ids[i]);
+      if (cmap.count(clid) > 0) {
+        cmap[clid].ptr->ghost[cmap[clid].ptr->nghost++] =
+            i;    // also possible segfault if number of ghost exceeds LMP_NUCC_CLUSTER_MAX_GHOST
+      }
+    }
+  }
+
+  int ncluster_local = 2 * cmap.size();
   ::MPI_Allgather(&ncluster_local, 1, MPI_INT, counts_global, 1, MPI_INT, world);
 
   int tcon = counts_global[0];
@@ -149,31 +206,32 @@ void ComputeClusterSizeExt::compute_vector()
     displs[i] = displs[i - 1] + counts_global[i - 1];
   }
 
-  if (tcon > nloc_max) {
-    nloc_max = static_cast<int>(tcon * ComputeClusterSizeIm_ALLOC_COEFF);
-    memory->grow(gathered, nloc_max, "gathered");
+  if (tcon > natom_loc) {
+    natom_loc = static_cast<int>(tcon * ComputeClusterSizeIm_ALLOC_COEFF);
+    memory->grow(gathered, natom_loc, "gathered");
   }
 
   ::MPI_Allgatherv(ns, ncluster_local, MPI_INT, gathered, counts_global, displs, MPI_INT, world);
 
   for (int i = 0; i < comm->nprocs; ++i) {
-    if (i != comm->me) {
-      for (int j = 0; j < counts_global[i] - 1; j += 2) {
-        int const k = displs[i] + j;
-        if (cluster_map.count(gathered[k]) > 0) {
-          const cluster_ptr &cptr = cluster_map[gathered[k]];
-          cptr.ptr->owners[cptr.ptr->nowners++] = i;
-          cptr.ptr->g_size += gathered[k + 1];
-          if (gathered[k + 1] > cptr.ptr->nhost) {
-            cptr.ptr->host = i;
-            cptr.ptr->nhost = gathered[k + 1];
-          }
+    for (int j = 0; j < counts_global[i] - 1; j += 2) {
+      int const k = displs[i] + j;
+      if (cmap.count(gathered[k]) > 0) {
+        cluster_data &cptr = *(cmap[gathered[k]].ptr);
+        cptr.owners[cptr.nowners++] = i;
+        cptr.g_size += gathered[k + 1];
+        if (gathered[k + 1] > cptr.nhost) {
+          cptr.host = i;
+          cptr.nhost = gathered[k + 1];
         }
       }
     }
   }
 
-  for (const auto &[clid, cptr] : cluster_map) {
+  for (auto &[clid, cptr] : cmap) {
+    cluster_data &cpptr = *(cptr.ptr);
+    cpptr.l_size = cptr.n[0];
+    ::memcpy(cpptr.atoms + cpptr.l_size, cpptr.ghost, cpptr.nghost * sizeof(int));
     if ((cptr.ptr->host < 0) && (cptr.ptr->g_size < size_cutoff)) {
       dist_local[cptr.ptr->g_size] += 1;
     }
@@ -192,7 +250,7 @@ double ComputeClusterSizeExt::memory_usage()
   sum += static_cast<unsigned long>(comm->nprocs) * 2 * sizeof(int);
   sum += static_cast<unsigned long>(nloc) *
       (sizeof(cluster_data) + 2 * sizeof(int) + sizeof(std::pair<int, cluster_ptr>));
-  sum += static_cast<unsigned long>(nloc_max) * sizeof(int);
+  sum += static_cast<unsigned long>(natom_loc) * sizeof(int);
   return sum;
 }
 

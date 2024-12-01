@@ -12,10 +12,10 @@
 ------------------------------------------------------------------------- */
 
 #include "compute_cluster_volume.h"
-#include "compute_cluster_size.h"
 #include <cmath>
 
 #include "comm.h"
+#include "domain.h"
 #include "error.h"
 #include "memory.h"
 #include "modify.h"
@@ -43,7 +43,8 @@ ComputeClusterVolume::ComputeClusterVolume(LAMMPS *lmp, int narg, char **arg) :
   // Parse arguments //
 
   // Get cluster/size compute
-  compute_cluster_size = dynamic_cast<ComputeClusterSize *>(lmp->modify->get_compute_by_id(arg[3]));
+  compute_cluster_size =
+      dynamic_cast<ComputeClusterSizeExt *>(lmp->modify->get_compute_by_id(arg[3]));
   if (compute_cluster_size == nullptr) {
     error->all(FLERR, "compute {}: Cannot find compute with style 'cluster/size' with id: {}",
                style, arg[3]);
@@ -116,9 +117,29 @@ void ComputeClusterVolume::compute_vector()
 
 /* ---------------------------------------------------------------------- */
 
+void ComputeClusterVolume::compute_local()
+{
+  invoked_local = update->ntimestep;
+
+  if (compute_cluster_size->invoked_vector != update->ntimestep) {
+    compute_cluster_size->compute_vector();
+  }
+
+  if (mode == VOLUMEMODE::CALC) {
+    subbonds[0 + 0] = domain->sublo[0];
+    subbonds[0 + 1] = domain->subhi[0];
+    subbonds[2 + 0] = domain->sublo[1];
+    subbonds[2 + 1] = domain->subhi[1];
+    subbonds[4 + 0] = domain->sublo[2];
+    subbonds[4 + 1] = domain->subhi[2];
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
 double ComputeClusterVolume::occupied_volume(const double **const centers, const int *const list,
                                              const int n, const double r,
-                                             const double voxel_size = 0.1)
+                                             const double voxel_size = 0.1) const
 {
   double min_c[3]{};
   double max_c[3]{};
@@ -146,6 +167,13 @@ double ComputeClusterVolume::occupied_volume(const double **const centers, const
   max_c[0] += r;
   max_c[1] += r;
   max_c[2] += r;
+
+  min_c[0] = MAX(min_c[0], subbonds[0]);
+  min_c[1] = MAX(min_c[1], subbonds[2]);
+  min_c[2] = MAX(min_c[2], subbonds[4]);
+  max_c[0] = MIN(max_c[0], subbonds[1]);
+  max_c[1] = MIN(max_c[1], subbonds[3]);
+  max_c[2] = MIN(max_c[2], subbonds[5]);
 
   const int nx = static_cast<int>(::ceil((max_c[0] - min_c[0]) / voxel_size));
   const int ny = static_cast<int>(::ceil((max_c[1] - min_c[1]) / voxel_size));
@@ -173,9 +201,11 @@ double ComputeClusterVolume::occupied_volume(const double **const centers, const
   return occupied * voxel_size * voxel_size * voxel_size;
 }
 
+/* ---------------------------------------------------------------------- */
+
 double ComputeClusterVolume::occupied_volume2(const double **const centers, const int *const list,
                                               const int n, const double r,
-                                              const double voxel_size = 0.1)
+                                              const double voxel_size = 0.1) const
 {
   double min_c[3]{};
   double max_c[3]{};
@@ -203,6 +233,13 @@ double ComputeClusterVolume::occupied_volume2(const double **const centers, cons
   max_c[0] += r;
   max_c[1] += r;
   max_c[2] += r;
+
+  min_c[0] = MAX(min_c[0], subbonds[0]);
+  min_c[1] = MAX(min_c[1], subbonds[2]);
+  min_c[2] = MAX(min_c[2], subbonds[4]);
+  max_c[0] = MIN(max_c[0], subbonds[1]);
+  max_c[1] = MIN(max_c[1], subbonds[3]);
+  max_c[2] = MIN(max_c[2], subbonds[5]);
 
   // count occupied cells
   int occupied = 0;
@@ -232,30 +269,6 @@ double ComputeClusterVolume::occupied_volume2(const double **const centers, cons
   }
 
   return occupied * voxel_size * voxel_size * voxel_size;
-}
-
-/* ---------------------------------------------------------------------- */
-
-void ComputeClusterVolume::compute_local()
-{
-  invoked_local = update->ntimestep;
-
-  if (compute_cluster_size->invoked_vector != update->ntimestep) {
-    compute_cluster_size->compute_vector();
-  }
-
-  ::memset(local_kes, 0.0, size_local_rows * sizeof(double));
-  const double *const peratomkes = compute_cluster_size->vector_atom;
-
-  for (const auto &[size, vec] : compute_cluster_size->cIDs_by_size) {
-    if (size < size_cutoff) {
-      for (const tagint cid : vec) {
-        for (const tagint pid : compute_cluster_size->atoms_by_cID[cid]) {
-          local_kes[size] += peratomkes[pid];
-        }
-      }
-    }
-  }
 }
 
 /* ----------------------------------------------------------------------

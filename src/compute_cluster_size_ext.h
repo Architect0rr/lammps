@@ -20,8 +20,9 @@ ComputeStyle(cluster/size/ext,ComputeClusterSizeExt);
 #ifndef LMP_COMPUTE_CLUSTER_SIZE_ExT_H
 #define LMP_COMPUTE_CLUSTER_SIZE_ExT_H
 
-#define LMP_NUCC_CLUSTER_SIZE_MAX_CUTOFF 300
-#define LMP_NUCC_CLUSTER_SIZE_MAX_OWNERS 128
+#define LMP_NUCC_CLUSTER_MAX_OWNERS 128
+#define LMP_NUCC_CLUSTER_MAX_SIZE 300
+#define LMP_NUCC_CLUSTER_MAX_GHOST 30
 
 #include "compute.h"
 
@@ -29,13 +30,18 @@ ComputeStyle(cluster/size/ext,ComputeClusterSizeExt);
 
 namespace LAMMPS_NS {
 
+class ComputeClusterVolume;
+
 struct cluster_data {
-  int g_size = 0;
-  int host = -1;
-  int nhost = 0;
-  int nowners = 0;
-  int owners[LMP_NUCC_CLUSTER_SIZE_MAX_OWNERS];
-  int atoms[LMP_NUCC_CLUSTER_SIZE_MAX_CUTOFF];    // local ids of atoms
+  int l_size = 0;     // local size
+  int g_size = 0;     // global size
+  int host = -1;      // host proc (me if <0)
+  int nhost = 0;      // local cluster size of host proc
+  int nowners = 0;    // number of owners
+  int nghost = 0;     // number of ghost atoms in cluster
+  int owners[LMP_NUCC_CLUSTER_MAX_OWNERS];
+  int atoms[LMP_NUCC_CLUSTER_MAX_SIZE];     // local ids of atoms
+  int ghost[LMP_NUCC_CLUSTER_MAX_GHOST];    // local ids of ghost atoms
 };
 
 struct cluster_ptr {
@@ -45,6 +51,7 @@ struct cluster_ptr {
 
 class ComputeClusterSizeExt : public Compute {
  public:
+  friend class ComputeClusterVolume;
   ComputeClusterSizeExt(class LAMMPS *lmp, int narg, char **arg);
   ~ComputeClusterSizeExt() noexcept(true) override;
   void init() override;
@@ -56,7 +63,11 @@ class ComputeClusterSizeExt : public Compute {
  private:
   int size_cutoff;    // number of elements reserved in dist
 
+  // MemoryKeeper* keeper;
+  // CustomAllocator<std::pair<const int, cluster_ptr>>* alloc;
+  // std::unordered_map<int, cluster_ptr, std::hash<int>, std::equal_to<int>, CustomAllocator<std::pair<const int, cluster_ptr>>>* cluster_map;
   std::unordered_map<int, cluster_ptr> cluster_map;
+
   int nloc;                // number of reserved elements in atoms_by_cID and cIDs_by_size
   double *dist;            // cluster size distribution (vector == dist)
   double *dist_local{};    // local cluster size distribution
@@ -64,11 +75,12 @@ class ComputeClusterSizeExt : public Compute {
   int *counts_global{};
   int *displs{};
   cluster_data *clusters{};
-  int *ns;
+  int *ns{};
   int *gathered{};
-  int nloc_max;
+  int natom_loc;
 
   Compute *compute_cluster_atom = nullptr;
+  // void test_allocator() const;
 };
 
 }    // namespace LAMMPS_NS
