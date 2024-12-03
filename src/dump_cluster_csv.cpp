@@ -68,6 +68,11 @@ DumpClusterCSV::DumpClusterCSV(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, na
   create_ptr_array(file_vectors, num_vectors, "vector_files");
   create_ptr_array(compute_vectors, num_vectors, "vector_computes");
   create_ptr_array(compute_scalars, num_scalars, "scalar_computes");
+  for (int i = 0; i < num_vectors; ++i) {
+    file_vectors[i] = nullptr;
+    compute_vectors[i] = nullptr;
+  }
+  for (int i = 0; i < num_scalars; ++i) { compute_scalars[i] = nullptr; }
 
   if (num_vectors > 0) {
     constexpr int vector_start_arg = 8;

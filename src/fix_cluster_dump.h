@@ -33,7 +33,7 @@ class FixClusterDump : public Fix {
   int num_vectors;
   int num_scalars;
 
-  FILE **file_vectors{};
+  FILE **file_vectors;
   FILE *file_scalars;
 
   int size_cutoff;
