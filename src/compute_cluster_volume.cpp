@@ -14,6 +14,7 @@
 #include "compute_cluster_volume.h"
 #include <cmath>
 
+#include "atom.h"
 #include "comm.h"
 #include "domain.h"
 #include "error.h"
@@ -29,7 +30,7 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 ComputeClusterVolume::ComputeClusterVolume(LAMMPS *lmp, int narg, char **arg) :
-    Compute(lmp, narg, arg)
+    Compute(lmp, narg, arg), nloc(0), n_cells(0), nloc_grid(0), noff(0), nloc_recv(0)
 {
   vector_flag = 1;
   size_vector = 0;
@@ -72,21 +73,25 @@ ComputeClusterVolume::ComputeClusterVolume(LAMMPS *lmp, int narg, char **arg) :
     }
   }
 
-  size_local_rows = size_cutoff + 1;
-  memory->create(local_kes, size_local_rows + 1, "compute:cluster/ke:local_kes");
-  vector_local = local_kes;
+  precompute = false;
+  overlap_sq = overlap * overlap;
+  n_cells = static_cast<int>(overlap / voxel_size) + 1;    // should I place +1 here?
 
+  size_local_rows = size_cutoff + 1;
   size_vector = size_cutoff + 1;
-  memory->create(kes, size_vector + 1, "compute:cluster/ke:kes");
-  vector = kes;
 }
 
 /* ---------------------------------------------------------------------- */
 
 ComputeClusterVolume::~ComputeClusterVolume() noexcept(true)
 {
-  if (local_kes != nullptr) { memory->destroy(local_kes); }
-  if (kes != nullptr) { memory->destroy(kes); }
+  if (volumes != nullptr) { memory->destroy(volumes); }
+  if (dist != nullptr) { memory->destroy(dist); }
+  if (dist_local != nullptr) { memory->destroy(dist_local); }
+  if (occupancy_grid != nullptr) { memory->destroy(occupancy_grid); }
+  if (offsets != nullptr) { memory->destroy(offsets); }
+  if (bboxes != nullptr) { memory->destroy(bboxes); }
+  if (recv_buf != nullptr) { memory->destroy(recv_buf); }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -95,6 +100,47 @@ void ComputeClusterVolume::init()
 {
   if ((modify->get_compute_by_style(style).size() > 1) && (comm->me == 0)) {
     error->warning(FLERR, "More than one compute {}", style);
+  }
+
+  subbonds[0 + 0] = domain->sublo[0];
+  subbonds[0 + 1] = domain->subhi[0];
+  subbonds[2 + 0] = domain->sublo[1];
+  subbonds[2 + 1] = domain->subhi[1];
+  subbonds[4 + 0] = domain->sublo[2];
+  subbonds[4 + 1] = domain->subhi[2];
+
+  memory->create(dist_local, size_local_rows + 1, "compute:cluster/ke:local_kes");
+  vector_local = dist_local;
+  memory->create(dist, size_vector + 1, "compute:cluster/ke:kes");
+  vector = dist;
+
+  nloc = static_cast<int>(atom->nlocal * LMP_NUCC_ALLOC_COEFF);
+  memory->create(volumes, nloc, "ComputeClusterVolume:volumes");
+  if (mode == VOLUMEMODE::RECTANGLE) {
+    memory->grow(bboxes, 6 * nloc, "ComputeClusterVolume:bboxes");
+  }
+
+  if (precompute) {
+    int radius_voxels_int = static_cast<int>(std::ceil(overlap / voxel_size));
+    noff =
+        3 * 2 * (radius_voxels_int + 1) * 2 * (radius_voxels_int + 1) * 2 * (radius_voxels_int + 1);
+    memory->create(offsets, noff, "ComputeClusterVolume:offsets");
+
+    double voxel_size_sq = voxel_size * voxel_size;
+    noffsets = 0;
+    for (int dx = -radius_voxels_int; dx <= radius_voxels_int; ++dx) {
+      for (int dy = -radius_voxels_int; dy <= radius_voxels_int; ++dy) {
+        for (int dz = -radius_voxels_int; dz <= radius_voxels_int; ++dz) {
+          double dist_sq = dx * dx + dy * dy + dz * dz;
+          if (dist_sq * voxel_size_sq <= overlap_sq) {
+            offsets[noffsets + 0] = dx;
+            offsets[noffsets + 1] = dy;
+            offsets[noffsets + 2] = dz;
+            noffsets += 3;
+          }
+        }
+      }
+    }
   }
 }
 
@@ -105,14 +151,21 @@ void ComputeClusterVolume::compute_vector()
   invoked_vector = update->ntimestep;
 
   compute_local();
+  ::memset(dist, 0.0, size_vector * sizeof(double));
+  ::MPI_Allreduce(dist_local, dist, size_vector, MPI_DOUBLE, MPI_SUM, world);
+  for (int i = 0; i < size_vector; ++i) { dist[i] /= comm->nprocs; }
+}
 
-  ::memset(kes, 0.0, size_vector * sizeof(double));
-  ::MPI_Allreduce(local_kes, kes, size_vector, MPI_DOUBLE, MPI_SUM, world);
+/* ---------------------------------------------------------------------- */
 
-  const double *dist = compute_cluster_size->vector;
-  for (int i = 0; i < size_vector; ++i) {
-    if (dist[i] > 0) { kes[i] /= dist[i]; }
-  }
+inline void maximize_bbox(const double *const src, double *const dest) noexcept
+{
+  if (src[0] < dest[0]) { dest[0] = src[0]; }
+  if (src[1] < dest[1]) { dest[1] = src[1]; }
+  if (src[2] < dest[2]) { dest[2] = src[2]; }
+  if (src[3] > dest[3]) { dest[3] = src[3]; }
+  if (src[4] > dest[4]) { dest[4] = src[4]; }
+  if (src[5] > dest[5]) { dest[5] = src[5]; }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -125,75 +178,223 @@ void ComputeClusterVolume::compute_local()
     compute_cluster_size->compute_vector();
   }
 
-  if (mode == VOLUMEMODE::CALC) {
-    subbonds[0 + 0] = domain->sublo[0];
-    subbonds[0 + 1] = domain->subhi[0];
-    subbonds[2 + 0] = domain->sublo[1];
-    subbonds[2 + 1] = domain->subhi[1];
-    subbonds[4 + 0] = domain->sublo[2];
-    subbonds[4 + 1] = domain->subhi[2];
+  if (nloc < atom->nlocal) {
+    nloc = static_cast<int>(atom->nlocal * LMP_NUCC_ALLOC_COEFF);
+    memory->grow(volumes, nloc, "ComputeClusterVolume:volumes");
+
+    if (mode == VOLUMEMODE::RECTANGLE) {
+      memory->grow(bboxes, 6 * nloc, "ComputeClusterVolume:bboxes");
+    }
   }
+
+  if (nloc_recv < compute_cluster_size->nonexclusive) {
+    nloc_recv = static_cast<bigint>(compute_cluster_size->nonexclusive * LMP_NUCC_ALLOC_COEFF);
+    memory->grow(in_reqs, comm->nprocs * nloc_recv, "ComputeClusterVolume:in_reqs");
+    memory->grow(out_reqs, comm->nprocs * nloc_recv, "ComputeClusterVolume:out_reqs");
+
+    if (mode == VOLUMEMODE::RECTANGLE) {
+      memory->grow(recv_buf, comm->nprocs * nloc_recv, "ComputeClusterVolume:recv_buf");
+    } else if (mode == VOLUMEMODE::RECTANGLE) {
+      memory->grow(recv_buf, 6 * comm->nprocs * nloc_recv, "ComputeClusterVolume:recv_buf");
+    }
+  }
+
+  int to_send = 0;
+  int to_receive = 0;
+  Sizes_map_t &cmap = *(compute_cluster_size->cIDs_by_size);
+  if (mode == VOLUMEMODE::CALC) {
+    for (const auto [size, clidxs] : cmap) {
+      for (auto clidx : clidxs) {
+        const cluster_data &clstr = compute_cluster_size->clusters[clidx];
+        bool nonexclusive = clstr.nowners > 0;
+        volumes[clidx] =
+            occupied_volume_precomputed(clstr.atoms, clstr.l_size, clstr.nghost, nonexclusive);
+        if (nonexclusive) {
+          if (clstr.host != comm->me) {
+            ::MPI_Send_init(volumes + clidx, 1, MPI_DOUBLE, clstr.host, clstr.clid, world,
+                            out_reqs + to_send);
+            ++to_send;
+          } else {
+            for (int i = 0; i < clstr.nowners; ++i) {
+              ::MPI_Recv_init(recv_buf + to_receive, 1, MPI_DOUBLE, clstr.owners[i], clstr.clid,
+                              world, in_reqs + to_receive);
+              ++to_receive;
+            }
+          }
+        }
+      }
+    }
+  } else if (mode == VOLUMEMODE::RECTANGLE) {
+    for (const auto [size, clidxs] : cmap) {
+      for (auto clidx : clidxs) {
+        const cluster_data &clstr = compute_cluster_size->clusters[clidx];
+        bigint bbox_start = 6 * clidx;
+        cluster_bbox(clstr.atoms, clstr.l_size /*+ clstr.nghost*/, bboxes + bbox_start);
+        if (clstr.nowners > 0) {
+          if (clstr.host != comm->me) {
+            ::MPI_Send_init(bboxes + bbox_start, 6, MPI_DOUBLE, clstr.host, clstr.clid, world,
+                            out_reqs + to_send);
+            ++to_send;
+          } else {
+            for (int i = 0; i < clstr.nowners; ++i) {
+              ::MPI_Recv_init(recv_buf + 6 * to_receive, 6, MPI_DOUBLE, clstr.owners[i], clstr.clid,
+                              world, in_reqs + to_receive);
+              ++to_receive;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  ::MPI_Startall(to_send, out_reqs);
+  ::MPI_Startall(to_receive, in_reqs);
+  ::MPI_Waitall(to_send, out_reqs, MPI_STATUSES_IGNORE /*out_stats*/);
+  ::MPI_Waitall(to_receive, in_reqs, MPI_STATUSES_IGNORE /*in_stats*/);
+
+  int received = 0;
+  if (mode == VOLUMEMODE::CALC) {
+    for (const auto [size, clidxs] : cmap) {
+      for (auto clidx : clidxs) {
+        const cluster_data &clstr = compute_cluster_size->clusters[clidx];
+        if ((clstr.nowners > 0) && (clstr.host == comm->me)) {
+          for (int i = 0; i < clstr.nowners; ++i) { volumes[clidx] += recv_buf[received++]; }
+        }
+      }
+    }
+  } else if (mode == VOLUMEMODE::RECTANGLE) {
+    for (const auto [size, clidxs] : cmap) {
+      for (auto clidx : clidxs) {
+        const cluster_data &clstr = compute_cluster_size->clusters[clidx];
+        bigint bbox_start = 6 * clidx;
+        if (clstr.host == comm->me) {
+          if ((clstr.nowners > 0)) {
+            for (int i = 0; i < clstr.nowners; ++i) {
+              maximize_bbox(recv_buf + 6 * received, bboxes + bbox_start);
+              ++received;
+            }
+          }
+          volumes[clidx] = (bboxes[bbox_start + 3] - bboxes[bbox_start + 0]) *
+              (bboxes[bbox_start + 4] - bboxes[bbox_start + 1]) *
+              (bboxes[bbox_start + 5] - bboxes[bbox_start + 2]);
+        }
+      }
+    }
+  }
+
+  ::memset(dist_local, 0.0, size_local_rows * sizeof(double));
+  for (const auto [size, clidxs] : cmap) {
+    for (auto clidx : clidxs) {
+      const cluster_data &clstr = compute_cluster_size->clusters[clidx];
+      if (clstr.host == comm->me) { dist_local[size] += volumes[clidx]; }
+    }
+    dist_local[size] /= clidxs.size();
+  }
+
+  for (int i = 0; i < to_send; ++i) { ::MPI_Request_free(out_reqs + i); }
+  for (int i = 0; i < to_receive; ++i) { ::MPI_Request_free(in_reqs + i); }
 }
 
 /* ---------------------------------------------------------------------- */
 
-double ComputeClusterVolume::occupied_volume(const double **const centers, const int *const list,
-                                             const int n, const double r,
-                                             const double voxel_size = 0.1) const
+void ComputeClusterVolume::cluster_bbox(const int *const list, const int n,
+                                        double *bbox) const noexcept
 {
-  double min_c[3]{};
-  double max_c[3]{};
+  double **const centers = atom->x;
+  // double bbox[6] =
+  //   {
+  //     centers[list[0]][0],
+  //     centers[list[0]][1],
+  //     centers[list[0]][2],
+  //     centers[list[0]][0],
+  //     centers[list[0]][1],
+  //     centers[list[0]][2]
+  //   };
 
-  // find min and max center coordinates, i.e. bounding box for voxel grid
-  min_c[0] = centers[list[0]][0];
-  min_c[1] = centers[list[0]][1];
-  min_c[2] = centers[list[0]][2];
-  max_c[0] = centers[list[0]][0];
-  max_c[1] = centers[list[0]][1];
-  max_c[2] = centers[list[0]][2];
+  bbox[0] = centers[list[0]][0];
+  bbox[1] = centers[list[0]][1];
+  bbox[2] = centers[list[0]][2];
+  bbox[3] = centers[list[0]][0];
+  bbox[4] = centers[list[0]][1];
+  bbox[5] = centers[list[0]][2];
 
-  for (int i = 0; i < n; ++i) {
-    if (centers[list[i]][0] < min_c[0]) { min_c[0] = centers[list[i]][0]; }
-    if (centers[list[i]][1] < min_c[1]) { min_c[1] = centers[list[i]][1]; }
-    if (centers[list[i]][2] < min_c[2]) { min_c[2] = centers[list[i]][2]; }
-    if (centers[list[i]][0] > max_c[0]) { max_c[0] = centers[list[i]][0]; }
-    if (centers[list[i]][1] > max_c[1]) { max_c[1] = centers[list[i]][1]; }
-    if (centers[list[i]][2] > max_c[2]) { max_c[2] = centers[list[i]][2]; }
+  // find min and max center coordinates, i.e. bounding box
+  for (int i = 1; i < n; ++i) {
+    if (centers[list[i]][0] < bbox[0]) { bbox[0] = centers[list[i]][0]; }
+    if (centers[list[i]][1] < bbox[1]) { bbox[1] = centers[list[i]][1]; }
+    if (centers[list[i]][2] < bbox[2]) { bbox[2] = centers[list[i]][2]; }
+    if (centers[list[i]][0] > bbox[3]) { bbox[3] = centers[list[i]][0]; }
+    if (centers[list[i]][1] > bbox[4]) { bbox[4] = centers[list[i]][1]; }
+    if (centers[list[i]][2] > bbox[5]) { bbox[5] = centers[list[i]][2]; }
   }
 
-  min_c[0] -= r;
-  min_c[1] -= r;
-  min_c[2] -= r;
-  max_c[0] += r;
-  max_c[1] += r;
-  max_c[2] += r;
+  bbox[0] -= overlap;
+  bbox[1] -= overlap;
+  bbox[2] -= overlap;
+  bbox[3] += overlap;
+  bbox[4] += overlap;
+  bbox[5] += overlap;
+}
 
-  min_c[0] = MAX(min_c[0], subbonds[0]);
-  min_c[1] = MAX(min_c[1], subbonds[2]);
-  min_c[2] = MAX(min_c[2], subbonds[4]);
-  max_c[0] = MIN(max_c[0], subbonds[1]);
-  max_c[1] = MIN(max_c[1], subbonds[3]);
-  max_c[2] = MIN(max_c[2], subbonds[5]);
+/* ---------------------------------------------------------------------- */
 
-  const int nx = static_cast<int>(::ceil((max_c[0] - min_c[0]) / voxel_size));
-  const int ny = static_cast<int>(::ceil((max_c[1] - min_c[1]) / voxel_size));
-  const int nz = static_cast<int>(::ceil((max_c[2] - min_c[2]) / voxel_size));
+inline bigint idx(bigint i, bigint j, bigint k, bigint ny, bigint nz) noexcept
+{
+  return i * (nz * ny) + j * nz + k;
+}
+
+/* ---------------------------------------------------------------------- */
+
+double ComputeClusterVolume::occupied_volume_precomputed(const int *const list, const int n,
+                                                         const int nghost,
+                                                         bool nonexclusive) noexcept
+{
+  double **const centers = atom->x;
+  double bbox[6]{};
+  cluster_bbox(list, n, bbox);
+
+  if (nonexclusive) {
+    bbox[0] = MAX(bbox[0], subbonds[0]);    // cut should be on only needed sides
+    bbox[1] = MAX(bbox[1], subbonds[2]);
+    bbox[2] = MAX(bbox[2], subbonds[4]);
+    bbox[3] = MIN(bbox[3], subbonds[1]);
+    bbox[4] = MIN(bbox[4], subbonds[3]);
+    bbox[5] = MIN(bbox[5], subbonds[5]);
+  }
+
+  const bigint steps_x = static_cast<bigint>((bbox[3] - bbox[0]) / voxel_size) + 1;
+  const bigint steps_y = static_cast<bigint>((bbox[4] - bbox[1]) / voxel_size) + 1;
+  const bigint steps_z = static_cast<bigint>((bbox[5] - bbox[2]) / voxel_size) + 1;
+
+  if (nloc_grid < steps_x * steps_y * steps_z) {
+    nloc_grid = steps_x * steps_y * steps_z;
+    memory->grow(occupancy_grid, nloc_grid, "compute_cluster_volume:grid");
+  }
+  ::memset(occupancy_grid, false, nloc * sizeof(bool));
+
+  for (int l = 0; l < n + nghost; ++l) {
+    double const *center = centers[list[l]];
+    bigint ni = static_cast<bigint>((center[0] - bbox[0]) / voxel_size);
+    bigint nj = static_cast<bigint>((center[1] - bbox[1]) / voxel_size);
+    bigint nk = static_cast<bigint>((center[2] - bbox[2]) / voxel_size);
+
+    for (int noffset = 0; noffset < noffsets; noffset += 3) {
+      bigint i = ni + offsets[noffset + 0];
+      bigint j = nj + offsets[noffset + 1];
+      bigint k = nk + offsets[noffset + 2];
+
+      if ((i >= 0) && (i < steps_x) && (j >= 0) && (j < steps_y) && (k >= 0) && (k < steps_z)) {
+        occupancy_grid[idx(i, j, k, steps_y, steps_z)] = true;
+      }
+    }
+  }
 
   // count occupied cells
-  int occupied = 0;
-  double const rsq = r * r;
-  for (int i = 0; i < nx; ++i) {
-    for (int j = 0; j < ny; ++j) {
-      for (int k = 0; k < nz; ++k) {
-        for (int l = 0; l < n; ++l) {
-          double const dx = min_c[0] + i * voxel_size - centers[list[l]][0];
-          double const dy = min_c[1] + j * voxel_size - centers[list[l]][1];
-          double const dz = min_c[2] + k * voxel_size - centers[list[l]][2];
-          if (dx * dx + dy * dy + dz * dz < rsq) {
-            ++occupied;
-            break;
-          };
-        }
+  bigint occupied = 0;
+  for (bigint i = 0; i < steps_x; ++i) {
+    for (bigint j = 0; j < steps_y; ++j) {
+      for (bigint k = 0; k < steps_z; ++k) {
+        if (occupancy_grid[idx(i, j, k, steps_y, steps_z)]) { ++occupied; }
       }
     }
   }
@@ -203,69 +404,71 @@ double ComputeClusterVolume::occupied_volume(const double **const centers, const
 
 /* ---------------------------------------------------------------------- */
 
-double ComputeClusterVolume::occupied_volume2(const double **const centers, const int *const list,
-                                              const int n, const double r,
-                                              const double voxel_size = 0.1) const
+double ComputeClusterVolume::occupied_volume_grid(const int *const list, const int n,
+                                                  const int nghost, bool nonexclusive) noexcept
 {
-  double min_c[3]{};
-  double max_c[3]{};
+  double **const centers = atom->x;
+  double bbox[6]{};
+  cluster_bbox(list, n, bbox);
 
-  // find min and max center coordinates, i.e. bounding box for voxel grid
-  min_c[0] = centers[list[0]][0];
-  min_c[1] = centers[list[0]][1];
-  min_c[2] = centers[list[0]][2];
-  max_c[0] = centers[list[0]][0];
-  max_c[1] = centers[list[0]][1];
-  max_c[2] = centers[list[0]][2];
-
-  for (int i = 0; i < n; ++i) {
-    if (centers[list[i]][0] < min_c[0]) { min_c[0] = centers[list[i]][0]; }
-    if (centers[list[i]][1] < min_c[1]) { min_c[1] = centers[list[i]][1]; }
-    if (centers[list[i]][2] < min_c[2]) { min_c[2] = centers[list[i]][2]; }
-    if (centers[list[i]][0] > max_c[0]) { max_c[0] = centers[list[i]][0]; }
-    if (centers[list[i]][1] > max_c[1]) { max_c[1] = centers[list[i]][1]; }
-    if (centers[list[i]][2] > max_c[2]) { max_c[2] = centers[list[i]][2]; }
+  if (nonexclusive) {
+    bbox[0] = MAX(bbox[0], subbonds[0]);    // cut should be on only needed sides
+    bbox[1] = MAX(bbox[1], subbonds[2]);
+    bbox[2] = MAX(bbox[2], subbonds[4]);
+    bbox[3] = MIN(bbox[3], subbonds[1]);
+    bbox[4] = MIN(bbox[4], subbonds[3]);
+    bbox[5] = MIN(bbox[5], subbonds[5]);
   }
 
-  min_c[0] -= r;
-  min_c[1] -= r;
-  min_c[2] -= r;
-  max_c[0] += r;
-  max_c[1] += r;
-  max_c[2] += r;
+  const bigint steps_x = static_cast<bigint>((bbox[3] - bbox[0]) / voxel_size) + 1;
+  const bigint steps_y = static_cast<bigint>((bbox[4] - bbox[1]) / voxel_size) + 1;
+  const bigint steps_z = static_cast<bigint>((bbox[5] - bbox[2]) / voxel_size) + 1;
 
-  min_c[0] = MAX(min_c[0], subbonds[0]);
-  min_c[1] = MAX(min_c[1], subbonds[2]);
-  min_c[2] = MAX(min_c[2], subbonds[4]);
-  max_c[0] = MIN(max_c[0], subbonds[1]);
-  max_c[1] = MIN(max_c[1], subbonds[3]);
-  max_c[2] = MIN(max_c[2], subbonds[5]);
+  if (nloc_grid < steps_x * steps_y * steps_z) {
+    nloc_grid = steps_x * steps_y * steps_z;
+    memory->grow(occupancy_grid, nloc_grid, "compute_cluster_volume:grid");
+  }
+  ::memset(occupancy_grid, false, nloc * sizeof(bool));
+
+  for (int l = 0; l < n + nghost; ++l) {
+    double const *center = centers[list[l]];
+    bigint ni = static_cast<bigint>((center[0] - bbox[0]) / voxel_size);
+    bigint nj = static_cast<bigint>((center[1] - bbox[1]) / voxel_size);
+    bigint nk = static_cast<bigint>((center[2] - bbox[2]) / voxel_size);
+    bigint min_i = MAX(ni - n_cells, 0);
+    bigint max_i = MIN(ni + n_cells, steps_x - 1);
+    bigint min_j = MAX(nj - n_cells, 0);
+    bigint max_j = MIN(nj + n_cells, steps_y - 1);
+    bigint min_k = MAX(nk - n_cells, 0);
+    bigint max_k = MIN(nk + n_cells, steps_z - 1);
+
+    for (bigint i = min_i; i <= max_i; ++i) {
+      for (bigint j = min_j; j <= max_j; ++j) {
+        for (bigint k = min_k; k <= max_k; ++k) {
+          // Compute the grid cell center coordinates
+          // double x = bbox[0] + i * voxel_size + voxel_size / 2;
+          // double y = bbox[1] + j * voxel_size + voxel_size / 2;
+          // double z = bbox[2] + k * voxel_size + voxel_size / 2;
+          // Check if the voxel center is within the sphere of radius r
+          double dx = bbox[0] + i * voxel_size /*x*/ - center[0];
+          double dy = bbox[1] + j * voxel_size /*y*/ - center[1];
+          double dz = bbox[2] + k * voxel_size /*z*/ - center[2];
+          if (dx * dx + dy * dy + dz * dz <= overlap_sq) {
+            occupancy_grid[idx(i, j, k, steps_y, steps_z)] = true;
+          }
+        }
+      }
+    }
+  }
 
   // count occupied cells
-  int occupied = 0;
-  double const rsq = r * r;
-  double cc[3]{};
-
-  cc[0] = min_c[0];
-  while (cc[0] < max_c[0]) {
-    cc[1] = min_c[1];
-    while (cc[1] < max_c[1]) {
-      cc[2] = min_c[2];
-      while (cc[2] < max_c[2]) {
-        for (int l = 0; l < n; ++l) {
-          double const dx = cc[0] - centers[list[l]][0];
-          double const dy = cc[1] - centers[list[l]][1];
-          double const dz = cc[2] - centers[list[l]][2];
-          if (dx * dx + dy * dy + dz * dz < rsq) {
-            ++occupied;
-            break;
-          };
-        }
-        cc[2] += voxel_size;
+  bigint occupied = 0;
+  for (bigint i = 0; i < steps_x; ++i) {
+    for (bigint j = 0; j < steps_y; ++j) {
+      for (bigint k = 0; k < steps_z; ++k) {
+        if (occupancy_grid[idx(i, j, k, steps_y, steps_z)]) { ++occupied; }
       }
-      cc[1] += voxel_size;
     }
-    cc[0] += voxel_size;
   }
 
   return occupied * voxel_size * voxel_size * voxel_size;
@@ -277,5 +480,8 @@ double ComputeClusterVolume::occupied_volume2(const double **const centers, cons
 
 double ComputeClusterVolume::memory_usage()
 {
-  return static_cast<double>((size_local_rows + size_vector) * sizeof(double));
+  double num = static_cast<double>((size_local_rows + size_vector) * sizeof(double));
+  num += nloc_grid * sizeof(bool);
+  if (precompute) { num += noff * sizeof(int); }
+  return num;
 }

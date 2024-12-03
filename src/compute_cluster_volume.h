@@ -23,6 +23,8 @@ ComputeStyle(cluster/volume,ComputeClusterVolume);
 #include "compute.h"
 #include "compute_cluster_size_ext.h"
 
+#include <array>
+
 namespace LAMMPS_NS {
 
 enum class VOLUMEMODE { RECTANGLE = 0, SPHERE = 1, CALC = 2 };
@@ -41,13 +43,42 @@ class ComputeClusterVolume : public Compute {
 
   VOLUMEMODE mode;
   double subbonds[6]{};
-  double *kes = nullptr;          // array of kes of global clusters
-  double *local_kes = nullptr;    // array of kes of local clusters
-  int size_cutoff;                // size of max cluster
-  double occupied_volume(const double **const centers, const int *const list, const int n,
-                         const double r, const double voxel_size) const;
-  double occupied_volume2(const double **const centers, const int *const list, const int n,
-                          const double r, const double voxel_size) const;
+  int nloc{};
+  double *volumes{};
+  double *dist_local{};
+  double *dist{};
+  int size_cutoff;    // size of max cluster
+  double voxel_size{};
+  double overlap{};
+  double overlap_sq{};
+
+  // VOLUMEMODE::CALC
+  bool *occupancy_grid;
+  bigint nloc_grid;
+  int n_cells;
+  bool precompute;
+  int *offsets;
+  int noff;
+  int noffsets;
+
+  // VOLUMEMODE::RECTANGLE
+  double *bboxes;
+
+  ::MPI_Request *in_reqs;
+  ::MPI_Request *out_reqs;
+
+  //   ::MPI_Status *in_stats;
+  //   ::MPI_Status *out_stats;
+
+  double *recv_buf;
+  bigint nloc_recv;
+
+  // with AVX512 occupied_volume_grid works faster, than precomputed version
+  double occupied_volume_precomputed(const int *const list, const int n, const int nghost,
+                                     bool nonexclusive) noexcept;
+  double occupied_volume_grid(const int *const list, const int n, const int nghost,
+                              bool nonexclusive) noexcept;
+  void cluster_bbox(const int *const list, const int n, double *bbox) const noexcept;
 };
 
 }    // namespace LAMMPS_NS
