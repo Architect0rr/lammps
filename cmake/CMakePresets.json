@@ -1,0 +1,46 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 16,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "keinConf",
+      "hidden": false,
+      "description": "local kein's configuration preset",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_CXX_FLAGS": "-Ofast",
+        "CMAKE_C_FLAGS": "-Ofast"
+      },
+      "environment": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_CXX_FLAGS": "-Ofast",
+        "CMAKE_C_FLAGS": "-Ofast",
+        "LAMMPS_SIZES": "bigbig",
+        "LAMMPS_MACHINE": "mpi",
+        "BUILD_SHARED_LIBS": "yes",
+        "BUILD_LIB": "yes",
+        "BUILD_MPI": "yes",
+        "BUILD_TOOLS": "yes",
+        "BUILD_LAMMPS_SHELL": "no",
+        "BUILD_LAMMPS_GUI": "no"
+      },
+      "generator": "Unix Makefiles",
+      "binaryDir": "../build"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "keinBuild",
+      "description": "local kein's build preset",
+      "configurePreset": "keinConf",
+      "cleanFirst": true,
+      "targets": ["all"],
+      "inheritConfigureEnvironment": true,
+      "jobs": 8
+    }
+  ]
+}

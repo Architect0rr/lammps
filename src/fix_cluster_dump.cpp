@@ -73,15 +73,15 @@ FixClusterDump::FixClusterDump(LAMMPS *lmp, int narg, char **arg) :
   create_ptr_array(compute_vectors, num_vectors, "vector_computes");
   create_ptr_array(compute_scalars, num_scalars, "scalar_computes");
 
-  if (comm->me == 0) {
-    if (num_vectors > 0) {
-      constexpr int vector_start_arg = 7;
-      for (int i = 0; i < num_vectors; ++i) {
-        const char *current_arg = arg[i + vector_start_arg];
-        compute_vectors[i] = modify->get_compute_by_id(current_arg);
-        if (compute_vectors[i] == nullptr) {
-          error->all(FLERR, "{}: cannot find Compute with id: {}", style, current_arg);
-        }
+  if (num_vectors > 0) {
+    constexpr int vector_start_arg = 7;
+    for (int i = 0; i < num_vectors; ++i) {
+      const char *current_arg = arg[i + vector_start_arg];
+      compute_vectors[i] = modify->get_compute_by_id(current_arg);
+      if (compute_vectors[i] == nullptr) {
+        error->all(FLERR, "{}: cannot find Compute with id: {}", style, current_arg);
+      }
+      if (comm->me == 0) {
         file_vectors[i] = ::fopen(fmt::format("{}.csv", current_arg).c_str(), "a");
         if (file_vectors[i] == nullptr) {
           error->one(FLERR, "{}: Cannot open file {}: {}", style,
@@ -89,22 +89,26 @@ FixClusterDump::FixClusterDump(LAMMPS *lmp, int narg, char **arg) :
         }
       }
     }
+  }
 
-    if (num_scalars > 0) {
+  if (num_scalars > 0) {
+    if (comm->me == 0) {
       file_scalars = ::fopen("scalars.csv", "a");
       if (file_scalars == nullptr) {
         error->one(FLERR, "{}: Cannot open file {}: {}", style, "scalars.csv",
                    utils::getsyserror());
       }
       fmt::print(file_scalars, "ntimestep");
-      for (int i = 0; i < num_scalars; ++i) {
-        const char *current_arg = arg[i + scalar_start_arg];
-        compute_scalars[i] = modify->get_compute_by_id(current_arg);
-        if (compute_scalars[i] == nullptr) {
-          error->all(FLERR, "{}: cannot find Compute with id: {}", style, current_arg);
-        }
-        fmt::print(file_scalars, ",{}", current_arg);
+    }
+    for (int i = 0; i < num_scalars; ++i) {
+      const char *current_arg = arg[i + scalar_start_arg];
+      compute_scalars[i] = modify->get_compute_by_id(current_arg);
+      if (compute_scalars[i] == nullptr) {
+        error->all(FLERR, "{}: cannot find Compute with id: {}", style, current_arg);
       }
+      if (comm->me == 0) { fmt::print(file_scalars, ",{}", current_arg); }
+    }
+    if (comm->me == 0) {
       fmt::print(file_scalars, "\n");
       ::fflush(file_scalars);
     }
