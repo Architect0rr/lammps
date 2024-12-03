@@ -14,7 +14,6 @@
 #include "memory.h"
 #include "modify.h"
 #include "update.h"
-#include "valgrind/callgrind.h"
 
 #include <cstring>
 
@@ -152,13 +151,11 @@ void DumpClusterCSV::write_header(bigint /*ndump*/)
 void DumpClusterCSV::write()
 {
   // Write the vector data to the CSV file for each compute
-  CALLGRIND_START_INSTRUMENTATION;
   for (int i = 0; i < num_vectors; ++i) {
     if (compute_vectors[i]->invoked_vector != update->ntimestep) {
       compute_vectors[i]->compute_vector();
     }
   }
-  CALLGRIND_STOP_INSTRUMENTATION;
 
   for (int i = 0; i < num_scalars; ++i) {
     if (compute_scalars[i]->invoked_scalar != update->ntimestep) {
