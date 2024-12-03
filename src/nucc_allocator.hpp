@@ -2,6 +2,7 @@
 #define CUSTOM_STL_ALLOCATOR_HPP
 
 #include "memory.h"
+#include <cassert>
 #include <cstddef>
 #include <memory>
 #include <vector>
@@ -11,19 +12,28 @@ namespace LAMMPS_NS {
 class MemoryKeeper {
  public:
   MemoryKeeper() = delete;
-  MemoryKeeper(Memory *mem) : mem(mem) {}
+  MemoryKeeper(const MemoryKeeper &) = delete;
+  MemoryKeeper(MemoryKeeper &&) = delete;
+  MemoryKeeper &operator=(const MemoryKeeper &) = delete;
+  MemoryKeeper &operator=(MemoryKeeper &&) = delete;
 
+  MemoryKeeper(Memory *mem) : mem(mem) {}
   ~MemoryKeeper() { clear(); }
 
-  template <typename T> inline void store(T *&ptr, const size_t size)
-  {
-    infos.emplace_back(ptr, size);
-  }
+  template <typename T> void store(T *&ptr, const size_t size) { infos.emplace_back(ptr, size); }
 
   void clear()
   {
     for (auto &pool : infos) { mem->destroy(pool.ptr); }
   }
+
+  uint64_t pool_size() const noexcept
+  {
+    assert(_pool_size > 0);
+    return _pool_size;
+  }
+
+  void pool_size(uint64_t n) noexcept { _pool_size = n; }
 
  private:
   struct PoolInfo {
@@ -39,9 +49,14 @@ class MemoryKeeper {
     size_t size = 0;
   };
 
-  Memory *mem;
+  Memory *mem = nullptr;
+  uint64_t _pool_size = 0;
   std::vector<PoolInfo> infos;
 };
+
+/* ---------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------- */
 
 template <typename T> class CustomAllocator {
  public:
@@ -50,15 +65,14 @@ template <typename T> class CustomAllocator {
   template <typename U> friend class CustomAllocator;
 
   // Constructor
-  CustomAllocator(const std::size_t pool_size, Memory *const memory, MemoryKeeper *const keeper) :
-      pool_size_(pool_size), memory_(memory), keeper_(keeper)
+  CustomAllocator(Memory *const memory, MemoryKeeper *const keeper) :
+      memory_(memory), keeper_(keeper)
   {
   }
 
   // Copy constructor
   template <typename U>
-  CustomAllocator(const CustomAllocator<U> &other) :
-      pool_size_(other.pool_size_), memory_(other.memory_), keeper_(other.keeper_)
+  CustomAllocator(const CustomAllocator<U> &other) : memory_(other.memory_), keeper_(other.keeper_)
   {
   }
 
@@ -68,7 +82,8 @@ template <typename T> class CustomAllocator {
   T *allocate(const std::size_t n)
   {
     T *ptr = nullptr;
-    if (n > pool_size_) {
+    uint64_t pool_size = keeper_->pool_size();
+    if (n > pool_size) {
       // If requested size is larger than pool, allocate separately
       memory_->create<T>(ptr, n, "CustomAllocator_Large");
       keeper_->store(ptr, n);
@@ -76,7 +91,8 @@ template <typename T> class CustomAllocator {
     }
     if (current == nullptr || left < n) {
       // Pool is full or not initialized, request a new pool
-      memory_->create<T>(current, pool_size_, "CustomAllocator_Pool");
+      memory_->create<T>(current, pool_size, "CustomAllocator_Pool");
+      left = pool_size;
     }
     ptr = current;
     left -= n;
@@ -85,7 +101,7 @@ template <typename T> class CustomAllocator {
   }
 
   // Deallocate memory
-  inline void deallocate(T *p, const std::size_t n) const noexcept
+  void deallocate(T *p, const std::size_t n) const noexcept
   {
     // Deallocation can be handled when the allocator is destroyed
     // For pool allocator, individual deallocations are often no-ops
@@ -94,16 +110,14 @@ template <typename T> class CustomAllocator {
   // Equality operators
   template <typename U> bool operator==(const CustomAllocator<U> &other) const noexcept
   {
-    return (keeper_ == other.keeper_) && (memory_ == other.memory_) &&
-        (pool_size_ == other.pool_size_) && (current == other.current) && (left == other.left);
+    return (keeper_ == other.keeper_) && (memory_ == other.memory_) && (current == other.current) &&
+        (left == other.left);
   }
 
-  template <typename U> inline bool operator!=(const CustomAllocator<U> &other) const noexcept
+  template <typename U> bool operator!=(const CustomAllocator<U> &other) const noexcept
   {
     return !(*this == other);
   }
-
-  size_t pool_size_;
 
  private:
   T *current = nullptr;
