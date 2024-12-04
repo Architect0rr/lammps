@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 10,
   "cmakeMinimumRequired": {
     "major": 3,
     "minor": 16,
@@ -7,15 +7,10 @@
   },
   "configurePresets": [
     {
-      "name": "keinConf",
+      "name": "minimal",
       "hidden": false,
       "description": "local kein's configuration preset",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "CMAKE_CXX_FLAGS": "-Ofast",
-        "CMAKE_C_FLAGS": "-Ofast"
-      },
-      "environment": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "CMAKE_CXX_FLAGS": "-Ofast",
         "CMAKE_C_FLAGS": "-Ofast",
@@ -28,19 +23,132 @@
         "BUILD_LAMMPS_SHELL": "no",
         "BUILD_LAMMPS_GUI": "no"
       },
+      "environment": {},
+      "generator": "Unix Makefiles",
+      "binaryDir": "../build"
+    },
+    {
+      "name": "full",
+      "hidden": false,
+      "description": "local kein's configuration preset",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_CXX_FLAGS": "-Ofast",
+        "CMAKE_C_FLAGS": "-Ofast",
+        "CMAKE_INSTALL_PREFIX": "$env{VIRTUAL_ENV}",
+        "LAMMPS_SIZES": "bigbig",
+        "LAMMPS_MACHINE": "mpi",
+        "BUILD_SHARED_LIBS": "yes",
+        "BUILD_LIB": "yes",
+        "BUILD_MPI": "yes",
+        "BUILD_TOOLS": "yes",
+        "BUILD_LAMMPS_SHELL": "no",
+        "BUILD_LAMMPS_GUI": "no",
+        "PKG_ADIOS": "yes",
+        "ADIOS2_DIR": "$env{REPOS}/ADIOS2/build",
+        "PKG_PYTHON": "yes",
+        "Python_EXECUTABLE": "$env{VIRTUAL_ENV}/bin/python3"
+      },
+      "environment": {},
+      "generator": "Unix Makefiles",
+      "binaryDir": "../build"
+    },
+    {
+      "name": "cluster",
+      "hidden": false,
+      "description": "local kein's configuration preset",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_CXX_FLAGS": "-Ofast",
+        "CMAKE_C_FLAGS": "-Ofast",
+        "CMAKE_INSTALL_PREFIX": "$env{VIRTUAL_ENV}",
+        "LAMMPS_SIZES": "bigbig",
+        "LAMMPS_MACHINE": "mpi",
+        "BUILD_SHARED_LIBS": "yes",
+        "BUILD_LIB": "yes",
+        "BUILD_MPI": "yes",
+        "BUILD_TOOLS": "yes",
+        "BUILD_LAMMPS_SHELL": "no",
+        "BUILD_LAMMPS_GUI": "no",
+        "PKG_ADIOS": "yes",
+        "ADIOS2_DIR": "$env{REPOS}/ADIOS2/build",
+        "PKG_PYTHON": "yes",
+        "Python_EXECUTABLE": "$env{VIRTUAL_ENV}/bin/python3",
+        "PKG_COMPRESS": "yes"
+      },
+      "environment": {},
       "generator": "Unix Makefiles",
       "binaryDir": "../build"
     }
   ],
   "buildPresets": [
     {
-      "name": "keinBuild",
+      "name": "minimal",
       "description": "local kein's build preset",
-      "configurePreset": "keinConf",
+      "configurePreset": "minimal",
       "cleanFirst": true,
       "targets": ["all"],
       "inheritConfigureEnvironment": true,
       "jobs": 8
+    },
+    {
+      "name": "full",
+      "description": "local kein's build preset",
+      "configurePreset": "full",
+      "cleanFirst": true,
+      "targets": ["all"],
+      "inheritConfigureEnvironment": true,
+      "jobs": 8
+    },
+    {
+      "name": "cluster",
+      "description": "local kein's build preset",
+      "configurePreset": "cluster",
+      "cleanFirst": true,
+      "targets": ["all"],
+      "inheritConfigureEnvironment": true,
+      "jobs": 16
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "minimal",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "minimal"
+        },
+        {
+          "type": "build",
+          "name": "minimal"
+        }
+      ]
+    },
+    {
+      "name": "full",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "full"
+        },
+        {
+          "type": "build",
+          "name": "full"
+        }
+      ]
+    },
+    {
+      "name": "cluster",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "cluster"
+        },
+        {
+          "type": "build",
+          "name": "cluster"
+        }
+      ]
     }
   ]
 }
