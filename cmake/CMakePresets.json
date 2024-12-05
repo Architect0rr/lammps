@@ -12,6 +12,7 @@
       "description": "local kein's configuration preset",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_CXX_STANDARD": "17",
         "CMAKE_CXX_FLAGS": "-Ofast -std=c++17",
         "CMAKE_C_FLAGS": "-Ofast",
         "LAMMPS_SIZES": "bigbig",
@@ -34,6 +35,7 @@
       "description": "local kein's configuration preset",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_CXX_STANDARD": "17",
         "CMAKE_CXX_FLAGS": "-Ofast -std=c++17",
         "CMAKE_C_FLAGS": "-Ofast",
         "CMAKE_INSTALL_PREFIX": "$env{VIRTUAL_ENV}",
@@ -62,6 +64,7 @@
       "description": "local kein's configuration preset",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_CXX_STANDARD": "17",
         "CMAKE_CXX_FLAGS": "-Ofast -std=c++17",
         "CMAKE_C_FLAGS": "-Ofast",
         "CMAKE_INSTALL_PREFIX": "$env{VIRTUAL_ENV}",
