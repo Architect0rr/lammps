@@ -31,7 +31,7 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 ComputeClusterVolume::ComputeClusterVolume(LAMMPS *lmp, int narg, char **arg) :
-    Compute(lmp, narg, arg), n_cells(0), nloc_grid(0), noff(0), nloc_recv(0)
+    Compute(lmp, narg, arg), n_cells(0), nloc_grid(0), noff(0), nloc_recv(0), precompute(false)
 {
   vector_flag = 1;
   size_vector = 0;
@@ -40,7 +40,7 @@ ComputeClusterVolume::ComputeClusterVolume(LAMMPS *lmp, int narg, char **arg) :
   size_local_rows = 0;
   size_local_cols = 0;
 
-  if (narg < 5) { utils::missing_cmd_args(FLERR, "compute cluster/volume", error); }
+  if (narg < 8) { utils::missing_cmd_args(FLERR, "compute cluster/volume", error); }
 
   // Parse arguments //
 
@@ -52,18 +52,10 @@ ComputeClusterVolume::ComputeClusterVolume(LAMMPS *lmp, int narg, char **arg) :
                style, arg[3]);
   }
 
-  if (::strcmp(arg[4], "rect") == 0) {
-    mode = VOLUMEMODE::RECTANGLE;
-  } else if (::strcmp(arg[4], "sphere") == 0) {
-    mode = VOLUMEMODE::SPHERE;
-  } else {
-    error->all(FLERR, "Unknown mode for compute {}: {}", style, arg[4]);
-  }
-
   // Get the critical size
   size_cutoff = compute_cluster_size->get_size_cutoff();
-  if ((narg >= 6) && (::strcmp(arg[5], "inherit") != 0)) {
-    int const t_size_cutoff = utils::inumeric(FLERR, arg[5], true, lmp);
+  if (::strcmp(arg[4], "inherit") != 0) {
+    const int t_size_cutoff = utils::inumeric(FLERR, arg[4], true, lmp);
     if (t_size_cutoff < 1) {
       error->all(FLERR, "size_cutoff for compute {} must be greater than 0", style);
     }
@@ -74,9 +66,38 @@ ComputeClusterVolume::ComputeClusterVolume(LAMMPS *lmp, int narg, char **arg) :
     }
   }
 
-  precompute = false;
+  if (::strcmp(arg[5], "rect") == 0) {
+    mode = VOLUMEMODE::RECTANGLE;
+    // } else if (::strcmp(arg[5], "sphere") == 0) {
+    //   mode = VOLUMEMODE::SPHERE;
+  } else if (::strcmp(arg[5], "calc") == 0) {
+    mode = VOLUMEMODE::CALC;
+  } else {
+    error->all(FLERR, "Unknown mode for compute {}: {}", style, arg[5]);
+  }
+
+  overlap = utils::numeric(FLERR, arg[6], true, lmp);
   overlap_sq = overlap * overlap;
-  n_cells = static_cast<int>(overlap / voxel_size) + 1;    // should I place +1 here?
+  if (overlap < 0) { error->all(FLERR, "Minimum distance for {} must be non-negative", style); }
+
+  voxel_size = utils::numeric(FLERR, arg[7], true, lmp);
+  if (voxel_size < 0) { error->all(FLERR, "voxel size for {} must be non-negative", style); }
+  if (voxel_size > overlap) {
+    error->all(FLERR, "voxel size for {} must be less than overlap", style);
+  }
+
+  int iarg = 8;
+
+  while (iarg < narg) {
+    if (::strcmp(arg[iarg], "precompute") == 0) {
+      precompute = true;
+      iarg += 1;
+    } else {
+      error->all(FLERR, "Illegal {} option {}", style, arg[iarg]);
+    }
+  }
+
+  n_cells = static_cast<int>(overlap / voxel_size);
 
   size_local_rows = size_cutoff + 1;
   size_vector = size_cutoff + 1;
