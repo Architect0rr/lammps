@@ -5,10 +5,10 @@
    LAMMPS development team: developers@lammps.org
 ------------------------------------------------------------------------- */
 
-#include "dump_cluster_csv.h"
+#include "dump_cluster_csv_ext.h"
 #include "comm.h"
 #include "compute.h"
-#include "compute_cluster_size.h"
+#include "compute_cluster_size_ext.h"
 #include "error.h"
 #include "fmt/base.h"
 #include "memory.h"
@@ -23,7 +23,7 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-DumpClusterCSV::DumpClusterCSV(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
+DumpClusterCSVExT::DumpClusterCSVExT(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, narg, arg)
 {
   if (narg < 9) { error->all(FLERR, "Illegal dump vector command"); }
   clearstep = 1;
@@ -33,8 +33,8 @@ DumpClusterCSV::DumpClusterCSV(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, na
   has_id = 0;
   filewriter = static_cast<int>(comm->me == 0);
 
-  ComputeClusterSize *compute_cluster_size =
-      dynamic_cast<ComputeClusterSize *>(modify->get_compute_by_id(arg[5]));
+  ComputeClusterSizeExt *compute_cluster_size =
+      dynamic_cast<ComputeClusterSizeExt *>(modify->get_compute_by_id(arg[5]));
   if (compute_cluster_size == nullptr) {
     error->all(FLERR, "{}: Cannot find compute cluster/size with id: {}", style, arg[4]);
   }
@@ -113,7 +113,7 @@ DumpClusterCSV::DumpClusterCSV(LAMMPS *lmp, int narg, char **arg) : Dump(lmp, na
 
 /* ---------------------------------------------------------------------- */
 
-DumpClusterCSV::~DumpClusterCSV()
+DumpClusterCSVExT::~DumpClusterCSVExT()
 {
   for (int i = 0; i < num_vectors; ++i) {
     if (file_vectors[i] != nullptr) {
@@ -131,12 +131,12 @@ DumpClusterCSV::~DumpClusterCSV()
   if (compute_scalars != nullptr) { memory->destroy(compute_scalars); }
 }
 
-void DumpClusterCSV::init_style()
+void DumpClusterCSVExT::init_style()
 {
   // Initialize the vector data if needed
 }
 
-void DumpClusterCSV::write_header(bigint /*ndump*/)
+void DumpClusterCSVExT::write_header(bigint /*ndump*/)
 {
   // Write the header for the CSV file for each compute
   if (num_scalars > 0) {
@@ -153,7 +153,7 @@ void DumpClusterCSV::write_header(bigint /*ndump*/)
 
 /* ---------------------------------------------------------------------- */
 
-void DumpClusterCSV::write()
+void DumpClusterCSVExT::write()
 {
   // Write the vector data to the CSV file for each compute
   for (int i = 0; i < num_vectors; ++i) {

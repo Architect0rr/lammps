@@ -13,12 +13,12 @@
 
 #ifdef DUMP_CLASS
 // clang-format off
-DumpStyle(cluster/csv,DumpClusterCSV);
+DumpStyle(cluster/csv/ext,DumpClusterCSVExT);
 // clang-format on
 #else
 
-#ifndef LMP_DUMP_CLUSTER_CSV_H
-#define LMP_DUMP_CLUSTER_CSV_H
+#ifndef LMP_DUMP_CLUSTER_CSV_ExT_H
+#define LMP_DUMP_CLUSTER_CSV_ExT_H
 
 #include "compute.h"
 #include "dump.h"
@@ -26,10 +26,10 @@ DumpStyle(cluster/csv,DumpClusterCSV);
 
 namespace LAMMPS_NS {
 
-class DumpClusterCSV : public Dump {
+class DumpClusterCSVExT : public Dump {
  public:
-  DumpClusterCSV(LAMMPS *, int, char **);
-  ~DumpClusterCSV() override;
+  DumpClusterCSVExT(LAMMPS *, int, char **);
+  ~DumpClusterCSVExT() override;
 
  protected:
   Compute **compute_vectors{};    // array to store pointers to the vector data computes
