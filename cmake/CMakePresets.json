@@ -12,7 +12,7 @@
       "description": "local kein's configuration preset",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "CMAKE_CXX_FLAGS": "-Ofast",
+        "CMAKE_CXX_FLAGS": "-Ofast -std=c++17",
         "CMAKE_C_FLAGS": "-Ofast",
         "LAMMPS_SIZES": "bigbig",
         "LAMMPS_MACHINE": "mpi",
@@ -21,7 +21,8 @@
         "BUILD_MPI": "yes",
         "BUILD_TOOLS": "yes",
         "BUILD_LAMMPS_SHELL": "no",
-        "BUILD_LAMMPS_GUI": "no"
+        "BUILD_LAMMPS_GUI": "no",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": true
       },
       "environment": {},
       "generator": "Unix Makefiles",
@@ -33,7 +34,7 @@
       "description": "local kein's configuration preset",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "CMAKE_CXX_FLAGS": "-Ofast",
+        "CMAKE_CXX_FLAGS": "-Ofast -std=c++17",
         "CMAKE_C_FLAGS": "-Ofast",
         "CMAKE_INSTALL_PREFIX": "$env{VIRTUAL_ENV}",
         "LAMMPS_SIZES": "bigbig",
@@ -47,7 +48,9 @@
         "PKG_ADIOS": "yes",
         "ADIOS2_DIR": "$env{REPOS}/ADIOS2/build",
         "PKG_PYTHON": "yes",
-        "Python_EXECUTABLE": "$env{VIRTUAL_ENV}/bin/python3"
+        "Python_EXECUTABLE": "$env{VIRTUAL_ENV}/bin/python3",
+        "PKG_COMPRESS": "yes",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": true
       },
       "environment": {},
       "generator": "Unix Makefiles",
@@ -59,7 +62,7 @@
       "description": "local kein's configuration preset",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "CMAKE_CXX_FLAGS": "-Ofast",
+        "CMAKE_CXX_FLAGS": "-Ofast -std=c++17",
         "CMAKE_C_FLAGS": "-Ofast",
         "CMAKE_INSTALL_PREFIX": "$env{VIRTUAL_ENV}",
         "LAMMPS_SIZES": "bigbig",
