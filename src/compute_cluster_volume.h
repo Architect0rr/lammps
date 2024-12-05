@@ -23,8 +23,6 @@ ComputeStyle(cluster/volume,ComputeClusterVolume);
 #include "compute.h"
 #include "compute_cluster_size_ext.h"
 
-#include <array>
-
 namespace LAMMPS_NS {
 
 enum class VOLUMEMODE { RECTANGLE = 0, SPHERE = 1, CALC = 2 };
@@ -53,24 +51,24 @@ class ComputeClusterVolume : public Compute {
   double overlap_sq{};
 
   // VOLUMEMODE::CALC
-  bool *occupancy_grid;
+  bool *occupancy_grid{};
   bigint nloc_grid;
   int n_cells;
   bool precompute;
-  int *offsets;
+  int *offsets{};
   int noff;
-  int noffsets;
+  int noffsets{};
 
   // VOLUMEMODE::RECTANGLE
-  double *bboxes;
+  double *bboxes{};
 
-  ::MPI_Request *in_reqs;
-  ::MPI_Request *out_reqs;
+  ::MPI_Request *in_reqs{};
+  ::MPI_Request *out_reqs{};
 
   //   ::MPI_Status *in_stats;
   //   ::MPI_Status *out_stats;
 
-  double *recv_buf;
+  double *recv_buf{};
   bigint nloc_recv;
 
   // with AVX512 occupied_volume_grid works faster, than precomputed version
