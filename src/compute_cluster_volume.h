@@ -77,6 +77,25 @@ class ComputeClusterVolume : public Compute {
   double occupied_volume_grid(const int *const list, const int n, const int nghost,
                               bool nonexclusive) noexcept;
   void cluster_bbox(const int *const list, const int n, double *bbox) const noexcept;
+
+  template <typename TYPE> TYPE **create_ptr_array(TYPE **&array, int n, const char *name)
+  {
+    array = n <= 0 ? nullptr : static_cast<TYPE **>(memory->smalloc(sizeof(TYPE *) * n, name));
+    // for (int i = 0; i < n; ++i) { array[i] = nullptr; }
+    return array;
+  }
+  template <typename TYPE> TYPE **grow_ptr_array(TYPE **&array, int n, const char *name)
+  {
+    if (n <= 0) {
+      memory->destroy(array);
+      return nullptr;
+    }
+
+    if (array == nullptr) return create_ptr_array(array, n, name);
+
+    array = static_cast<TYPE **>(memory->srealloc(array, sizeof(TYPE *) * n, name));
+    return array;
+  }
 };
 
 }    // namespace LAMMPS_NS

@@ -211,8 +211,8 @@ void ComputeClusterVolume::compute_local()
 
   if (nloc_recv < compute_cluster_size->nonexclusive) {
     nloc_recv = static_cast<bigint>(compute_cluster_size->nonexclusive * LMP_NUCC_ALLOC_COEFF);
-    memory->grow(in_reqs, comm->nprocs * nloc_recv, "ComputeClusterVolume:in_reqs");
-    memory->grow(out_reqs, comm->nprocs * nloc_recv, "ComputeClusterVolume:out_reqs");
+    grow_ptr_array(in_reqs, comm->nprocs * nloc_recv, "ComputeClusterVolume:in_reqs");
+    grow_ptr_array(out_reqs, comm->nprocs * nloc_recv, "ComputeClusterVolume:out_reqs");
 
     if (mode == VOLUMEMODE::RECTANGLE) {
       memory->grow(recv_buf, comm->nprocs * nloc_recv, "ComputeClusterVolume:recv_buf");
