@@ -13,6 +13,7 @@
 
 #include "compute_cluster_ke.h"
 #include "compute_cluster_size.h"
+#include "nucc_cspan.hpp"
 
 #include "atom.h"
 #include "comm.h"
@@ -27,6 +28,7 @@
 #include <unordered_map>
 
 using namespace LAMMPS_NS;
+using NUCC::cspan;
 
 /* ---------------------------------------------------------------------- */
 
@@ -85,22 +87,14 @@ ComputeClusterKE::ComputeClusterKE(LAMMPS *lmp, int narg, char **arg) :
     error->all(FLERR, "compute {}: Cannot find compute with style 'ke/atom'", style);
   }
   compute_ke_atom = computes[0];
-
-  size_local_rows = size_cutoff + 1;
-  memory->create(local_kes, size_local_rows + 1, "compute:cluster/ke:local_kes");
-  vector_local = local_kes;
-
-  size_vector = size_cutoff + 1;
-  memory->create(kes, size_vector + 1, "compute:cluster/ke:kes");
-  vector = kes;
 }
 
 /* ---------------------------------------------------------------------- */
 
 ComputeClusterKE::~ComputeClusterKE() noexcept(true)
 {
-  if (local_kes != nullptr) { memory->destroy(local_kes); }
-  if (kes != nullptr) { memory->destroy(kes); }
+  local_kes.destroy(memory);
+  kes.destroy(memory);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -110,6 +104,16 @@ void ComputeClusterKE::init()
   if ((modify->get_compute_by_style(style).size() > 1) && (comm->me == 0)) {
     error->warning(FLERR, "More than one compute {}", style);
   }
+
+  size_local_rows = size_cutoff + 1;
+  // memory->create(local_kes,
+  local_kes.create(memory, size_local_rows, "compute:cluster/ke:local_kes");
+  vector_local = local_kes.data();
+
+  size_vector = size_cutoff + 1;
+  // memory->create(kes, size_vector + 1, "compute:cluster/ke:kes");
+  kes.create(memory, size_vector, "compute:cluster/ke:kes");
+  vector = kes.data();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -120,8 +124,9 @@ void ComputeClusterKE::compute_vector()
 
   compute_local();
 
-  ::memset(kes, 0.0, size_vector * sizeof(double));
-  ::MPI_Allreduce(local_kes, kes, size_vector, MPI_DOUBLE, MPI_SUM, world);
+  // ::memset(kes, 0.0, size_vector * sizeof(double));
+  kes.reset();
+  ::MPI_Allreduce(local_kes.data(), kes.data(), size_vector, MPI_DOUBLE, MPI_SUM, world);
 
   const double *dist = compute_cluster_size->vector;
   for (int i = 0; i < size_vector; ++i) {
@@ -142,7 +147,8 @@ void ComputeClusterKE::compute_local()
   if (compute_ke_atom->invoked_peratom != update->ntimestep) { compute_ke_atom->compute_peratom(); }
 
   const double *const peratomkes = compute_ke_atom->vector_atom;
-  ::memset(local_kes, 0.0, size_local_rows * sizeof(double));
+  // ::memset(local_kes, 0.0, size_local_rows * sizeof(double));
+  local_kes.reset();
 
   for (const auto &[size, vec] : compute_cluster_size->cIDs_by_size) {
     if (size < size_cutoff) {

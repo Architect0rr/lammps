@@ -6,8 +6,10 @@
 ------------------------------------------------------------------------- */
 
 #include "fix_cluster_crush_delete.h"
-#include "fmt/base.h"
-#include <cmath>
+#include "compute_cluster_size.h"
+#include "compute_cluster_temps.h"
+#include "fix_regen.h"
+#include "nucc_cspan.hpp"
 
 #include "atom.h"
 #include "atom_vec.h"
@@ -19,11 +21,13 @@
 #include "domain.h"
 #include "error.h"
 #include "fix.h"
-#include "fix_regen.h"
+#include "fmt/base.h"
 #include "memory.h"
 #include "modify.h"
+#include "region.h"
 #include "update.h"
 
+#include <cmath>
 #include <cstring>
 #include <unordered_map>
 
@@ -36,8 +40,8 @@ constexpr int DEFAULT_MAXTRY = 1000;
 
 FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) :
     Fix(lmp, narg, arg), screenflag(1), fileflag(0), scaleflag(0), next_step(0), nloc(0),
-    p2m(nullptr), at_once(1), groupname(std::string()), fix_temp(false), maxtry(::DEFAULT_MAXTRY),
-    ntype(0), sigma(0), reneigh_forced(false), ninserted_prev(0)
+    at_once(1), groupname(std::string()), fix_temp(false), maxtry(::DEFAULT_MAXTRY), ntype(0),
+    sigma(0), reneigh_forced(false), ninserted_prev(0)
 {
   restart_pbc = 1;
 
@@ -167,15 +171,12 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) 
 
   next_step = update->ntimestep - (update->ntimestep % nevery);
 
-  memory->create(pproc, comm->nprocs * sizeof(int), "cluster/crush:pproc");
-  memory->create(c2c, comm->nprocs * sizeof(int), "cluster/crush:c2c");
-
   // Get temp compute
   auto temp_computes = lmp->modify->get_compute_by_style("temp");
   if (temp_computes.empty()) {
     error->all(FLERR, "compute supersaturation: Cannot find compute with style 'temp'.");
   }
-  compute_temp = temp_computes[0];
+  compute_temp = dynamic_cast<ComputeClusterTemp *>(temp_computes[0]);
   if (atom->mass_setflag[ntype] == 0) {
     error->all(FLERR, "Fix cluster/crush_delete: Atom mass for atom type {} is not set!", ntype);
   }
@@ -190,9 +191,9 @@ FixClusterCrushDelete::~FixClusterCrushDelete() noexcept(true)
     ::fflush(fp);
     ::fclose(fp);
   }
-  if (pproc != nullptr) { memory->destroy(pproc); }
-  if (c2c != nullptr) { memory->destroy(c2c); }
-  if (p2m != nullptr) { memory->destroy(p2m); }
+  pproc.destroy(memory);
+  c2c.destroy(memory);
+  p2m.destroy(memory);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -202,6 +203,14 @@ void FixClusterCrushDelete::init()
   if ((modify->get_fix_by_style(style).size() > 1) && (comm->me == 0)) {
     error->warning(FLERR, "More than one fix {}", style);
   }
+
+  // memory->create(pproc, comm->nprocs * sizeof(int), "cluster/crush:pproc");
+  // memory->create(c2c, comm->nprocs * sizeof(int), "cluster/crush:c2c");
+  pproc.create(memory, comm->nprocs, "cluster/crush:pproc");
+  c2c.create(memory, comm->nprocs, "cluster/crush:c2c");
+
+  nloc = atom->nlocal;
+  p2m.create(memory, nloc, "fix cluster/crush:p2m");
 
   std::string fixcmd =
       fmt::format("CCDREGENFIX all regen 1 {} 1 {} {} region {} near {} "
@@ -223,7 +232,7 @@ int FixClusterCrushDelete::setmask()
 
 /* ---------------------------------------------------------------------- */
 
-[[gnu::hot]] void FixClusterCrushDelete::pre_exchange()
+void FixClusterCrushDelete::pre_exchange()
 {
   if (reneigh_forced) {
     next_reneighbor = 0;
@@ -233,17 +242,18 @@ int FixClusterCrushDelete::setmask()
   if (update->ntimestep < next_step) { return; }
   next_step = update->ntimestep + nevery;
 
-  if (compute_cluster_size->invoked_vector < update->ntimestep - (nevery / 2)) {
+  if (compute_cluster_size->invoked_vector < update->ntimestep) {
     compute_cluster_size->compute_vector();
   }
-  const auto cIDs_by_size = compute_cluster_size->cIDs_by_size;
-  auto atoms_by_cID = compute_cluster_size->atoms_by_cID;
+  const auto &cIDs_by_size = compute_cluster_size->cIDs_by_size;
+  auto &atoms_by_cID = compute_cluster_size->atoms_by_cID;
 
-  if ((nloc < atom->nlocal) && (p2m != nullptr)) { memory->destroy(p2m); }
-  if ((nloc < atom->nlocal) || (p2m == nullptr)) {
+  if (nloc < atom->nlocal) {
     nloc = atom->nlocal;
-    memory->create(p2m, nloc * sizeof(int), "fix cluster/crush:p2m");
-    ::memset(p2m, 0, nloc);
+    p2m.grow(memory, nloc, "fix cluster/crush:p2m");
+    // memory->create(p2m, nloc * sizeof(int), "fix cluster/crush:p2m");
+    // ::memset(p2m, 0, nloc);
+    p2m.reset();
   }
 
   // Count amount of local clusters to crush
@@ -254,8 +264,9 @@ int FixClusterCrushDelete::setmask()
   for (const auto &[size, cIDs] : cIDs_by_size) {
     if (size > kmax) {
       clusters2crush_local += cIDs.size();
-      for (const int cID : cIDs) {
-        for (const int pID : atoms_by_cID[cID]) {
+      for (int cID : cIDs) {
+        const auto &vec = atoms_by_cID[cID];
+        for (int pID : vec) {
           p2m[atoms2move_local] = pID;
           ++atoms2move_local;
         }
@@ -263,13 +274,15 @@ int FixClusterCrushDelete::setmask()
     }
   }
 
-  ::memset(c2c, 0, comm->nprocs * sizeof(int));
+  // ::memset(c2c, 0, comm->nprocs * sizeof(int));
+  c2c.reset();
   c2c[comm->me] = clusters2crush_local;
-  ::MPI_Allgather(&clusters2crush_local, 1, MPI_LMP_BIGINT, c2c, 1, MPI_LMP_BIGINT, world);
+  ::MPI_Allgather(&clusters2crush_local, 1, MPI_INT, c2c.data(), 1, MPI_INT, world);
 
-  ::memset(pproc, 0, comm->nprocs * sizeof(int));
+  // ::memset(pproc, 0, comm->nprocs * sizeof(int));
+  pproc.reset();
   pproc[comm->me] = atoms2move_local;
-  ::MPI_Allgather(&atoms2move_local, 1, MPI_INT, pproc, 1, MPI_INT, world);
+  ::MPI_Allgather(&atoms2move_local, 1, MPI_INT, pproc.data(), 1, MPI_INT, world);
 
   bigint atoms2move_total = 0;
   bigint clusters2crush_total = 0;
@@ -346,7 +359,7 @@ void FixClusterCrushDelete::postDelete() noexcept(true)
   // reset atom->natoms and also topology counts
 
   bigint nblocal = atom->nlocal;
-  ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_INT, MPI_SUM, world);
 
   // reset bonus data counts
 
@@ -358,19 +371,19 @@ void FixClusterCrushDelete::postDelete() noexcept(true)
 
   if (atom->nellipsoids > 0) {
     nlocal_bonus = avec_ellipsoid->nlocal_bonus;
-    ::MPI_Allreduce(&nlocal_bonus, &atom->nellipsoids, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    ::MPI_Allreduce(&nlocal_bonus, &atom->nellipsoids, 1, MPI_INT, MPI_SUM, world);
   }
   if (atom->nlines > 0) {
     nlocal_bonus = avec_line->nlocal_bonus;
-    ::MPI_Allreduce(&nlocal_bonus, &atom->nlines, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    ::MPI_Allreduce(&nlocal_bonus, &atom->nlines, 1, MPI_INT, MPI_SUM, world);
   }
   if (atom->ntris > 0) {
     nlocal_bonus = avec_tri->nlocal_bonus;
-    ::MPI_Allreduce(&nlocal_bonus, &atom->ntris, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    ::MPI_Allreduce(&nlocal_bonus, &atom->ntris, 1, MPI_INT, MPI_SUM, world);
   }
   if (atom->nbodies > 0) {
     nlocal_bonus = avec_body->nlocal_bonus;
-    ::MPI_Allreduce(&nlocal_bonus, &atom->nbodies, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    ::MPI_Allreduce(&nlocal_bonus, &atom->nbodies, 1, MPI_INT, MPI_SUM, world);
   }
 
   // reset atom->map if it exists

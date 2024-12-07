@@ -21,12 +21,11 @@ ComputeStyle(cluster/size,ComputeClusterSize);
 #define LMP_COMPUTE_CLUSTER_SIZE_H
 
 #include "compute.h"
-#include "region.h"
 
+#include "nucc_cspan.hpp"
 #include <unordered_map>
 
 namespace LAMMPS_NS {
-
 class ComputeClusterSize : public Compute {
  public:
   ComputeClusterSize(class LAMMPS *lmp, int narg, char **arg);
@@ -36,20 +35,20 @@ class ComputeClusterSize : public Compute {
   void compute_peratom() override;
   double memory_usage() override;
 
-  int get_size_cutoff() const noexcept(true);
+  inline constexpr int get_size_cutoff() const noexcept { return size_cutoff; }
+  inline constexpr NUCC::cspan<const double> get_data() const noexcept { return dist; }
 
-  std::unordered_map<bigint, std::vector<int>> atoms_by_cID;       // Mapping cID  -> local idx
-  std::unordered_map<bigint, std::vector<bigint>> cIDs_by_size;    // Mapping size -> cIDs
+  std::unordered_map<int, std::vector<int>> atoms_by_cID;    // Mapping cID  -> local idx
+  std::unordered_map<int, std::vector<int>> cIDs_by_size;    // Mapping size -> cIDs
 
  private:
-  int nloc;                // number of reserved elements in atoms_by_cID and cIDs_by_size
-  int nloc_atom;           // nunber of reserved elements in peratom array
-  double *peratom_size;    // peratom array (size of cluster it is in)
-  double *dist;            // cluster size distribution (vector == dist)
-  bigint nc_global;        // number of clusters total
-  int size_cutoff;         // number of elements reserved in dist
+  int nloc;         // number of reserved elements in atoms_by_cID and cIDs_by_size
+  int nloc_atom;    // nunber of reserved elements in peratom array
+  NUCC::cspan<double> peratom_size;    // peratom array (size of cluster it is in)
+  NUCC::cspan<double> dist;            // cluster size distribution (vector == dist)
+  int nc_global;                       // number of clusters total
+  int size_cutoff;                     // number of elements reserved in dist
 
-  Region *region = nullptr;
   Compute *compute_cluster_atom = nullptr;
 };
 

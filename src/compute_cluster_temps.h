@@ -21,10 +21,11 @@ ComputeStyle(cluster/temp,ComputeClusterTemp);
 #define LMP_COMPUTE_CLUSTER_TEMP_H
 
 #include "compute.h"
-#include "compute_cluster_size.h"
+#include "nucc_cspan.hpp"
 
 namespace LAMMPS_NS {
-
+class ComputeClusterSize;
+class ComputeClusterKE;
 class ComputeClusterTemp : public Compute {
  public:
   ComputeClusterTemp(class LAMMPS *lmp, int narg, char **arg);
@@ -33,12 +34,14 @@ class ComputeClusterTemp : public Compute {
   void compute_vector() override;
   double memory_usage() override;
 
+  inline constexpr NUCC::cspan<const double> get_data() const noexcept { return temp; }
+
  private:
   ComputeClusterSize *compute_cluster_size = nullptr;
-  Compute *compute_cluster_ke = nullptr;
+  ComputeClusterKE *compute_cluster_ke = nullptr;
 
-  double *temp = nullptr;    // array of temps of global clusters
-  int size_cutoff;           // size of max cluster
+  NUCC::cspan<double> temp;    // array of temps of global clusters
+  int size_cutoff;             // size of max cluster
 };
 
 }    // namespace LAMMPS_NS

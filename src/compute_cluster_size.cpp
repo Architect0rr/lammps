@@ -27,8 +27,7 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 ComputeClusterSize::ComputeClusterSize(LAMMPS *lmp, int narg, char **arg) :
-    Compute(lmp, narg, arg), nloc(0), nloc_atom(0), peratom_size(nullptr), dist(nullptr),
-    nc_global(0)
+    Compute(lmp, narg, arg), nloc(0), nloc_atom(0), nc_global(0)
 {
   vector_flag = 1;
   extvector = 0;
@@ -56,18 +55,16 @@ ComputeClusterSize::ComputeClusterSize(LAMMPS *lmp, int narg, char **arg) :
   if (size_cutoff < 1) {
     error->all(FLERR, "size_cutoff for compute cluster/size must be greater than 0");
   }
-
-  size_vector = size_cutoff + 1;
-  dist = memory->create(dist, (size_vector + 1) * sizeof(double), "compute:cluster/size:dist");
-  vector = dist;
 }
 
 /* ---------------------------------------------------------------------- */
 
 ComputeClusterSize::~ComputeClusterSize() noexcept(true)
 {
-  if (dist != nullptr) { memory->destroy(dist); }
-  if (peratom_size != nullptr) { memory->destroy(peratom_size); }
+  // memory->destroy(dist);
+  dist.destroy(memory);
+  // memory->destroy(peratom_size);
+  peratom_size.destroy(memory);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -78,10 +75,17 @@ void ComputeClusterSize::init()
     error->warning(FLERR, "More than one compute {}", style);
   }
 
+  // dist = memory->create(dist, (size_vector + 1) * sizeof(double), "compute:cluster/size:dist");
+  size_vector = size_cutoff + 1;
+  dist.create(memory, size_vector, "compute:cluster/size:dist");
+  vector = dist.data();
+
   nloc_atom = atom->nlocal;
-  peratom_size = memory->create(peratom_size, nloc_atom * sizeof(double), "cluster_size:peratom");
-  ::memset(peratom_size, 0.0, nloc_atom * sizeof(double));
-  vector_atom = peratom_size;
+  // peratom_size = memory->create(peratom_size, nloc_atom * sizeof(double), "cluster_size:peratom");
+  peratom_size.create(memory, nloc_atom, "cluster_size:peratom");
+  // ::memset(peratom_size, 0.0, nloc_atom * sizeof(double));
+  peratom_size.reset();
+  vector_atom = peratom_size.data();
 
   initialized_flag = 1;
 }
@@ -111,19 +115,20 @@ void ComputeClusterSize::compute_vector()
   // Sort atom IDs by cluster IDs
   for (int i = 0; i < atom->nlocal; ++i) {
     if ((atom->mask[i] & groupbit) != 0) {
-      atoms_by_cID[static_cast<bigint>(cluster_ids[i])].emplace_back(i);
+      atoms_by_cID[static_cast<int>(cluster_ids[i])].emplace_back(i);
     }
   }
 
   nc_global = 0;
-  ::memset(dist, 0.0, size_vector * sizeof(double));
+  // ::memset(dist, 0.0, size_vector * sizeof(double));
+  dist.reset();
 
   // Sum cluster size over all procs
-  bigint l_size = 0;    // local size of cluster
-  bigint g_size = 0;    // global size of cluster
-  for (bigint i = 1; i <= atom->natoms; ++i) {
+  int l_size = 0;    // local size of cluster
+  int g_size = 0;    // global size of cluster
+  for (int i = 1; i <= atom->natoms; ++i) {
     l_size = atoms_by_cID.count(i) == 0 ? 0 : atoms_by_cID[i].size();
-    ::MPI_Allreduce(&l_size, &g_size, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    ::MPI_Allreduce(&l_size, &g_size, 1, MPI_INT, MPI_SUM, world);
     if (l_size > 0) { cIDs_by_size[g_size].emplace_back(i); }
     if (g_size > 0) {
       if (g_size < size_cutoff) { dist[g_size] += 1; }
@@ -140,16 +145,18 @@ void ComputeClusterSize::compute_peratom()
 {
   invoked_peratom = update->ntimestep;
 
-  if ((nloc_atom < atom->nlocal) && (peratom_size != nullptr)) { memory->destroy(peratom_size); }
+  if (invoked_vector != update->ntimestep) { compute_vector(); }
 
-  if ((nloc_atom < atom->nlocal) && (peratom_size == nullptr)) {
+  if (nloc_atom < atom->nlocal) {
     nloc_atom = atom->nlocal;
-    peratom_size = memory->create(peratom_size, nloc_atom * sizeof(double), "cluster_size:peratom");
-    ::memset(peratom_size, 0.0, nloc_atom * sizeof(double));
-    vector_atom = peratom_size;
+    // peratom_size = memory->create(peratom_size, nloc_atom * sizeof(double), "cluster_size:peratom");
+    peratom_size.grow(memory, nloc_atom, "cluster_size:peratom");
+    // ::memset(peratom_size, 0.0, nloc_atom * sizeof(double));
+    peratom_size.reset();
+    vector_atom = peratom_size.data();
   }
 
-  for (auto [size, cIDs] : cIDs_by_size) {
+  for (const auto &[size, cIDs] : cIDs_by_size) {
     for (auto cID : cIDs) {
       for (auto pID : atoms_by_cID[cID]) { peratom_size[pID] = size; }
     }
@@ -176,8 +183,3 @@ double ComputeClusterSize::memory_usage()
 }
 
 /* ---------------------------------------------------------------------- */
-
-int ComputeClusterSize::get_size_cutoff() const noexcept(true)
-{
-  return size_cutoff;
-}

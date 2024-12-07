@@ -21,10 +21,10 @@ ComputeStyle(cluster/ke,ComputeClusterKE);
 #define LMP_COMPUTE_CLUSTER_KE_H
 
 #include "compute.h"
-#include "compute_cluster_size.h"
+#include "nucc_cspan.hpp"
 
 namespace LAMMPS_NS {
-
+class ComputeClusterSize;
 class ComputeClusterKE : public Compute {
  public:
   ComputeClusterKE(class LAMMPS *lmp, int narg, char **arg);
@@ -34,15 +34,16 @@ class ComputeClusterKE : public Compute {
   void compute_local() override;
   double memory_usage() override;
 
-  //   int substract_vcm;
+  inline constexpr NUCC::cspan<const double> get_data() const noexcept { return kes; }
+  inline constexpr NUCC::cspan<const double> get_data_local() const noexcept { return local_kes; }
 
  private:
   ComputeClusterSize *compute_cluster_size = nullptr;
   Compute *compute_ke_atom = nullptr;
 
-  double *kes = nullptr;          // array of kes of global clusters
-  double *local_kes = nullptr;    // array of kes of local clusters
-  int size_cutoff;                // size of max cluster
+  NUCC::cspan<double> kes;          // array of kes of global clusters
+  NUCC::cspan<double> local_kes;    // array of kes of local clusters
+  int size_cutoff;                  // size of max cluster
 };
 
 }    // namespace LAMMPS_NS

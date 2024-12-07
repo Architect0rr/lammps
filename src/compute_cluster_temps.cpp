@@ -12,6 +12,7 @@
 ------------------------------------------------------------------------- */
 
 #include "compute_cluster_temps.h"
+#include "compute_cluster_ke.h"
 #include "compute_cluster_size.h"
 
 #include "comm.h"
@@ -24,6 +25,7 @@
 #include <cstring>
 
 using namespace LAMMPS_NS;
+using NUCC::cspan;
 
 /* ---------------------------------------------------------------------- */
 
@@ -59,18 +61,14 @@ ComputeClusterTemp::ComputeClusterTemp(LAMMPS *lmp, int narg, char **arg) : Comp
   if (computes.empty()) {
     error->all(FLERR, "{}: Cannot find compute with style 'cluster/ke'", style);
   }
-  compute_cluster_ke = computes[0];
-
-  size_vector = size_cutoff + 1;
-  memory->create(temp, size_vector + 1, "cluster/temp:temp");
-  vector = temp;
+  compute_cluster_ke = dynamic_cast<ComputeClusterKE *>(computes[0]);
 }
 
 /* ---------------------------------------------------------------------- */
 
 ComputeClusterTemp::~ComputeClusterTemp() noexcept(true)
 {
-  if (temp != nullptr) { memory->destroy(temp); }
+  temp.destroy(memory);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -80,6 +78,11 @@ void ComputeClusterTemp::init()
   if ((modify->get_compute_by_style(style).size() > 1) && (comm->me == 0)) {
     error->warning(FLERR, "More than one compute {}", style);
   }
+
+  size_vector = size_cutoff + 1;
+  // memory->create(temp, size_vector + 1, "cluster/temp:temp");
+  temp.create(memory, size_vector, "cluster/temp:temp");
+  vector = temp.data();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -96,9 +99,10 @@ void ComputeClusterTemp::compute_vector()
     compute_cluster_ke->compute_vector();
   }
 
-  const double *const kes = compute_cluster_ke->vector;
-  ::memset(temp, 0.0, size_vector * sizeof(double));
-  const double *const dist = compute_cluster_size->vector;
+  cspan<const double> kes = compute_cluster_ke->get_data();
+  // ::memset(temp, 0.0, size_vector * sizeof(double));
+  temp.reset();
+  cspan<const double> dist = compute_cluster_size->get_data();
   for (int i = 0; i < size_cutoff; ++i) {
     if (dist[i] > 0) { temp[i] = 2 * kes[i] / i / domain->dimension; }
   }

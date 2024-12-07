@@ -13,14 +13,14 @@ FixStyle(cluster/crush_delete,FixClusterCrushDelete);
 #ifndef LAMMPS_FIX_CLUSTER_CRUSH_DELETE_H
 #define LAMMPS_FIX_CLUSTER_CRUSH_DELETE_H
 
-#include "compute.h"
-#include "compute_cluster_size.h"
 #include "fix.h"
-#include "fix_regen.h"
-#include "region.h"
+#include "nucc_cspan.hpp"
 
 namespace LAMMPS_NS {
-
+class Region;
+class ComputeClusterSize;
+class ComputeClusterTemp;
+class FixRegen;
 class FixClusterCrushDelete : public Fix {
  public:
   FixClusterCrushDelete(class LAMMPS *lmp, int narg, char **arg);
@@ -32,7 +32,7 @@ class FixClusterCrushDelete : public Fix {
  protected:
   Region *region = nullptr;
   ComputeClusterSize *compute_cluster_size = nullptr;
-  Compute *compute_temp = nullptr;
+  ComputeClusterTemp *compute_temp = nullptr;
   FixRegen *fix_regen = nullptr;
 
   int xseed;
@@ -46,9 +46,9 @@ class FixClusterCrushDelete : public Fix {
   int kmax;
 
   int nloc;
-  int *p2m;
-  int *pproc{};    // number of atoms to move per rank
-  bigint *c2c{};
+  NUCC::cspan<int> p2m;
+  NUCC::cspan<int> pproc;    // number of atoms to move per rank
+  NUCC::cspan<int> c2c;
 
   int at_once;
   std::string groupname;

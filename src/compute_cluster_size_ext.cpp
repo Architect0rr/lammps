@@ -25,6 +25,7 @@
 #include <cstring>
 
 using namespace LAMMPS_NS;
+using NUCC::cspan;
 
 /* ---------------------------------------------------------------------- */
 
@@ -61,13 +62,13 @@ ComputeClusterSizeExt::ComputeClusterSizeExt(LAMMPS *lmp, int narg, char **arg) 
     error->all(FLERR, "size_cutoff for compute cluster/size must be greater than 0");
   }
 
-  keeper = new MemoryKeeper(memory);
+  // keeper = new MemoryKeeper(memory);
 
-  alloc = new CustomAllocator<std::pair<const int, int>>(memory, keeper);
-  cluster_map = new Cluster_map_t(*alloc);
+  // alloc = new CustomAllocator<std::pair<const int, int>>(memory, keeper);
+  // cluster_map = new Cluster_map_t(*alloc);
 
-  alloc_vector = new Allocator_map_vector(memory, keeper);
-  cIDs_by_size = new Sizes_map_t(*alloc_vector);
+  // alloc_vector = new Allocator_map_vector(memory, keeper);
+  // cIDs_by_size = new Sizes_map_t(*alloc_vector);
 
   size_vector = size_cutoff + 1;
 }
@@ -76,21 +77,24 @@ ComputeClusterSizeExt::ComputeClusterSizeExt(LAMMPS *lmp, int narg, char **arg) 
 
 ComputeClusterSizeExt::~ComputeClusterSizeExt() noexcept(true)
 {
-  if (dist != nullptr) { memory->destroy(dist); }
-  if (dist_local != nullptr) { memory->destroy(dist_local); }
-  if (counts_global != nullptr) { memory->destroy(counts_global); }
-  if (displs != nullptr) { memory->destroy(displs); }
-  if (clusters != nullptr) { memory->destroy(clusters); }
-  if (ns != nullptr) { memory->destroy(ns); }
-  if (gathered != nullptr) { memory->destroy(gathered); }
-  if (monomers != nullptr) { memory->destroy(monomers); }
+  memory->destroy(dist);
+  memory->destroy(dist_local);
+  memory->destroy(counts_global);
+  memory->destroy(displs);
+  // memory->destroy(clusters);
+  clusters.destroy(memory);
+  // memory->destroy(ns);
+  ns.destroy(memory);
+  // memory->destroy(gathered);
+  gathered.destroy(memory);
+  memory->destroy(monomers);
 
-  delete cIDs_by_size;
-  delete alloc_vector;
+  // delete cIDs_by_size;
+  // delete alloc_vector;
 
-  delete cluster_map;
-  delete alloc;
-  delete keeper;
+  // delete cluster_map;
+  // delete alloc;
+  // delete keeper;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -109,18 +113,23 @@ void ComputeClusterSizeExt::init()
   vector = dist;
 
   nloc = static_cast<int>(atom->nlocal * LMP_NUCC_ALLOC_COEFF);
-  // cluster_map.reserve(nloc);
-  cluster_map->reserve(nloc);
-  cIDs_by_size->reserve(nloc);
-  keeper->pool_size(nloc);
+  // keeper->pool_size(nloc);
+  // cluster_map->reserve(nloc);
+  // cIDs_by_size->reserve(nloc);
+  cluster_map.reserve(nloc);
+  cIDs_by_size.reserve(nloc);
+  cIDs_by_size_all.reserve(nloc);
 
-  memory->create(clusters, nloc, "clusters");
-  memory->create(ns, 2 * nloc, "ns");
+  // memory->create(clusters, nloc, "clusters");
+  clusters.create(memory, nloc, "clusters");
+  // memory->create(ns, 2 * nloc, "ns");
+  ns.create(memory, 2 * nloc, "ns");
   memory->create(monomers, nloc, "monomers");
 
   natom_loc =
       static_cast<bigint>(static_cast<long double>(2 * atom->natoms) * LMP_NUCC_ALLOC_COEFF);
-  memory->create(gathered, natom_loc, "gathered");
+  // memory->create(gathered, natom_loc, "gathered");
+  gathered.create(memory, natom_loc, "gathered");
 
   initialized_flag = 1;
 }
@@ -156,7 +165,8 @@ void ComputeClusterSizeExt::compute_vector()
 {
   invoked_vector = update->ntimestep;
 
-  auto &cmap = *cluster_map;
+  // auto &cmap = *cluster_map;
+  auto &cmap = cluster_map;
 
   if (compute_cluster_atom->invoked_peratom != update->ntimestep) {
     compute_cluster_atom->compute_peratom();
@@ -164,6 +174,9 @@ void ComputeClusterSizeExt::compute_vector()
 
   const double *const cluster_ids = compute_cluster_atom->vector_atom;
   cmap.clear();
+  // cIDs_by_size->clear();
+  cIDs_by_size.clear();
+  cIDs_by_size_all.clear();
   ::memset(counts_global, 0, comm->nprocs * sizeof(int));
   ::memset(displs, 0, comm->nprocs * sizeof(int));
   ::memset(dist_local, 0.0, size_vector * sizeof(double));
@@ -171,46 +184,50 @@ void ComputeClusterSizeExt::compute_vector()
 
   if (atom->nlocal > nloc) {
     nloc = static_cast<int>(atom->nlocal * LMP_NUCC_ALLOC_COEFF);
-    keeper->pool_size(nloc);
+    // keeper->pool_size(nloc);
+    // cIDs_by_size->reserve(nloc);
     cmap.reserve(nloc);
-    cIDs_by_size->reserve(nloc);
+    cIDs_by_size_all.reserve(nloc);
 
-    memory->grow(clusters, nloc, "clusters");
-    memory->grow(ns, 2 * nloc, "ns");
+    // memory->grow(clusters.data(), nloc, "clusters");
+    clusters.grow(memory, nloc, "clusters");
+    // memory->grow(ns, 2 * nloc, "ns");
+    ns.grow(memory, 2 * nloc, "ns");
     memory->grow(monomers, nloc, "monomers");
   }
 
   // Sort atom IDs by cluster IDs
   for (int i = 0; i < atom->nlocal; ++i) {
     if ((atom->mask[i] & groupbit) != 0) {
-      int const clid = static_cast<int>(cluster_ids[i]);
+      const auto clid = static_cast<int>(cluster_ids[i]);
+      // if (cluster_ids[i] - clid >= 1) { utils::logmesg(lmp, "Clid mismatch------"); }
       if (cmap.count(clid) == 0) {
-        int const clidx = cmap.size();
+        const int clidx = cmap.size();
         cmap[clid] = clidx;
-        ns[clidx] = clid;
-        ns[clidx + 1] = 0;
+        ns[2 * clidx] = clid;
+        ns[2 * clidx + 1] = 0;
         clusters[clidx] = cluster_data(clid);
       }
       // possible segfault if actual cluster size exceeds LMP_NUCC_CLUSTER_MAX_SIZE + LMP_NUCC_CLUSTER_MAX_GHOST
       const int clidx = cmap[clid];
-      clusters[clidx].atoms[ns[2 * clidx + 1]++] = i;
+      clusters[clidx].atoms<false>()[ns[2 * clidx + 1]++] = i;
     }
   }
 
   // add ghost atoms
   for (int i = atom->nlocal; i < atom->nmax; ++i) {
     if ((atom->mask[i] & groupbit) != 0) {
-      const auto clid = static_cast<bigint>(cluster_ids[i]);
+      const auto clid = static_cast<int>(cluster_ids[i]);
       if (cmap.count(clid) > 0) {
         cluster_data &clstr = clusters[cmap[clid]];
         // also possible segfault if number of ghost exceeds LMP_NUCC_CLUSTER_MAX_GHOST
-        clstr.ghost[clstr.nghost++] = i;
+        clstr.ghost_initial()[clstr.nghost++] = i;
       }
     }
   }
 
   // communicate about number of unique clusters
-  int ncluster_local = 2 * cmap.size();
+  const int ncluster_local = 2 * cmap.size();
   ::MPI_Allgather(&ncluster_local, 1, MPI_INT, counts_global, 1, MPI_INT, world);
 
   int tcon = counts_global[0];
@@ -221,11 +238,13 @@ void ComputeClusterSizeExt::compute_vector()
 
   if (tcon > natom_loc) {
     natom_loc = static_cast<int>(tcon * LMP_NUCC_ALLOC_COEFF);
-    memory->grow(gathered, natom_loc, "gathered");
+    // memory->grow(gathered, natom_loc, "gathered");
+    gathered.grow(memory, natom_loc, "gathered");
   }
 
   // communicate about local cluster sizes
-  ::MPI_Allgatherv(ns, ncluster_local, MPI_INT, gathered, counts_global, displs, MPI_INT, world);
+  ::MPI_Allgatherv(ns.data(), ncluster_local, MPI_INT, gathered.data(), counts_global, displs,
+                   MPI_INT, world);
 
   // fill local data
   for (int i = 0; i < comm->nprocs; ++i) {
@@ -233,10 +252,13 @@ void ComputeClusterSizeExt::compute_vector()
       int const k = displs[i] + j;
       if (cmap.count(gathered[k]) > 0) {
         cluster_data &clstr = clusters[cmap[gathered[k]]];
-        if (i != comm->me) { clstr.owners[clstr.nowners++] = i; }
+        if (i != comm->me) { clstr.owners<false>()[clstr.nowners++] = i; }
         clstr.g_size += gathered[k + 1];
         if (gathered[k + 1] > clstr.nhost) {
           clstr.host = i;
+          if ((clstr.host < 0) || (clstr.host >= comm->nprocs)) {
+            utils::logmesg(lmp, "CS(1): Invalid host: {}", clstr.host);
+          }
           clstr.nhost = gathered[k + 1];
         }
       }
@@ -246,21 +268,57 @@ void ComputeClusterSizeExt::compute_vector()
   // adjust local data and fill local size distribution
   nonexclusive = 0;
   nmono = 0;
-  for (auto &[clid, clidx] : cmap) {
+  for (const auto &[clid, clidx] : cmap) {
     cluster_data &clstr = clusters[clidx];
-    clstr.l_size = ns[static_cast<ptrdiff_t>(2) * clidx];
-    ::memcpy(clstr.atoms + clstr.l_size, clstr.ghost, clstr.nghost * sizeof(int));
+    clstr.l_size = ns[2 * clidx + 1];
+    clstr.rearrange();
+    // ::memcpy(clstr.atoms + clstr.l_size, clstr.ghost, clstr.nghost * sizeof(int));
+    if ((clstr.g_size < size_cutoff) && (clstr.g_size > 1)) {
+      cIDs_by_size_all[clstr.g_size].push_back(clidx);
+    }
     if (clstr.host == comm->me) {
       if (clstr.g_size < size_cutoff) { dist_local[clstr.g_size] += 1; }
       if (clstr.g_size == 1) {
-        monomers[nmono++];
+        monomers[nmono++] = clidx;
       } else {
-        (*cIDs_by_size)[clstr.g_size].push_back(clidx);
+        // (*cIDs_by_size)[clstr.g_size].push_back(clidx);
+        cIDs_by_size[clstr.g_size].push_back(clidx);
       }
-    } else {
-      ++nonexclusive;
     }
+    if ((clstr.host < 0) || (clstr.host >= comm->nprocs)) {
+      utils::logmesg(lmp, "CS(2): Invalid host: {}", clstr.host);
+    }
+    if (clstr.nowners > 0) { ++nonexclusive; }
+    // utils::logmesg(lmp, "Cluster: {}, lsize: {}, nowners: {}, owners:", clid, clstr.l_size, clstr.nowners);
+    // for (int i = 0; i < clstr.nowners; ++i) { utils::logmesg(lmp, " {:3}", clstr.owners[i]); }
+    // utils::logmesg(lmp, "\n");
   }
+
+  // for (auto &[clid, clidx] : cmap) {
+  //   if (clid != clusters[clidx].clid) { utils::logmesg(lmp, "Clid mismatch\n"); }
+  //   ns[2 * clidx] = clid;
+  //   ns[2 * clidx + 1] = clusters[clidx].host;
+  // }
+  // ::MPI_Allgatherv(ns, ncluster_local, MPI_INT, gathered, counts_global, displs, MPI_INT, world);
+
+  // int mesgs = 0;
+  // for (int i = 0; i < comm->nprocs; ++i) {
+  //   for (int j = 0; j < counts_global[i] - 1; j += 2) {
+  //     int const k = displs[i] + j;
+  //     if (cmap.count(gathered[k]) > 0) {
+  //       if (clusters[cmap[gathered[k]]].clid != gathered[k]) {
+  //         utils::logmesg(lmp, "{}: Clid mismatch: {}/{}\n", comm->me, clusters[cmap[gathered[k]]].clid, gathered[k]);
+  //       }
+  //       if (clusters[cmap[gathered[k]]].host != gathered[k+1]) {
+  //         cluster_data &clstr = clusters[cmap[gathered[k]]];
+  //         utils::logmesg(lmp, "{}: cluster: {}/{}, host: {}, but proc {} have host: {}\n", comm->me, clstr.clid, gathered[k], clstr.host, i, gathered[k+1]);
+  //       }
+  //       ++mesgs;
+  //     }
+  //     if (mesgs > 5) break;
+  //   }
+  //   if (mesgs > 5) break;
+  // }
 
   ::MPI_Allreduce(dist_local, dist, size_vector, MPI_DOUBLE, MPI_SUM, world);
 }

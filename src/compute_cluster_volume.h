@@ -21,11 +21,14 @@ ComputeStyle(cluster/volume,ComputeClusterVolume);
 #define LMP_COMPUTE_CLUSTER_VOLUME_H
 
 #include "compute.h"
-#include "compute_cluster_size_ext.h"
+#include "nucc_cspan.hpp"
+#include <array>
 
 namespace LAMMPS_NS {
 
 enum class VOLUMEMODE { RECTANGLE = 0, SPHERE = 1, CALC = 2 };
+
+class ComputeClusterSizeExt;
 
 class ComputeClusterVolume : public Compute {
  public:
@@ -40,61 +43,69 @@ class ComputeClusterVolume : public Compute {
   ComputeClusterSizeExt *compute_cluster_size = nullptr;
 
   VOLUMEMODE mode;
-  double subbonds[6]{};
+  std::array<double, 6> subbonds;
+  // double subbonds[6]{};
   int nloc{};
-  double *volumes{};
-  double *dist_local{};
-  double *dist{};
+  NUCC::cspan<double> volumes;
+  NUCC::cspan<double> dist_local;
+  NUCC::cspan<double> dist;
   int size_cutoff;    // size of max cluster
   double voxel_size{};
   double overlap{};
   double overlap_sq{};
 
   // VOLUMEMODE::CALC
-  bool *occupancy_grid{};
+  NUCC::cspan<bool> occupancy_grid;
   bigint nloc_grid;
   int n_cells;
   bool precompute;
-  int *offsets{};
+  NUCC::cspan<int> offsets;
   int noff;
   int noffsets{};
 
   // VOLUMEMODE::RECTANGLE
-  double *bboxes{};
+  NUCC::cspan<double> bboxes;
 
+  // MPI_COMMUNICATION
   ::MPI_Request *in_reqs{};
   ::MPI_Request *out_reqs{};
 
   //   ::MPI_Status *in_stats;
   //   ::MPI_Status *out_stats;
 
-  double *recv_buf{};
+  NUCC::cspan<double> recv_buf;
   bigint nloc_recv;
+  NUCC::cspan<double> dist_global;
+
+  // int *recv_comm_matrix_local;
+  // int *recv_comm_matrix_global;
+  // int *send_comm_matrix_local;
+  // int *send_comm_matrix_global;
 
   // with AVX512 occupied_volume_grid works faster, than precomputed version
-  double occupied_volume_precomputed(const int *const list, const int n, const int nghost,
-                                     bool nonexclusive) noexcept;
+  double occupied_volume_precomputed(const NUCC::cspan<const int> &list, const int n,
+                                     const int nghost, const bool nonexclusive) noexcept;
   double occupied_volume_grid(const int *const list, const int n, const int nghost,
-                              bool nonexclusive) noexcept;
-  void cluster_bbox(const int *const list, const int n, double *bbox) const noexcept;
+                              const bool nonexclusive) noexcept;
+  void cluster_bbox(const NUCC::cspan<const int> &list, const int n, double *bbox) const noexcept;
 
-  template <typename TYPE> TYPE **create_ptr_array(TYPE **&array, int n, const char *name)
+  template <typename TYPE> TYPE **create_ptr_array(TYPE **&ptr, int n, const char *name)
   {
-    array = n <= 0 ? nullptr : static_cast<TYPE **>(memory->smalloc(sizeof(TYPE *) * n, name));
+    ptr = n <= 0 ? nullptr : static_cast<TYPE **>(memory->smalloc(sizeof(TYPE *) * n, name));
     // for (int i = 0; i < n; ++i) { array[i] = nullptr; }
-    return array;
+    return ptr;
   }
-  template <typename TYPE> TYPE **grow_ptr_array(TYPE **&array, int n, const char *name)
+  template <typename TYPE> TYPE **grow_ptr_array(TYPE **&ptr, int n, const char *name)
   {
     if (n <= 0) {
-      memory->destroy(array);
+      memory->destroy(ptr);
       return nullptr;
     }
 
-    if (array == nullptr) return create_ptr_array(array, n, name);
+    if (ptr == nullptr) return create_ptr_array(ptr, n, name);
 
-    array = static_cast<TYPE **>(memory->srealloc(array, sizeof(TYPE *) * n, name));
-    return array;
+    ptr = static_cast<TYPE **>(memory->srealloc(ptr, sizeof(TYPE *) * n, name));
+    return ptr;
   }
 };
 

@@ -12,6 +12,8 @@
 ------------------------------------------------------------------------- */
 
 #include "compute_cluster_volume.h"
+#include "compute_cluster_size_ext.h"
+#include "nucc_cspan.hpp"
 #include <cmath>
 #include <cstddef>
 
@@ -27,11 +29,12 @@
 #include <unordered_map>
 
 using namespace LAMMPS_NS;
+using NUCC::cspan;
 
 /* ---------------------------------------------------------------------- */
 
 ComputeClusterVolume::ComputeClusterVolume(LAMMPS *lmp, int narg, char **arg) :
-    Compute(lmp, narg, arg), n_cells(0), nloc_grid(0), noff(0), nloc_recv(0), precompute(false)
+    Compute(lmp, narg, arg), nloc_grid(0), n_cells(0), precompute(false), noff(0), nloc_recv(0)
 {
   vector_flag = 1;
   size_vector = 0;
@@ -107,19 +110,21 @@ ComputeClusterVolume::ComputeClusterVolume(LAMMPS *lmp, int narg, char **arg) :
 
 ComputeClusterVolume::~ComputeClusterVolume() noexcept(true)
 {
-  if (volumes != nullptr) { memory->destroy(volumes); }
-  if (dist != nullptr) { memory->destroy(dist); }
-  if (dist_local != nullptr) { memory->destroy(dist_local); }
-  if (occupancy_grid != nullptr) { memory->destroy(occupancy_grid); }
-  if (offsets != nullptr) { memory->destroy(offsets); }
-  if (bboxes != nullptr) { memory->destroy(bboxes); }
-  if (recv_buf != nullptr) { memory->destroy(recv_buf); }
+  volumes.destroy(memory);
+  dist.destroy(memory);
+  dist_local.destroy(memory);
+  occupancy_grid.destroy(memory);
+  offsets.destroy(memory);
+  bboxes.destroy(memory);
+  recv_buf.destroy(memory);
+  dist_global.destroy(memory);
 }
 
 /* ---------------------------------------------------------------------- */
 
 void ComputeClusterVolume::init()
 {
+  // ::MPI_Comm_set_errhandler(world, MPI_ERRORS_RETURN);
   if ((modify->get_compute_by_style(style).size() > 1) && (comm->me == 0)) {
     error->warning(FLERR, "More than one compute {}", style);
   }
@@ -131,22 +136,33 @@ void ComputeClusterVolume::init()
   subbonds[4 + 0] = domain->sublo[2];
   subbonds[4 + 1] = domain->subhi[2];
 
-  memory->create(dist_local, size_local_rows + 1, "compute:cluster/ke:local_kes");
-  vector_local = dist_local;
-  memory->create(dist, size_vector + 1, "compute:cluster/ke:kes");
-  vector = dist;
+  // memory->create(dist_local, size_local_rows, "compute:cluster/ke:local_kes");
+  dist_local.create(memory, size_local_rows, "compute:cluster/ke:local_kes");
+  vector_local = dist_local.data();
+  // memory->create(dist, size_vector, "compute:cluster/ke:kes");
+  dist.create(memory, size_vector, "compute:cluster/ke:kes");
+  vector = dist.data();
+  dist_global.create(memory, size_vector * comm->nprocs, "dist_global");
 
   nloc = static_cast<int>(atom->nlocal * LMP_NUCC_ALLOC_COEFF);
-  memory->create(volumes, nloc, "ComputeClusterVolume:volumes");
+  // memory->create(volumes, nloc, "ComputeClusterVolume:volumes");
+  volumes.create(memory, nloc, "ComputeClusterVolume:volumes");
   if (mode == VOLUMEMODE::RECTANGLE) {
-    memory->grow(bboxes, 6 * nloc, "ComputeClusterVolume:bboxes");
+    // memory->grow(bboxes, 6 * nloc, "ComputeClusterVolume:bboxes");
+    bboxes.create(memory, 6 * nloc, "ComputeClusterVolume:bboxes");
   }
 
+  // memory->create(recv_comm_matrix_local, comm->nprocs, "recv_comm_matrix_local");
+  // memory->create(recv_comm_matrix_global, comm->nprocs * comm->nprocs, "recv_comm_matrix_global");
+  // memory->create(send_comm_matrix_local, comm->nprocs, "send_comm_matrix_local");
+  // memory->create(send_comm_matrix_global, comm->nprocs * comm->nprocs, "send_comm_matrix_global");
+
   if (precompute) {
-    int const radius_voxels_int = static_cast<int>(std::ceil(overlap / voxel_size));
+    const auto radius_voxels_int = static_cast<int>(std::ceil(overlap / voxel_size));
     noff =
         3 * 2 * (radius_voxels_int + 1) * 2 * (radius_voxels_int + 1) * 2 * (radius_voxels_int + 1);
-    memory->create(offsets, noff, "ComputeClusterVolume:offsets");
+    // memory->create(offsets, noff, "ComputeClusterVolume:offsets");
+    offsets.create(memory, noff, "ComputeClusterVolume:offsets");
 
     double const voxel_size_sq = voxel_size * voxel_size;
     noffsets = 0;
@@ -173,9 +189,22 @@ void ComputeClusterVolume::compute_vector()
   invoked_vector = update->ntimestep;
 
   compute_local();
-  ::memset(dist, 0.0, size_vector * sizeof(double));
-  ::MPI_Allreduce(dist_local, dist, size_vector, MPI_DOUBLE, MPI_SUM, world);
-  for (int i = 0; i < size_vector; ++i) { dist[i] /= comm->nprocs; }
+  ::memset(dist.data(), 0.0, dist.size() * sizeof(double));
+  // ::MPI_Allreduce(dist_local, dist, size_vector, MPI_DOUBLE, MPI_SUM, world);
+  // for (int i = 0; i < size_vector; ++i) { dist[i] /= comm->nprocs; }
+  ::MPI_Allgather(dist_local.data(), size_vector, MPI_DOUBLE, dist_global.data(), size_vector,
+                  MPI_DOUBLE, world);
+  for (int i = 0; i < size_vector; ++i) {
+    int n = 0;
+    for (int j = 0; j < comm->nprocs; ++j) {
+      const int k = j * comm->nprocs + i;
+      if (dist_global[k] > 0) {
+        dist[i] += dist_global[k];
+        ++n;
+      }
+    }
+    if (dist[i] > 0) { dist[i] /= n; }
+  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -202,45 +231,67 @@ void ComputeClusterVolume::compute_local()
 
   if (nloc < atom->nlocal) {
     nloc = static_cast<int>(atom->nlocal * LMP_NUCC_ALLOC_COEFF);
-    memory->grow(volumes, nloc, "ComputeClusterVolume:volumes");
+    // memory->grow(volumes, nloc, "ComputeClusterVolume:volumes");
+    volumes.grow(memory, nloc, "ComputeClusterVolume:volumes");
 
     if (mode == VOLUMEMODE::RECTANGLE) {
-      memory->grow(bboxes, 6 * nloc, "ComputeClusterVolume:bboxes");
+      // memory->grow(bboxes, 6 * nloc, "ComputeClusterVolume:bboxes");
+      bboxes.grow(memory, 6 * nloc, "ComputeClusterVolume:bboxes");
     }
   }
 
-  if (nloc_recv < compute_cluster_size->nonexclusive) {
-    nloc_recv = static_cast<bigint>(compute_cluster_size->nonexclusive * LMP_NUCC_ALLOC_COEFF);
+  if (nloc_recv < compute_cluster_size->get_nonexclusive()) {
+    nloc_recv =
+        static_cast<bigint>(compute_cluster_size->get_nonexclusive() * LMP_NUCC_ALLOC_COEFF);
     grow_ptr_array(in_reqs, comm->nprocs * nloc_recv, "ComputeClusterVolume:in_reqs");
     grow_ptr_array(out_reqs, comm->nprocs * nloc_recv, "ComputeClusterVolume:out_reqs");
 
-    if (mode == VOLUMEMODE::RECTANGLE) {
-      memory->grow(recv_buf, comm->nprocs * nloc_recv, "ComputeClusterVolume:recv_buf");
+    if (mode == VOLUMEMODE::CALC) {
+      // memory->grow(recv_buf, comm->nprocs * nloc_recv, "ComputeClusterVolume:recv_buf");
+      recv_buf.grow(memory, comm->nprocs * nloc_recv, "ComputeClusterVolume:recv_buf");
     } else if (mode == VOLUMEMODE::RECTANGLE) {
-      memory->grow(recv_buf, static_cast<bigint>(6) * comm->nprocs * nloc_recv,
-                   "ComputeClusterVolume:recv_buf");
+      // memory->grow(recv_buf, static_cast<bigint>(6) * comm->nprocs * nloc_recv,
+      //              "ComputeClusterVolume:recv_buf");
+      recv_buf.grow(memory, static_cast<bigint>(6) * comm->nprocs * nloc_recv,
+                    "ComputeClusterVolume:recv_buf");
+    } else {
+      // compliant
     }
   }
 
+  // ::memset(recv_comm_matrix_local, 0, comm->nprocs * sizeof(int));
+  // ::memset(recv_comm_matrix_global, 0, comm->nprocs * comm->nprocs * sizeof(int));
+  // ::memset(send_comm_matrix_local, 0, comm->nprocs * sizeof(int));
+  // ::memset(send_comm_matrix_global, 0, comm->nprocs * comm->nprocs * sizeof(int));
+
   int to_send = 0;
   int to_receive = 0;
-  Sizes_map_t const &cmap = *(compute_cluster_size->cIDs_by_size);
+  // Sizes_map_t const &cmap = *(compute_cluster_size->cIDs_by_size);
+  const auto &cmap = compute_cluster_size->get_cIDs_by_size_all();
+  const auto &clusters = compute_cluster_size->get_clusters();
   if (mode == VOLUMEMODE::CALC) {
     for (const auto &[size, clidxs] : cmap) {
-      for (auto clidx : clidxs) {
-        const cluster_data &clstr = compute_cluster_size->clusters[clidx];
+      for (const auto clidx : clidxs) {
+        const cluster_data &clstr = clusters[clidx];
         bool const nonexclusive = clstr.nowners > 0;
-        volumes[clidx] =
-            occupied_volume_precomputed(clstr.atoms, clstr.l_size, clstr.nghost, nonexclusive);
+        volumes[clidx] = occupied_volume_precomputed(clstr.atoms_all(), clstr.l_size, clstr.nghost,
+                                                     nonexclusive);
         if (nonexclusive) {
           if (clstr.host != comm->me) {
-            ::MPI_Send_init(volumes + clidx, 1, MPI_DOUBLE, clstr.host, clstr.clid, world,
-                            out_reqs + to_send);
+            // ++send_comm_matrix_local[clstr.host];
+            // if ((clstr.host < 0) || (clstr.host >= comm->nprocs)) { utils::logmesg(lmp, "Invalid rank: {}", clstr.host); }
+            int err = ::MPI_Send_init(volumes.offset(clidx), 1, MPI_DOUBLE, clstr.host, clstr.clid,
+                                      world, out_reqs + to_send);
+            if (err > 0) {
+              utils::logmesg(lmp, "MPI returned non-zero code: {}, rank: {}", err, clstr.host);
+            }
             ++to_send;
           } else {
             for (int i = 0; i < clstr.nowners; ++i) {
-              ::MPI_Recv_init(recv_buf + to_receive, 1, MPI_DOUBLE, clstr.owners[i], clstr.clid,
-                              world, in_reqs + to_receive);
+              // if (clstr.owners[i] == comm->me) { utils::logmesg(lmp, "Me in owners"); }
+              // ++recv_comm_matrix_local[clstr.owners[i]];
+              ::MPI_Recv_init(recv_buf.offset(to_receive), 1, MPI_DOUBLE, clstr.owners()[i],
+                              clstr.clid, world, in_reqs + to_receive);
               ++to_receive;
             }
           }
@@ -249,37 +300,82 @@ void ComputeClusterVolume::compute_local()
     }
   } else if (mode == VOLUMEMODE::RECTANGLE) {
     for (const auto &[size, clidxs] : cmap) {
-      for (auto clidx : clidxs) {
-        const cluster_data &clstr = compute_cluster_size->clusters[clidx];
+      for (const auto clidx : clidxs) {
+        const cluster_data &clstr = clusters[clidx];
         bigint const bbox_start = static_cast<bigint>(6) * clidx;
-        cluster_bbox(clstr.atoms, clstr.l_size /*+ clstr.nghost*/, bboxes + bbox_start);
+        cluster_bbox(clstr.atoms(), clstr.l_size /*+ clstr.nghost*/, bboxes.offset(bbox_start));
         if (clstr.nowners > 0) {
           if (clstr.host != comm->me) {
-            ::MPI_Send_init(bboxes + bbox_start, 6, MPI_DOUBLE, clstr.host, clstr.clid, world,
+            ::MPI_Send_init(bboxes.offset(bbox_start), 6, MPI_DOUBLE, clstr.host, clstr.clid, world,
                             out_reqs + to_send);
             ++to_send;
           } else {
             for (int i = 0; i < clstr.nowners; ++i) {
-              ::MPI_Recv_init(recv_buf + static_cast<ptrdiff_t>(6) * to_receive, 6, MPI_DOUBLE,
-                              clstr.owners[i], clstr.clid, world, in_reqs + to_receive);
+              ::MPI_Recv_init(recv_buf.offset(6 * to_receive), 6, MPI_DOUBLE, clstr.owners()[i],
+                              clstr.clid, world, in_reqs + to_receive);
               ++to_receive;
             }
           }
         }
       }
     }
+  } else {
+    // comliant
   }
 
-  ::MPI_Startall(to_send, out_reqs);
-  ::MPI_Startall(to_receive, in_reqs);
-  ::MPI_Waitall(to_send, out_reqs, MPI_STATUSES_IGNORE /*out_stats*/);
-  ::MPI_Waitall(to_receive, in_reqs, MPI_STATUSES_IGNORE /*in_stats*/);
+  // ::MPI_Allgather(send_comm_matrix_local, comm->nprocs, MPI_INT, send_comm_matrix_global, comm->nprocs, MPI_INT, world);
+  // ::MPI_Allgather(recv_comm_matrix_local, comm->nprocs, MPI_INT, recv_comm_matrix_global, comm->nprocs, MPI_INT, world);
+  // if (comm->me == 0) {
+  //   int _counts[2*comm->nprocs];
+  //   ::memset(_counts, 0, 2 * comm->nprocs * sizeof(int));
+  //   utils::logmesg(lmp, "Send matrix:\n");
+  //   for (int i = 0; i < comm->nprocs; ++i) {
+  //     for (int j = 0; j < comm->nprocs; ++j) {
+  //       int s = send_comm_matrix_global[i*comm->nprocs + j];
+  //       _counts[i] += s;
+  //       _counts[comm->nprocs + j] += s;
+  //       utils::logmesg(lmp, "{:3} ", s);
+  //     }
+  //     utils::logmesg(lmp, "|{:3}\n", _counts[i]);
+  //   }
+  //   for (int i = 0; i < comm->nprocs; ++i) {
+  //     utils::logmesg(lmp, "----");
+  //   }
+  //   utils::logmesg(lmp, "\n");
+  //   for (int i = 0; i < comm->nprocs; ++i) {
+  //     utils::logmesg(lmp, "{:3} ", _counts[comm->nprocs + i]);
+  //   }
+  //   ::memset(_counts, 0, 2 * comm->nprocs * sizeof(int));
+  //   utils::logmesg(lmp, "\nRecv matrix:\n");
+  //   for (int i = 0; i < comm->nprocs; ++i) {
+  //     for (int j = 0; j < comm->nprocs; ++j) {
+  //       int s = recv_comm_matrix_global[i*comm->nprocs + j];
+  //       _counts[i] += s;
+  //       _counts[comm->nprocs + j] += s;
+  //       utils::logmesg(lmp, "{:3} ", s);
+  //     }
+  //     utils::logmesg(lmp, "|{:3}\n", _counts[i]);
+  //   }
+  //   for (int i = 0; i < comm->nprocs; ++i) {
+  //     utils::logmesg(lmp, "----");
+  //   }
+  //   utils::logmesg(lmp, "\n");
+  //   for (int i = 0; i < comm->nprocs; ++i) {
+  //     utils::logmesg(lmp, "{:3} ", _counts[comm->nprocs + i]);
+  //   }
+  //   utils::logmesg(lmp, "\n");
+  // }
+
+  if (to_send > 0) { ::MPI_Startall(to_send, out_reqs); }
+  if (to_receive > 0) { ::MPI_Startall(to_receive, in_reqs); }
+  if (to_send > 0) { ::MPI_Waitall(to_send, out_reqs, MPI_STATUSES_IGNORE /*out_stats*/); }
+  if (to_receive > 0) { ::MPI_Waitall(to_receive, in_reqs, MPI_STATUSES_IGNORE /*in_stats*/); }
 
   int received = 0;
   if (mode == VOLUMEMODE::CALC) {
     for (const auto &[size, clidxs] : cmap) {
-      for (auto clidx : clidxs) {
-        const cluster_data &clstr = compute_cluster_size->clusters[clidx];
+      for (const auto clidx : clidxs) {
+        const cluster_data &clstr = clusters[clidx];
         if ((clstr.nowners > 0) && (clstr.host == comm->me)) {
           for (int i = 0; i < clstr.nowners; ++i) { volumes[clidx] += recv_buf[received++]; }
         }
@@ -287,13 +383,13 @@ void ComputeClusterVolume::compute_local()
     }
   } else if (mode == VOLUMEMODE::RECTANGLE) {
     for (const auto &[size, clidxs] : cmap) {
-      for (auto clidx : clidxs) {
-        const cluster_data &clstr = compute_cluster_size->clusters[clidx];
+      for (const auto clidx : clidxs) {
+        const cluster_data &clstr = clusters[clidx];
         bigint const bbox_start = static_cast<bigint>(6) * clidx;
         if (clstr.host == comm->me) {
           if ((clstr.nowners > 0)) {
             for (int i = 0; i < clstr.nowners; ++i) {
-              maximize_bbox(recv_buf + static_cast<ptrdiff_t>(6) * received, bboxes + bbox_start);
+              ::maximize_bbox(recv_buf.offset(6 * received), bboxes.offset(bbox_start));
               ++received;
             }
           }
@@ -303,15 +399,22 @@ void ComputeClusterVolume::compute_local()
         }
       }
     }
+  } else {
+    // compliant
   }
 
-  ::memset(dist_local, 0.0, size_local_rows * sizeof(double));
+  dist_local.reset();
+  // ::memset(dist_local, 0.0, size_local_rows * sizeof(double));
   for (const auto &[size, clidxs] : cmap) {
-    for (auto clidx : clidxs) {
-      const cluster_data &clstr = compute_cluster_size->clusters[clidx];
-      if (clstr.host == comm->me) { dist_local[size] += volumes[clidx]; }
+    int num_clst = 0;
+    for (const auto clidx : clidxs) {
+      const cluster_data &clstr = clusters[clidx];
+      if (clstr.host == comm->me) {
+        dist_local[size] += volumes[clidx];
+        ++num_clst;
+      }
     }
-    dist_local[size] /= clidxs.size();
+    if (num_clst > 0) { dist_local[size] /= num_clst; }
   }
 
   for (int i = 0; i < to_send; ++i) { ::MPI_Request_free(out_reqs + i); }
@@ -320,7 +423,7 @@ void ComputeClusterVolume::compute_local()
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeClusterVolume::cluster_bbox(const int *const list, const int n,
+void ComputeClusterVolume::cluster_bbox(const cspan<const int> &list, const int n,
                                         double *bbox) const noexcept
 {
   double **const centers = atom->x;
@@ -361,16 +464,17 @@ void ComputeClusterVolume::cluster_bbox(const int *const list, const int n,
 
 /* ---------------------------------------------------------------------- */
 
-inline bigint idx(bigint i, bigint j, bigint k, bigint ny, bigint nz) noexcept
+[[nodiscard]] inline static bigint idx(const bigint i, const bigint j, const bigint k,
+                                       const bigint ny, const bigint nz) noexcept
 {
   return i * (nz * ny) + j * nz + k;
 }
 
 /* ---------------------------------------------------------------------- */
 
-double ComputeClusterVolume::occupied_volume_precomputed(const int *const list, const int n,
+double ComputeClusterVolume::occupied_volume_precomputed(const cspan<const int> &list, const int n,
                                                          const int nghost,
-                                                         bool nonexclusive) noexcept
+                                                         const bool nonexclusive) noexcept
 {
   double **const centers = atom->x;
   double bbox[6]{};
@@ -391,23 +495,25 @@ double ComputeClusterVolume::occupied_volume_precomputed(const int *const list, 
 
   if (nloc_grid < steps_x * steps_y * steps_z) {
     nloc_grid = steps_x * steps_y * steps_z;
-    memory->grow(occupancy_grid, nloc_grid, "compute_cluster_volume:grid");
+    // memory->grow(occupancy_grid, nloc_grid, "compute_cluster_volume:grid");
+    occupancy_grid.grow(memory, nloc_grid, "compute_cluster_volume:grid");
   }
-  ::memset(occupancy_grid, 0, nloc * sizeof(bool));
+  // ::memset(occupancy_grid, 0, nloc_grid * sizeof(bool));
+  occupancy_grid.reset();
 
   for (int l = 0; l < n + nghost; ++l) {
-    double const *center = centers[list[l]];
-    auto const ni = static_cast<bigint>((center[0] - bbox[0]) / voxel_size);
-    auto const nj = static_cast<bigint>((center[1] - bbox[1]) / voxel_size);
-    auto const nk = static_cast<bigint>((center[2] - bbox[2]) / voxel_size);
+    const double *const center = centers[list[l]];
+    const auto ni = static_cast<bigint>((center[0] - bbox[0]) / voxel_size);
+    const auto nj = static_cast<bigint>((center[1] - bbox[1]) / voxel_size);
+    const auto nk = static_cast<bigint>((center[2] - bbox[2]) / voxel_size);
 
     for (int noffset = 0; noffset < noffsets; noffset += 3) {
-      bigint const i = ni + offsets[noffset + 0];
-      bigint const j = nj + offsets[noffset + 1];
-      bigint const k = nk + offsets[noffset + 2];
+      const bigint i = ni + offsets[noffset + 0];
+      const bigint j = nj + offsets[noffset + 1];
+      const bigint k = nk + offsets[noffset + 2];
 
       if ((i >= 0) && (i < steps_x) && (j >= 0) && (j < steps_y) && (k >= 0) && (k < steps_z)) {
-        occupancy_grid[idx(i, j, k, steps_y, steps_z)] = true;
+        occupancy_grid[::idx(i, j, k, steps_y, steps_z)] = true;
       }
     }
   }
@@ -417,7 +523,7 @@ double ComputeClusterVolume::occupied_volume_precomputed(const int *const list, 
   for (bigint i = 0; i < steps_x; ++i) {
     for (bigint j = 0; j < steps_y; ++j) {
       for (bigint k = 0; k < steps_z; ++k) {
-        if (occupancy_grid[idx(i, j, k, steps_y, steps_z)]) { ++occupied; }
+        if (occupancy_grid[::idx(i, j, k, steps_y, steps_z)]) { ++occupied; }
       }
     }
   }
@@ -428,11 +534,12 @@ double ComputeClusterVolume::occupied_volume_precomputed(const int *const list, 
 /* ---------------------------------------------------------------------- */
 
 double ComputeClusterVolume::occupied_volume_grid(const int *const list, const int n,
-                                                  const int nghost, bool nonexclusive) noexcept
+                                                  const int nghost,
+                                                  const bool nonexclusive) noexcept
 {
   double **const centers = atom->x;
   double bbox[6]{};
-  cluster_bbox(list, n, bbox);
+  cluster_bbox(cspan(list, n), n, bbox);
 
   if (nonexclusive) {
     bbox[0] = MAX(bbox[0], subbonds[0]);    // cut should be on only needed sides
@@ -449,21 +556,23 @@ double ComputeClusterVolume::occupied_volume_grid(const int *const list, const i
 
   if (nloc_grid < steps_x * steps_y * steps_z) {
     nloc_grid = steps_x * steps_y * steps_z;
-    memory->grow(occupancy_grid, nloc_grid, "compute_cluster_volume:grid");
+    // memory->grow(occupancy_grid, nloc_grid, "compute_cluster_volume:grid");
+    occupancy_grid.grow(memory, nloc_grid, "compute_cluster_volume:grid");
   }
-  ::memset(occupancy_grid, 0, nloc * sizeof(bool));
+  // ::memset(occupancy_grid, 0, nloc_grid * sizeof(bool));
+  occupancy_grid.reset();
 
   for (int l = 0; l < n + nghost; ++l) {
-    double const *center = centers[list[l]];
-    auto const ni = static_cast<bigint>((center[0] - bbox[0]) / voxel_size);
-    auto const nj = static_cast<bigint>((center[1] - bbox[1]) / voxel_size);
-    auto const nk = static_cast<bigint>((center[2] - bbox[2]) / voxel_size);
-    bigint const min_i = MAX(ni - n_cells, 0);
-    bigint const max_i = MIN(ni + n_cells, steps_x - 1);
-    bigint const min_j = MAX(nj - n_cells, 0);
-    bigint const max_j = MIN(nj + n_cells, steps_y - 1);
-    bigint const min_k = MAX(nk - n_cells, 0);
-    bigint const max_k = MIN(nk + n_cells, steps_z - 1);
+    const double *const center = centers[list[l]];
+    const auto ni = static_cast<bigint>((center[0] - bbox[0]) / voxel_size);
+    const auto nj = static_cast<bigint>((center[1] - bbox[1]) / voxel_size);
+    const auto nk = static_cast<bigint>((center[2] - bbox[2]) / voxel_size);
+    const bigint min_i = MAX(ni - n_cells, 0);
+    const bigint max_i = MIN(ni + n_cells, steps_x - 1);
+    const bigint min_j = MAX(nj - n_cells, 0);
+    const bigint max_j = MIN(nj + n_cells, steps_y - 1);
+    const bigint min_k = MAX(nk - n_cells, 0);
+    const bigint max_k = MIN(nk + n_cells, steps_z - 1);
 
     for (bigint i = min_i; i <= max_i; ++i) {
       for (bigint j = min_j; j <= max_j; ++j) {
@@ -473,11 +582,11 @@ double ComputeClusterVolume::occupied_volume_grid(const int *const list, const i
           // double y = bbox[1] + j * voxel_size + voxel_size / 2;
           // double z = bbox[2] + k * voxel_size + voxel_size / 2;
           // Check if the voxel center is within the sphere of radius r
-          double const dx = bbox[0] + i * voxel_size /*x*/ - center[0];
-          double const dy = bbox[1] + j * voxel_size /*y*/ - center[1];
-          double const dz = bbox[2] + k * voxel_size /*z*/ - center[2];
+          const double dx = bbox[0] + i * voxel_size /*x*/ - center[0];
+          const double dy = bbox[1] + j * voxel_size /*y*/ - center[1];
+          const double dz = bbox[2] + k * voxel_size /*z*/ - center[2];
           if (dx * dx + dy * dy + dz * dz <= overlap_sq) {
-            occupancy_grid[idx(i, j, k, steps_y, steps_z)] = true;
+            occupancy_grid[::idx(i, j, k, steps_y, steps_z)] = true;
           }
         }
       }
@@ -489,7 +598,7 @@ double ComputeClusterVolume::occupied_volume_grid(const int *const list, const i
   for (bigint i = 0; i < steps_x; ++i) {
     for (bigint j = 0; j < steps_y; ++j) {
       for (bigint k = 0; k < steps_z; ++k) {
-        if (occupancy_grid[idx(i, j, k, steps_y, steps_z)]) { ++occupied; }
+        if (occupancy_grid[::idx(i, j, k, steps_y, steps_z)]) { ++occupied; }
       }
     }
   }
