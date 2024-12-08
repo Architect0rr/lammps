@@ -12,6 +12,18 @@
 namespace NUCC {
 
 class MemoryKeeper {
+ private:
+  struct PoolInfo {
+    template <typename T>
+    constexpr PoolInfo(T*& ptr, const size_t size) noexcept : ptr(reinterpret_cast<void*>(ptr)), size(size * sizeof(T))
+    {
+    }
+
+    PoolInfo() = delete;
+
+    void* ptr = nullptr;
+    size_t size = 0;
+  };
  public:
   MemoryKeeper() = delete;
   MemoryKeeper(const MemoryKeeper&) = delete;
@@ -71,18 +83,6 @@ class MemoryKeeper {
   }
 
  private:
-  struct PoolInfo {
-    template <typename T>
-    constexpr PoolInfo(T*& ptr, const size_t size) noexcept : ptr(reinterpret_cast<void*>(ptr)), size(size * sizeof(T))
-    {
-    }
-
-    PoolInfo() = delete;
-
-    void* ptr = nullptr;
-    size_t size = 0;
-  };
-
   void* current = nullptr;
   std::size_t left = 0;
   LAMMPS_NS::Memory* const memory_ = nullptr;
