@@ -6,55 +6,78 @@
 #include <cassert>
 #include <cstddef>
 #include <memory>
+#include <type_traits>
 #include <vector>
 
 namespace NUCC {
 
+template <typename T>
 class MemoryKeeper {
  public:
   MemoryKeeper() = delete;
-  MemoryKeeper(const MemoryKeeper &) = delete;
-  MemoryKeeper(MemoryKeeper &&) = delete;
-  MemoryKeeper &operator=(const MemoryKeeper &) = delete;
-  MemoryKeeper &operator=(MemoryKeeper &&) = delete;
+  MemoryKeeper(const MemoryKeeper&) = delete;
+  MemoryKeeper(MemoryKeeper&&) = delete;
+  MemoryKeeper& operator=(const MemoryKeeper&) = delete;
+  MemoryKeeper& operator=(MemoryKeeper&&) = delete;
 
-  MemoryKeeper(Memory *mem) : mem(mem) {}
-  ~MemoryKeeper() { clear(); }
+  constexpr MemoryKeeper(Memory* memory) noexcept : memory_(memory) {}
+  ~MemoryKeeper() noexcept(noexcept(clear())) { clear(); }
 
-  template <typename T>
-  void store(T *&ptr, const size_t size)
+  void store(T*& ptr, const size_t size) noexcept(noexcept(infos.emplace_back(ptr, size)))
   {
     infos.emplace_back(ptr, size);
   }
 
-  void clear()
+  void clear() noexcept(noexcept(std::declval<Memory>().destroy<void>(std::declval<void*&>())))
   {
-    for (auto &pool : infos) { mem->destroy(pool.ptr); }
+    for (auto& pool : infos) { memory_->destroy(pool.ptr); }
   }
 
-  uint64_t pool_size() const noexcept
+  inline constexpr std::size_t pool_size() const noexcept
   {
     assert(_pool_size > 0);
     return _pool_size;
   }
 
-  void pool_size(uint64_t n) noexcept { _pool_size = n; }
+  inline constexpr void pool_size(std::size_t n) noexcept { _pool_size = n; }
+
+  T* allocate(const std::size_t n)
+  {
+    T* ptr = nullptr;
+    if (n > _pool_size) {
+      // If requested size is larger than pool, allocate separately
+      memory_->create<T>(ptr, n, "CustomAllocator_Large");
+      infos.emplace_back(ptr, n);
+      return ptr;
+    }
+    if (current == nullptr || left < n) {
+      // Pool is full or not initialized, request a new pool
+      memory_->create<T>(current, _pool_size, "CustomAllocator_Pool");
+      infos.emplace_back(current, _pool_size);
+      left = _pool_size;
+    }
+    ptr = current;
+    left -= n;
+    current += n;
+    return ptr;
+  }
 
  private:
   struct PoolInfo {
-    template <typename T>
-    PoolInfo(T *&ptr, const size_t size) : ptr(reinterpret_cast<void *>(ptr)), size(size * sizeof(T))
+    constexpr PoolInfo(T*& ptr, const size_t size) noexcept : ptr(reinterpret_cast<void*>(ptr)), size(size * sizeof(T))
     {
     }
 
-    PoolInfo() : ptr(nullptr), size(0) {};
+    PoolInfo() = delete;
 
-    void *ptr = nullptr;
+    void* ptr = nullptr;
     size_t size = 0;
   };
 
-  Memory *mem = nullptr;
-  uint64_t _pool_size = 0;
+  T* current = nullptr;
+  std::size_t left = 0;
+  Memory* const memory_ = nullptr;
+  std::size_t _pool_size = 0;
   std::vector<PoolInfo> infos;
 };
 
@@ -70,39 +93,18 @@ class CustomAllocator {
   template <typename U>
   friend class CustomAllocator;
 
-  // Constructor
-  CustomAllocator(Memory *const memory, MemoryKeeper *const keeper) : memory_(memory), keeper_(keeper) {}
+  CustomAllocator() = delete;
 
-  // Copy constructor
+  constexpr CustomAllocator(MemoryKeeper<T>* const keeper) noexcept : keeper_(keeper) {}
+
   template <typename U>
-  CustomAllocator(const CustomAllocator<U> &other) : memory_(other.memory_), keeper_(other.keeper_) {}
-
-  ~CustomAllocator() {}
-
-  // Allocate memory
-  T *allocate(const std::size_t n)
+  constexpr CustomAllocator(const CustomAllocator<U>& other) noexcept : keeper_(other.keeper_)
   {
-    T *ptr = nullptr;
-    uint64_t pool_size = keeper_->pool_size();
-    if (n > pool_size) {
-      // If requested size is larger than pool, allocate separately
-      memory_->create<T>(ptr, n, "CustomAllocator_Large");
-      keeper_->store(ptr, n);
-      return ptr;
-    }
-    if (current == nullptr || left < n) {
-      // Pool is full or not initialized, request a new pool
-      memory_->create<T>(current, pool_size, "CustomAllocator_Pool");
-      left = pool_size;
-    }
-    ptr = current;
-    left -= n;
-    current += n;
-    return ptr;
   }
 
-  // Deallocate memory
-  void deallocate(T *p, const std::size_t n) const noexcept
+  inline T* allocate(const std::size_t n) const { return keeper_->allocate(n); }
+
+  inline constexpr void deallocate(T /**p*/, const std::size_t /*n*/) const noexcept
   {
     // Deallocation can be handled when the allocator is destroyed
     // For pool allocator, individual deallocations are often no-ops
@@ -110,23 +112,19 @@ class CustomAllocator {
 
   // Equality operators
   template <typename U>
-  bool operator==(const CustomAllocator<U> &other) const noexcept
+  inline constexpr bool operator==(const CustomAllocator<U>& other) const noexcept
   {
-    return (keeper_ == other.keeper_) && (memory_ == other.memory_) && (current == other.current) && (left == other.left);
+    return keeper_ == other.keeper_;
   }
 
   template <typename U>
-  bool operator!=(const CustomAllocator<U> &other) const noexcept
+  inline constexpr bool operator!=(const CustomAllocator<U>& other) const noexcept
   {
     return !(*this == other);
   }
 
  private:
-  T *current = nullptr;
-  size_t left = 0;
-
-  MemoryKeeper *const keeper_;
-  Memory *const memory_;
+  MemoryKeeper<T>* const keeper_;
 };
 
 }    // namespace NUCC

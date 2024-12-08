@@ -26,7 +26,7 @@
 #include <utility>
 
 using namespace LAMMPS_NS;
-using NUCC::cspan;
+using namespace NUCC;
 
 /* ---------------------------------------------------------------------- */
 
@@ -55,13 +55,17 @@ ComputeClusterSizeExt::ComputeClusterSizeExt(LAMMPS *lmp, int narg, char **arg) 
   size_cutoff = utils::inumeric(FLERR, arg[4], true, lmp);
   if (size_cutoff < 1) { error->all(FLERR, "size_cutoff for compute cluster/size must be greater than 0"); }
 
-  // keeper = new MemoryKeeper(memory);
+  keeper1 = new MemoryKeeper<MapMember_t<int, int>>(memory);
+  cluster_map_allocator = new MapAlloc_t<int, int>(keeper1);
+  cluster_map = new Map_t<int, int>(*cluster_map_allocator);
 
-  // alloc = new CustomAllocator<std::pair<const int, int>>(memory, keeper);
-  // cluster_map = new Cluster_map_t(*alloc);
+  keeper2 = new MemoryKeeper<MapMember_t<int, Vec_t<int>>>(memory);
+  alloc_map_vec1 = new MapAlloc_t<int, Vec_t<int>>(keeper2);
+  cIDs_by_size = new Map_t<int, Vec_t<int>>(*alloc_map_vec1);
 
-  // alloc_vector = new Allocator_map_vector(memory, keeper);
-  // cIDs_by_size = new Sizes_map_t(*alloc_vector);
+  keeper3 = new MemoryKeeper<MapMember_t<int, Vec_t<int>>>(memory);
+  alloc_map_vec2 = new MapAlloc_t<int, Vec_t<int>>(keeper3);
+  cIDs_by_size_all = new Map_t<int, Vec_t<int>>(*alloc_map_vec2);
 
   size_vector = size_cutoff + 1;
 }
@@ -79,12 +83,17 @@ ComputeClusterSizeExt::~ComputeClusterSizeExt() noexcept(true)
   gathered.destroy(memory);
   monomers.destroy(memory);
 
-  // delete cIDs_by_size;
-  // delete alloc_vector;
+  delete keeper1;
+  delete cluster_map_allocator;
+  delete cluster_map;
 
-  // delete cluster_map;
-  // delete alloc;
-  // delete keeper;
+  delete keeper2;
+  delete alloc_map_vec1;
+  delete cIDs_by_size;
+
+  delete keeper3;
+  delete alloc_map_vec2;
+  delete cIDs_by_size_all;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -101,12 +110,13 @@ void ComputeClusterSizeExt::init()
   vector = dist.data();
 
   nloc = static_cast<int>(atom->nlocal * LMP_NUCC_ALLOC_COEFF);
-  // keeper->pool_size(nloc);
-  // cluster_map->reserve(nloc);
-  // cIDs_by_size->reserve(nloc);
-  cluster_map.reserve(nloc);
-  cIDs_by_size.reserve(nloc);
-  cIDs_by_size_all.reserve(nloc);
+  keeper1->pool_size(nloc);
+  keeper2->pool_size(nloc);
+  keeper3->pool_size(nloc);
+
+  cluster_map->reserve(nloc);
+  cIDs_by_size->reserve(size_cutoff);
+  cIDs_by_size_all->reserve(size_cutoff);
 
   clusters.create(memory, nloc, "clusters");
   ns.create(memory, 2 * nloc, "ns");
@@ -149,15 +159,17 @@ void ComputeClusterSizeExt::compute_vector()
 {
   invoked_vector = update->ntimestep;
 
-  // auto &cmap = *cluster_map;
-  auto &cmap = cluster_map;
+  auto &cmap = *cluster_map;
+  auto &cbs = *cIDs_by_size;
+  auto &cbs_all = *cIDs_by_size;
+  // auto &cmap = cluster_map;
 
   if (compute_cluster_atom->invoked_peratom != update->ntimestep) { compute_cluster_atom->compute_peratom(); }
 
   const double *const cluster_ids = compute_cluster_atom->vector_atom;
   cmap.clear();
-  cIDs_by_size.clear();
-  cIDs_by_size_all.clear();
+  cbs.clear();
+  cbs_all.clear();
   counts_global.reset();
   displs.reset();
   dist_local.reset();
@@ -166,9 +178,7 @@ void ComputeClusterSizeExt::compute_vector()
   if (atom->nlocal > nloc) {
     nloc = static_cast<int>(atom->nlocal * LMP_NUCC_ALLOC_COEFF);
     // keeper->pool_size(nloc);
-    // cIDs_by_size->reserve(nloc);
     cmap.reserve(nloc);
-    cIDs_by_size_all.reserve(nloc);
 
     clusters.grow(memory, nloc, "clusters");
     ns.grow(memory, 2 * nloc, "ns");
@@ -247,14 +257,13 @@ void ComputeClusterSizeExt::compute_vector()
     cluster_data &clstr = clusters[clidx];
     clstr.l_size = ns[2 * clidx + 1];
     clstr.rearrange();
-    if ((clstr.g_size < size_cutoff) && (clstr.g_size > 1)) { cIDs_by_size_all[clstr.g_size].push_back(clidx); }
+    if ((clstr.g_size < size_cutoff) && (clstr.g_size > 1)) { cbs_all[clstr.g_size].push_back(clidx); }
     if (clstr.host == comm->me) {
       if (clstr.g_size < size_cutoff) { dist_local[clstr.g_size] += 1; }
       if (clstr.g_size == 1) {
         monomers[nmono++] = clidx;
       } else {
-        // (*cIDs_by_size)[clstr.g_size].push_back(clidx);
-        cIDs_by_size[clstr.g_size].push_back(clidx);
+        cbs[clstr.g_size].push_back(clidx);
       }
     }
     if ((clstr.host < 0) || (clstr.host >= comm->nprocs)) { utils::logmesg(lmp, "CS(2): Invalid host: {}", clstr.host); }
@@ -299,11 +308,12 @@ void ComputeClusterSizeExt::compute_vector()
 
 double ComputeClusterSizeExt::memory_usage()
 {
-  double sum = static_cast<unsigned long>(size_vector) * 2 * sizeof(double);
-  sum += static_cast<unsigned long>(comm->nprocs) * 2 * sizeof(int);
-  sum += static_cast<unsigned long>(nloc) * (sizeof(cluster_data) + 2 * sizeof(int) + sizeof(std::pair<const int, int>));
-  sum += static_cast<unsigned long>(natom_loc) * sizeof(int);
-  return sum;
+  std::size_t sum = dist.memory_usage() + dist_local.memory_usage();
+  sum += counts_global.memory_usage() + displs.memory_usage();
+  sum += clusters.memory_usage();
+  sum += ns.memory_usage() + gathered.memory_usage();
+  sum += monomers.memory_usage();
+  return static_cast<double>(sum);
 }
 
 /* ---------------------------------------------------------------------- */

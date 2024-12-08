@@ -69,7 +69,7 @@ class cspan {
     return *this;
   }
 
-  inline constexpr T &at(std::size_t index) const
+  inline constexpr T &at(std::size_t index)
 #ifndef __NUCC_CSPAN_CHECK_ACCESS
       noexcept
 #endif
@@ -85,7 +85,7 @@ class cspan {
     return span_[index];
   }
 
-  inline constexpr T *offset(std::size_t offset) const
+  inline constexpr T *offset(std::size_t offset)
 #ifndef __NUCC_CSPAN_CHECK_ACCESS
       noexcept
 #endif
@@ -101,7 +101,7 @@ class cspan {
     return span_.data() + offset;
   }
 
-  inline constexpr T &operator[](std::size_t index) const
+  inline constexpr T &operator[](std::size_t index)
 #ifndef __NUCC_CSPAN_CHECK_ACCESS
       noexcept
 #endif
@@ -117,7 +117,57 @@ class cspan {
     return span_[index];
   }
 
-  inline constexpr T *data() const noexcept { return span_.data(); }
+  inline constexpr const T &at(std::size_t index) const
+#ifndef __NUCC_CSPAN_CHECK_ACCESS
+      noexcept
+#endif
+  {
+#ifdef __NUCC_CSPAN_CHECK_ACCESS
+    if (index >= span_.size()) {
+#  ifdef __NUCC_CSPAN_DEBUG_CALLS
+      beck.call();
+#  endif
+      throw std::out_of_range("Index out of range");
+    }
+#endif
+    return span_[index];
+  }
+
+  inline constexpr const T *offset(std::size_t offset) const
+#ifndef __NUCC_CSPAN_CHECK_ACCESS
+      noexcept
+#endif
+  {
+#ifdef __NUCC_CSPAN_CHECK_ACCESS
+    if (offset >= span_.size()) {
+#  ifdef __NUCC_CSPAN_DEBUG_CALLS
+      beck.call();
+#  endif
+      throw std::out_of_range("Index out of range");
+    }
+#endif
+    return span_.data() + offset;
+  }
+
+  inline constexpr const T &operator[](std::size_t index) const
+#ifndef __NUCC_CSPAN_CHECK_ACCESS
+      noexcept
+#endif
+  {
+#ifdef __NUCC_CSPAN_CHECK_ACCESS
+    if (index >= span_.size()) {
+#  ifdef __NUCC_CSPAN_DEBUG_CALLS
+      beck.call();
+#  endif
+      throw std::out_of_range("Index out of range");
+    }
+#endif
+    return span_[index];
+  }
+
+  inline constexpr T *data() noexcept { return span_.data(); }
+
+  inline constexpr const T *data() const noexcept { return span_.data(); }
 
   inline constexpr std::size_t size() const noexcept { return span_.size(); }
 

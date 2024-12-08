@@ -44,7 +44,6 @@ class ComputeClusterVolume : public Compute {
 
   VOLUMEMODE mode;
   std::array<double, 6> subbonds;
-  // double subbonds[6]{};
   int nloc{};
   NUCC::cspan<double> volumes;
   NUCC::cspan<double> dist_local;
@@ -95,6 +94,7 @@ class ComputeClusterVolume : public Compute {
     // for (int i = 0; i < n; ++i) { array[i] = nullptr; }
     return ptr;
   }
+  
   template <typename TYPE> TYPE **grow_ptr_array(TYPE **&ptr, int n, const char *name)
   {
     if (n <= 0) {

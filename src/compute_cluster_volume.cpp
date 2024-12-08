@@ -30,6 +30,7 @@
 
 using namespace LAMMPS_NS;
 using NUCC::cspan;
+using NUCC::cluster_data;
 
 /* ---------------------------------------------------------------------- */
 
@@ -189,9 +190,7 @@ void ComputeClusterVolume::compute_vector()
   invoked_vector = update->ntimestep;
 
   compute_local();
-  ::memset(dist.data(), 0.0, dist.size() * sizeof(double));
-  // ::MPI_Allreduce(dist_local, dist, size_vector, MPI_DOUBLE, MPI_SUM, world);
-  // for (int i = 0; i < size_vector; ++i) { dist[i] /= comm->nprocs; }
+  dist.reset();
   ::MPI_Allgather(dist_local.data(), size_vector, MPI_DOUBLE, dist_global.data(), size_vector,
                   MPI_DOUBLE, world);
   for (int i = 0; i < size_vector; ++i) {
@@ -231,11 +230,9 @@ void ComputeClusterVolume::compute_local()
 
   if (nloc < atom->nlocal) {
     nloc = static_cast<int>(atom->nlocal * LMP_NUCC_ALLOC_COEFF);
-    // memory->grow(volumes, nloc, "ComputeClusterVolume:volumes");
     volumes.grow(memory, nloc, "ComputeClusterVolume:volumes");
 
     if (mode == VOLUMEMODE::RECTANGLE) {
-      // memory->grow(bboxes, 6 * nloc, "ComputeClusterVolume:bboxes");
       bboxes.grow(memory, 6 * nloc, "ComputeClusterVolume:bboxes");
     }
   }
@@ -247,11 +244,8 @@ void ComputeClusterVolume::compute_local()
     grow_ptr_array(out_reqs, comm->nprocs * nloc_recv, "ComputeClusterVolume:out_reqs");
 
     if (mode == VOLUMEMODE::CALC) {
-      // memory->grow(recv_buf, comm->nprocs * nloc_recv, "ComputeClusterVolume:recv_buf");
       recv_buf.grow(memory, comm->nprocs * nloc_recv, "ComputeClusterVolume:recv_buf");
     } else if (mode == VOLUMEMODE::RECTANGLE) {
-      // memory->grow(recv_buf, static_cast<bigint>(6) * comm->nprocs * nloc_recv,
-      //              "ComputeClusterVolume:recv_buf");
       recv_buf.grow(memory, static_cast<bigint>(6) * comm->nprocs * nloc_recv,
                     "ComputeClusterVolume:recv_buf");
     } else {
@@ -266,8 +260,7 @@ void ComputeClusterVolume::compute_local()
 
   int to_send = 0;
   int to_receive = 0;
-  // Sizes_map_t const &cmap = *(compute_cluster_size->cIDs_by_size);
-  const auto &cmap = compute_cluster_size->get_cIDs_by_size_all();
+  const auto &cmap = *compute_cluster_size->get_cIDs_by_size_all();
   const auto &clusters = compute_cluster_size->get_clusters();
   if (mode == VOLUMEMODE::CALC) {
     for (const auto &[size, clidxs] : cmap) {
@@ -404,7 +397,6 @@ void ComputeClusterVolume::compute_local()
   }
 
   dist_local.reset();
-  // ::memset(dist_local, 0.0, size_local_rows * sizeof(double));
   for (const auto &[size, clidxs] : cmap) {
     int num_clst = 0;
     for (const auto clidx : clidxs) {
@@ -495,10 +487,8 @@ double ComputeClusterVolume::occupied_volume_precomputed(const cspan<const int> 
 
   if (nloc_grid < steps_x * steps_y * steps_z) {
     nloc_grid = steps_x * steps_y * steps_z;
-    // memory->grow(occupancy_grid, nloc_grid, "compute_cluster_volume:grid");
     occupancy_grid.grow(memory, nloc_grid, "compute_cluster_volume:grid");
   }
-  // ::memset(occupancy_grid, 0, nloc_grid * sizeof(bool));
   occupancy_grid.reset();
 
   for (int l = 0; l < n + nghost; ++l) {
@@ -556,10 +546,8 @@ double ComputeClusterVolume::occupied_volume_grid(const int *const list, const i
 
   if (nloc_grid < steps_x * steps_y * steps_z) {
     nloc_grid = steps_x * steps_y * steps_z;
-    // memory->grow(occupancy_grid, nloc_grid, "compute_cluster_volume:grid");
     occupancy_grid.grow(memory, nloc_grid, "compute_cluster_volume:grid");
   }
-  // ::memset(occupancy_grid, 0, nloc_grid * sizeof(bool));
   occupancy_grid.reset();
 
   for (int l = 0; l < n + nghost; ++l) {
@@ -612,8 +600,14 @@ double ComputeClusterVolume::occupied_volume_grid(const int *const list, const i
 
 double ComputeClusterVolume::memory_usage()
 {
-  auto num = static_cast<double>((size_local_rows + size_vector) * sizeof(double));
-  num += nloc_grid * sizeof(bool);
-  if (precompute) { num += noff * sizeof(int); }
-  return num;
+  std::size_t num = volumes.memory_usage() + dist_global.memory_usage() + dist_local.memory_usage() + dist.memory_usage();
+  num += recv_buf.memory_usage();
+  if (mode == VOLUMEMODE::CALC) {
+    num += occupancy_grid.memory_usage();
+    if (precompute) { num += offsets.memory_usage(); }
+  } else if (mode == VOLUMEMODE::RECTANGLE)
+  {
+    num += bboxes.memory_usage();
+  }
+  return static_cast<double>(num);
 }
