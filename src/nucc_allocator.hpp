@@ -1,13 +1,14 @@
-#ifndef CUSTOM_STL_ALLOCATOR_HPP
-#define CUSTOM_STL_ALLOCATOR_HPP
+#ifndef __NUCC_CUSTOM_STL_ALLOCATOR_HPP
+#define __NUCC_CUSTOM_STL_ALLOCATOR_HPP
 
 #include "memory.h"
+
 #include <cassert>
 #include <cstddef>
 #include <memory>
 #include <vector>
 
-namespace LAMMPS_NS {
+namespace NUCC {
 
 class MemoryKeeper {
  public:
@@ -20,7 +21,11 @@ class MemoryKeeper {
   MemoryKeeper(Memory *mem) : mem(mem) {}
   ~MemoryKeeper() { clear(); }
 
-  template <typename T> void store(T *&ptr, const size_t size) { infos.emplace_back(ptr, size); }
+  template <typename T>
+  void store(T *&ptr, const size_t size)
+  {
+    infos.emplace_back(ptr, size);
+  }
 
   void clear()
   {
@@ -38,12 +43,11 @@ class MemoryKeeper {
  private:
   struct PoolInfo {
     template <typename T>
-    PoolInfo(T *&ptr, const size_t size) :
-        ptr(reinterpret_cast<void *>(ptr)), size(size * sizeof(T))
+    PoolInfo(T *&ptr, const size_t size) : ptr(reinterpret_cast<void *>(ptr)), size(size * sizeof(T))
     {
     }
 
-    PoolInfo() : ptr(nullptr), size(0){};
+    PoolInfo() : ptr(nullptr), size(0) {};
 
     void *ptr = nullptr;
     size_t size = 0;
@@ -58,23 +62,20 @@ class MemoryKeeper {
 /* ---------------------------------------------------------------------- */
 /* ---------------------------------------------------------------------- */
 
-template <typename T> class CustomAllocator {
+template <typename T>
+class CustomAllocator {
  public:
   using value_type = T;
 
-  template <typename U> friend class CustomAllocator;
+  template <typename U>
+  friend class CustomAllocator;
 
   // Constructor
-  CustomAllocator(Memory *const memory, MemoryKeeper *const keeper) :
-      memory_(memory), keeper_(keeper)
-  {
-  }
+  CustomAllocator(Memory *const memory, MemoryKeeper *const keeper) : memory_(memory), keeper_(keeper) {}
 
   // Copy constructor
   template <typename U>
-  CustomAllocator(const CustomAllocator<U> &other) : memory_(other.memory_), keeper_(other.keeper_)
-  {
-  }
+  CustomAllocator(const CustomAllocator<U> &other) : memory_(other.memory_), keeper_(other.keeper_) {}
 
   ~CustomAllocator() {}
 
@@ -108,13 +109,14 @@ template <typename T> class CustomAllocator {
   }
 
   // Equality operators
-  template <typename U> bool operator==(const CustomAllocator<U> &other) const noexcept
+  template <typename U>
+  bool operator==(const CustomAllocator<U> &other) const noexcept
   {
-    return (keeper_ == other.keeper_) && (memory_ == other.memory_) && (current == other.current) &&
-        (left == other.left);
+    return (keeper_ == other.keeper_) && (memory_ == other.memory_) && (current == other.current) && (left == other.left);
   }
 
-  template <typename U> bool operator!=(const CustomAllocator<U> &other) const noexcept
+  template <typename U>
+  bool operator!=(const CustomAllocator<U> &other) const noexcept
   {
     return !(*this == other);
   }
@@ -127,6 +129,6 @@ template <typename T> class CustomAllocator {
   Memory *const memory_;
 };
 
-}    // namespace LAMMPS_NS
+}    // namespace NUCC
 
 #endif    // CUSTOM_ALLOCATOR_HPP

@@ -17,25 +17,25 @@ ComputeStyle(cluster/size/ext,ComputeClusterSizeExt);
 // clang-format on
 #else
 
-#ifndef LMP_COMPUTE_CLUSTER_SIZE_ExT_H
-#define LMP_COMPUTE_CLUSTER_SIZE_ExT_H
+#  ifndef LMP_COMPUTE_CLUSTER_SIZE_ExT_H
+#    define LMP_COMPUTE_CLUSTER_SIZE_ExT_H
 
-#define LMP_NUCC_ALLOC_COEFF 1.2
-#define LMP_NUCC_CLUSTER_MAX_OWNERS 128
-#define LMP_NUCC_CLUSTER_MAX_SIZE 300
-#define LMP_NUCC_CLUSTER_MAX_GHOST 300
+#    define LMP_NUCC_ALLOC_COEFF 1.2
+#    define LMP_NUCC_CLUSTER_MAX_OWNERS 128
+#    define LMP_NUCC_CLUSTER_MAX_SIZE 300
+#    define LMP_NUCC_CLUSTER_MAX_GHOST 300
 
-#include "compute.h"
-#include "nucc_allocator.hpp"
-#include "nucc_cspan.hpp"
+#    include "compute.h"
+#    include "nucc_allocator.hpp"
+#    include "nucc_cspan.hpp"
 
-#include <array>
-#include <scoped_allocator>
-#include <span>
-#include <unordered_map>
-#include <vector>
+#    include <array>
+#    include <scoped_allocator>
+#    include <span>
+#    include <unordered_map>
+#    include <vector>
 
-namespace LAMMPS_NS {
+namespace NUCC {
 
 struct cluster_data {
   explicit cluster_data(const int _clid) : clid(_clid) {}
@@ -53,10 +53,7 @@ struct cluster_data {
 
   NUCC::cspan<const int> atoms() const { return std::span<const int>(_atoms, l_size); }
 
-  NUCC::cspan<int, LMP_NUCC_CLUSTER_MAX_GHOST> ghost_initial()
-  {
-    return std::span<int, LMP_NUCC_CLUSTER_MAX_GHOST>(_ghost, nghost);
-  }
+  NUCC::cspan<int, LMP_NUCC_CLUSTER_MAX_GHOST> ghost_initial() { return std::span<int, LMP_NUCC_CLUSTER_MAX_GHOST>(_ghost, nghost); }
 
   NUCC::cspan<const int> ghost() const { return std::span<const int>(_atoms + l_size, nghost); }
 
@@ -82,6 +79,10 @@ struct cluster_data {
   int _ghost[LMP_NUCC_CLUSTER_MAX_GHOST];      // local ids of ghost atoms
 };
 
+}    // namespace NUCC
+
+namespace LAMMPS_NS {
+
 class ComputeClusterSizeExt : public Compute {
  public:
   ComputeClusterSizeExt(class LAMMPS *lmp, int narg, char **arg);
@@ -92,33 +93,10 @@ class ComputeClusterSizeExt : public Compute {
 
   inline constexpr int get_size_cutoff() const noexcept(true) { return size_cutoff; }
   inline constexpr int get_nonexclusive() const noexcept(true) { return nonexclusive; }
-  inline constexpr const std::unordered_map<int, int> &get_cluster_map() const noexcept(true)
-  {
-    return cluster_map;
-  }
-  inline constexpr const std::unordered_map<int, std::vector<int>> &get_cIDs_by_size() const
-      noexcept(true)
-  {
-    return cIDs_by_size;
-  }
-  inline constexpr const std::unordered_map<int, std::vector<int>> &get_cIDs_by_size_all() const
-      noexcept(true)
-  {
-    return cIDs_by_size_all;
-  }
-  inline constexpr const NUCC::cspan<cluster_data> &get_clusters() const noexcept(true)
-  {
-    return clusters;
-  }
-
-  // using Cluster_map_t =
-  //     std::unordered_map<int, int, std::hash<int>, std::equal_to<int>,
-  //                       std::scoped_allocator_adaptor<CustomAllocator<std::pair<const int, int>>>>;
-  // using Allocator_map_vector =
-  //     CustomAllocator<std::pair<const int, std::vector<int, CustomAllocator<int>>>>;
-  // using Sizes_map_t =
-  //     std::unordered_map<int, std::vector<int, CustomAllocator<int>>, std::hash<int>,
-  //                       std::equal_to<int>, std::scoped_allocator_adaptor<Allocator_map_vector>>;
+  inline constexpr const std::unordered_map<int, int> &get_cluster_map() const noexcept(true) { return cluster_map; }
+  inline constexpr const std::unordered_map<int, std::vector<int>> &get_cIDs_by_size() const noexcept(true) { return cIDs_by_size; }
+  inline constexpr const std::unordered_map<int, std::vector<int>> &get_cIDs_by_size_all() const noexcept(true) { return cIDs_by_size_all; }
+  inline constexpr const NUCC::cspan<NUCC::cluster_data> &get_clusters() const noexcept(true) { return clusters; }
 
  private:
   int size_cutoff;    // number of elements reserved in dist
@@ -132,19 +110,19 @@ class ComputeClusterSizeExt : public Compute {
   std::unordered_map<int, std::vector<int>> cIDs_by_size;    // size -> vector(idx)
   std::unordered_map<int, std::vector<int>> cIDs_by_size_all;
 
-  int nloc;                // number of reserved elements in atoms_by_cID and cIDs_by_size
-  double *dist;            // cluster size distribution (vector == dist)
-  double *dist_local{};    // local cluster size distribution
-  int nc_global;           // number of clusters total
-  int *counts_global{};
-  int *displs{};
-  NUCC::cspan<cluster_data> clusters;
+  int nloc;                          // number of reserved elements in atoms_by_cID and cIDs_by_size
+  NUCC::cspan<double> dist;          // cluster size distribution (vector == dist)
+  NUCC::cspan<double> dist_local;    // local cluster size distribution
+  int nc_global;                     // number of clusters total
+  NUCC::cspan<int> counts_global;
+  NUCC::cspan<int> displs;
+  NUCC::cspan<NUCC::cluster_data> clusters;
   NUCC::cspan<int> ns;
   NUCC::cspan<int> gathered;
   bigint natom_loc;
   int nonexclusive;
 
-  int *monomers;
+  NUCC::cspan<int> monomers;
   int nmono;
 
   Compute *compute_cluster_atom = nullptr;
@@ -153,5 +131,5 @@ class ComputeClusterSizeExt : public Compute {
 
 }    // namespace LAMMPS_NS
 
-#endif
+#  endif
 #endif

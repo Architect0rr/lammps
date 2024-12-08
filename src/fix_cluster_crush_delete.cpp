@@ -204,8 +204,6 @@ void FixClusterCrushDelete::init()
     error->warning(FLERR, "More than one fix {}", style);
   }
 
-  // memory->create(pproc, comm->nprocs * sizeof(int), "cluster/crush:pproc");
-  // memory->create(c2c, comm->nprocs * sizeof(int), "cluster/crush:c2c");
   pproc.create(memory, comm->nprocs, "cluster/crush:pproc");
   c2c.create(memory, comm->nprocs, "cluster/crush:c2c");
 
@@ -251,8 +249,6 @@ void FixClusterCrushDelete::pre_exchange()
   if (nloc < atom->nlocal) {
     nloc = atom->nlocal;
     p2m.grow(memory, nloc, "fix cluster/crush:p2m");
-    // memory->create(p2m, nloc * sizeof(int), "fix cluster/crush:p2m");
-    // ::memset(p2m, 0, nloc);
     p2m.reset();
   }
 
@@ -274,12 +270,10 @@ void FixClusterCrushDelete::pre_exchange()
     }
   }
 
-  // ::memset(c2c, 0, comm->nprocs * sizeof(int));
   c2c.reset();
   c2c[comm->me] = clusters2crush_local;
   ::MPI_Allgather(&clusters2crush_local, 1, MPI_INT, c2c.data(), 1, MPI_INT, world);
 
-  // ::memset(pproc, 0, comm->nprocs * sizeof(int));
   pproc.reset();
   pproc[comm->me] = atoms2move_local;
   ::MPI_Allgather(&atoms2move_local, 1, MPI_INT, pproc.data(), 1, MPI_INT, world);
