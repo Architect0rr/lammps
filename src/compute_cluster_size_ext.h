@@ -90,6 +90,7 @@ class ComputeClusterSizeExt : public Compute {
   ~ComputeClusterSizeExt() noexcept(true) override;
   void init() override;
   void compute_vector() override;
+  void compute_peratom() override;
   double memory_usage() override;
 
   inline constexpr int get_size_cutoff() const noexcept(true) { return size_cutoff; }
@@ -114,7 +115,7 @@ class ComputeClusterSizeExt : public Compute {
   NUCC::MapAlloc_t<int, NUCC::Vec_t<int>> *alloc_map_vec1;
   NUCC::Map_t<int, NUCC::Vec_t<int>> *cIDs_by_size;
   // std::unordered_map<int, std::vector<int>> cIDs_by_size;    // size -> vector(idx)
-  
+
   NUCC::MemoryKeeper<NUCC::MapMember_t<int, NUCC::Vec_t<int>>> *keeper3;
   NUCC::MapAlloc_t<int, NUCC::Vec_t<int>> *alloc_map_vec2;
   NUCC::Map_t<int, NUCC::Vec_t<int>> *cIDs_by_size_all;
@@ -129,8 +130,10 @@ class ComputeClusterSizeExt : public Compute {
   NUCC::cspan<NUCC::cluster_data> clusters;
   NUCC::cspan<int> ns;
   NUCC::cspan<int> gathered;
+  NUCC::cspan<double> peratom_size;
   bigint natom_loc;
   int nonexclusive;
+  int nloc_peratom;
 
   NUCC::cspan<int> monomers;
   int nmono;

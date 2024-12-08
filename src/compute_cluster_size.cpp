@@ -26,8 +26,8 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-ComputeClusterSize::ComputeClusterSize(LAMMPS *lmp, int narg, char **arg)
-    : Compute(lmp, narg, arg), nloc(0), nloc_atom(0), nc_global(0) {
+ComputeClusterSize::ComputeClusterSize(LAMMPS* lmp, int narg, char** arg) : Compute(lmp, narg, arg), nloc(0), nloc_atom(0), nc_global(0)
+{
   vector_flag = 1;
   extvector = 0;
   size_vector = 0;
@@ -36,9 +36,7 @@ ComputeClusterSize::ComputeClusterSize(LAMMPS *lmp, int narg, char **arg)
   peratom_flag = 1;
   size_peratom_cols = 0;
 
-  if (narg < 4) {
-    utils::missing_cmd_args(FLERR, "compute cluster/size", error);
-  }
+  if (narg < 4) { utils::missing_cmd_args(FLERR, "compute cluster/size", error); }
 
   // Parse arguments //
 
@@ -46,32 +44,29 @@ ComputeClusterSize::ComputeClusterSize(LAMMPS *lmp, int narg, char **arg)
   compute_cluster_atom = lmp->modify->get_compute_by_id(arg[3]);
   if (compute_cluster_atom == nullptr) {
     error->all(FLERR,
-               "compute cluster/size: Cannot find compute with style "
+               "{}: Cannot find compute with style "
                "'cluster/atom' with given id: {}",
-               arg[3]);
+               style, arg[3]);
   }
 
   // Get the critical size
   size_cutoff = utils::inumeric(FLERR, arg[4], true, lmp);
-  if (size_cutoff < 1) {
-    error->all(FLERR,
-               "size_cutoff for compute cluster/size must be greater than 0");
-  }
+  if (size_cutoff < 1) { error->all(FLERR, "size_cutoff for {} must be greater than 0", style); }
 }
 
 /* ---------------------------------------------------------------------- */
 
-ComputeClusterSize::~ComputeClusterSize() noexcept(true) {
+ComputeClusterSize::~ComputeClusterSize() noexcept(true)
+{
   dist.destroy(memory);
   peratom_size.destroy(memory);
 }
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeClusterSize::init() {
-  if ((modify->get_compute_by_style(style).size() > 1) && (comm->me == 0)) {
-    error->warning(FLERR, "More than one compute {}", style);
-  }
+void ComputeClusterSize::init()
+{
+  if ((modify->get_compute_by_style(style).size() > 1) && (comm->me == 0)) { error->warning(FLERR, "More than one compute {}", style); }
 
   size_vector = size_cutoff + 1;
   dist.create(memory, size_vector, "compute:cluster/size:dist");
@@ -87,14 +82,13 @@ void ComputeClusterSize::init() {
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeClusterSize::compute_vector() {
+void ComputeClusterSize::compute_vector()
+{
   invoked_vector = update->ntimestep;
 
-  if (compute_cluster_atom->invoked_peratom != update->ntimestep) {
-    compute_cluster_atom->compute_peratom();
-  }
+  if (compute_cluster_atom->invoked_peratom != update->ntimestep) { compute_cluster_atom->compute_peratom(); }
 
-  const double *cluster_ids = compute_cluster_atom->vector_atom;
+  const double* cluster_ids = compute_cluster_atom->vector_atom;
 
   if (atom->nlocal > nloc) {
     nloc = atom->nlocal;
@@ -108,27 +102,21 @@ void ComputeClusterSize::compute_vector() {
 
   // Sort atom IDs by cluster IDs
   for (int i = 0; i < atom->nlocal; ++i) {
-    if ((atom->mask[i] & groupbit) != 0) {
-      atoms_by_cID[static_cast<int>(cluster_ids[i])].emplace_back(i);
-    }
+    if ((atom->mask[i] & groupbit) != 0) { atoms_by_cID[static_cast<int>(cluster_ids[i])].emplace_back(i); }
   }
 
   nc_global = 0;
   dist.reset();
 
   // Sum cluster size over all procs
-  int l_size = 0; // local size of cluster
-  int g_size = 0; // global size of cluster
+  int l_size = 0;    // local size of cluster
+  int g_size = 0;    // global size of cluster
   for (int i = 1; i <= atom->natoms; ++i) {
     l_size = atoms_by_cID.count(i) == 0 ? 0 : atoms_by_cID[i].size();
     ::MPI_Allreduce(&l_size, &g_size, 1, MPI_INT, MPI_SUM, world);
-    if (l_size > 0) {
-      cIDs_by_size[g_size].emplace_back(i);
-    }
+    if (l_size > 0) { cIDs_by_size[g_size].emplace_back(i); }
     if (g_size > 0) {
-      if (g_size < size_cutoff) {
-        dist[g_size] += 1;
-      }
+      if (g_size < size_cutoff) { dist[g_size] += 1; }
       ++nc_global;
     }
   }
@@ -138,12 +126,11 @@ void ComputeClusterSize::compute_vector() {
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeClusterSize::compute_peratom() {
+void ComputeClusterSize::compute_peratom()
+{
   invoked_peratom = update->ntimestep;
 
-  if (invoked_vector != update->ntimestep) {
-    compute_vector();
-  }
+  if (invoked_vector != update->ntimestep) { compute_vector(); }
 
   if (nloc_atom < atom->nlocal) {
     nloc_atom = atom->nlocal;
@@ -152,11 +139,9 @@ void ComputeClusterSize::compute_peratom() {
     vector_atom = peratom_size.data();
   }
 
-  for (const auto &[size, cIDs] : cIDs_by_size) {
+  for (const auto& [size, cIDs] : cIDs_by_size) {
     for (auto cID : cIDs) {
-      for (auto pID : atoms_by_cID[cID]) {
-        peratom_size[pID] = size;
-      }
+      for (auto pID : atoms_by_cID[cID]) { peratom_size[pID] = size; }
     }
   }
 }
@@ -165,9 +150,10 @@ void ComputeClusterSize::compute_peratom() {
    memory usage of maps and dist
 ------------------------------------------------------------------------- */
 
-double ComputeClusterSize::memory_usage() {
+double ComputeClusterSize::memory_usage()
+{
   std::size_t usage = peratom_size.memory_usage() + dist.memory_usage();
-  return static_cast<double>(usage); // it is needed to be repaired
+  return static_cast<double>(usage);    // it is needed to be repaired
 }
 
 /* ---------------------------------------------------------------------- */

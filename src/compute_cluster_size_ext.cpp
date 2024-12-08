@@ -30,12 +30,16 @@ using namespace NUCC;
 
 /* ---------------------------------------------------------------------- */
 
-ComputeClusterSizeExt::ComputeClusterSizeExt(LAMMPS *lmp, int narg, char **arg) : Compute(lmp, narg, arg), nloc(0), nc_global(0), natom_loc(0)
+ComputeClusterSizeExt::ComputeClusterSizeExt(LAMMPS* lmp, int narg, char** arg) :
+    Compute(lmp, narg, arg), nloc(0), nc_global(0), natom_loc(0), nloc_peratom(0)
 {
   vector_flag = 1;
   extvector = 0;
   size_vector = 0;
   size_vector_variable = 1;
+
+  peratom_flag = 1;
+  size_peratom_cols = 0;
 
   if (comm->nprocs > LMP_NUCC_CLUSTER_MAX_OWNERS) {
     error->all(FLERR, "Number of processor exceeds MAX_OWNER limit. Recompile with higher MAX_OWNER limit.");
@@ -47,9 +51,7 @@ ComputeClusterSizeExt::ComputeClusterSizeExt(LAMMPS *lmp, int narg, char **arg) 
 
   // Get cluster/atom compute
   compute_cluster_atom = lmp->modify->get_compute_by_id(arg[3]);
-  if (compute_cluster_atom == nullptr) {
-    error->all(FLERR, "compute cluster/size: Cannot find compute with style 'cluster/atom' with given id: {}", arg[3]);
-  }
+  if (compute_cluster_atom == nullptr) { error->all(FLERR, "{}: Cannot find compute with style 'cluster/atom' with given id: {}", style, arg[3]); }
 
   // Get the critical size
   size_cutoff = utils::inumeric(FLERR, arg[4], true, lmp);
@@ -125,6 +127,9 @@ void ComputeClusterSizeExt::init()
   natom_loc = static_cast<bigint>(static_cast<long double>(2 * atom->natoms) * LMP_NUCC_ALLOC_COEFF);
   gathered.create(memory, natom_loc, "gathered");
 
+  nloc_peratom = static_cast<int>(atom->nlocal * LMP_NUCC_ALLOC_COEFF);
+  peratom_size.create(memory, nloc_peratom, "cluster/size/ext:peratom");
+
   initialized_flag = 1;
 }
 
@@ -159,14 +164,14 @@ void ComputeClusterSizeExt::compute_vector()
 {
   invoked_vector = update->ntimestep;
 
-  auto &cmap = *cluster_map;
-  auto &cbs = *cIDs_by_size;
-  auto &cbs_all = *cIDs_by_size;
+  auto& cmap = *cluster_map;
+  auto& cbs = *cIDs_by_size;
+  auto& cbs_all = *cIDs_by_size;
   // auto &cmap = cluster_map;
 
   if (compute_cluster_atom->invoked_peratom != update->ntimestep) { compute_cluster_atom->compute_peratom(); }
 
-  const double *const cluster_ids = compute_cluster_atom->vector_atom;
+  const double* const cluster_ids = compute_cluster_atom->vector_atom;
   cmap.clear();
   cbs.clear();
   cbs_all.clear();
@@ -177,7 +182,6 @@ void ComputeClusterSizeExt::compute_vector()
 
   if (atom->nlocal > nloc) {
     nloc = static_cast<int>(atom->nlocal * LMP_NUCC_ALLOC_COEFF);
-    // keeper->pool_size(nloc);
     cmap.reserve(nloc);
 
     clusters.grow(memory, nloc, "clusters");
@@ -208,7 +212,7 @@ void ComputeClusterSizeExt::compute_vector()
     if ((atom->mask[i] & groupbit) != 0) {
       const auto clid = static_cast<int>(cluster_ids[i]);
       if (cmap.count(clid) > 0) {
-        cluster_data &clstr = clusters[cmap[clid]];
+        cluster_data& clstr = clusters[cmap[clid]];
         // also possible segfault if number of ghost exceeds LMP_NUCC_CLUSTER_MAX_GHOST
         clstr.ghost_initial()[clstr.nghost++] = i;
       }
@@ -238,25 +242,33 @@ void ComputeClusterSizeExt::compute_vector()
     for (int j = 0; j < counts_global[i] - 1; j += 2) {
       int const k = displs[i] + j;
       if (cmap.count(gathered[k]) > 0) {
-        cluster_data &clstr = clusters[cmap[gathered[k]]];
+        cluster_data& clstr = clusters[cmap[gathered[k]]];
         if (i != comm->me) { clstr.owners<false>()[clstr.nowners++] = i; }
         clstr.g_size += gathered[k + 1];
         if (gathered[k + 1] > clstr.nhost) {
           clstr.host = i;
-          if ((clstr.host < 0) || (clstr.host >= comm->nprocs)) { utils::logmesg(lmp, "CS(1): Invalid host: {}", clstr.host); }
+          // if ((clstr.host < 0) || (clstr.host >= comm->nprocs)) { utils::logmesg(lmp, "CS(1): Invalid host: {}", clstr.host); }
           clstr.nhost = gathered[k + 1];
         }
       }
     }
   }
 
+  if (nloc_peratom < atom->nlocal) {
+    nloc_peratom = atom->nlocal;
+    peratom_size.grow(memory, nloc_peratom, "cluster_size:peratom");
+    peratom_size.reset();
+    vector_atom = peratom_size.data();
+  }
+
   // adjust local data and fill local size distribution
   nonexclusive = 0;
   nmono = 0;
-  for (const auto &[clid, clidx] : cmap) {
-    cluster_data &clstr = clusters[clidx];
+  for (const auto& [clid, clidx] : cmap) {
+    cluster_data& clstr = clusters[clidx];
     clstr.l_size = ns[2 * clidx + 1];
     clstr.rearrange();
+    for (int i = 0; i < clstr.l_size; ++i) { peratom_size[clstr.atoms()[i]] = clstr.g_size; }
     if ((clstr.g_size < size_cutoff) && (clstr.g_size > 1)) { cbs_all[clstr.g_size].push_back(clidx); }
     if (clstr.host == comm->me) {
       if (clstr.g_size < size_cutoff) { dist_local[clstr.g_size] += 1; }
@@ -266,8 +278,8 @@ void ComputeClusterSizeExt::compute_vector()
         cbs[clstr.g_size].push_back(clidx);
       }
     }
-    if ((clstr.host < 0) || (clstr.host >= comm->nprocs)) { utils::logmesg(lmp, "CS(2): Invalid host: {}", clstr.host); }
     if (clstr.nowners > 0) { ++nonexclusive; }
+    // if ((clstr.host < 0) || (clstr.host >= comm->nprocs)) { utils::logmesg(lmp, "CS(2): Invalid host: {}", clstr.host); }
     // utils::logmesg(lmp, "Cluster: {}, lsize: {}, nowners: {}, owners:", clid, clstr.l_size, clstr.nowners);
     // for (int i = 0; i < clstr.nowners; ++i) { utils::logmesg(lmp, " {:3}", clstr.owners[i]); }
     // utils::logmesg(lmp, "\n");
@@ -300,6 +312,15 @@ void ComputeClusterSizeExt::compute_vector()
   // }
 
   ::MPI_Allreduce(dist_local.data(), dist.data(), size_vector, MPI_DOUBLE, MPI_SUM, world);
+}
+
+/* ---------------------------------------------------------------------- */
+
+void ComputeClusterSizeExt::compute_peratom()
+{
+  invoked_peratom = update->ntimestep;
+
+  if (invoked_vector != update->ntimestep) { compute_vector(); }
 }
 
 /* ----------------------------------------------------------------------
