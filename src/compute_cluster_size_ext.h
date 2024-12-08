@@ -101,22 +101,22 @@ class ComputeClusterSizeExt : public Compute {
   inline constexpr const NUCC::Map_t<int, int> *get_cluster_map() const noexcept(true) { return cluster_map; }
   inline constexpr const NUCC::Map_t<int, NUCC::Vec_t<int>> *get_cIDs_by_size() const noexcept(true) { return cIDs_by_size; }
   inline constexpr const NUCC::Map_t<int, NUCC::Vec_t<int>> *get_cIDs_by_size_all() const noexcept(true) { return cIDs_by_size_all; }
-  inline constexpr const NUCC::cspan<const NUCC::cluster_data> &get_clusters() const noexcept(true) { return clusters; }
+  inline constexpr const NUCC::cspan<const NUCC::cluster_data> get_clusters() const noexcept(true) { return clusters; }
 
  private:
   int size_cutoff;    // number of elements reserved in dist
 
-  NUCC::MemoryKeeper<NUCC::MapMember_t<int, int>> *keeper1;
+  NUCC::MemoryKeeper *keeper1;
   NUCC::MapAlloc_t<int, int> *cluster_map_allocator;
   NUCC::Map_t<int, int> *cluster_map;
   // std::unordered_map<int, int> cluster_map;    // clid -> idx
 
-  NUCC::MemoryKeeper<NUCC::MapMember_t<int, NUCC::Vec_t<int>>> *keeper2;
+  NUCC::MemoryKeeper *keeper2;
   NUCC::MapAlloc_t<int, NUCC::Vec_t<int>> *alloc_map_vec1;
   NUCC::Map_t<int, NUCC::Vec_t<int>> *cIDs_by_size;
   // std::unordered_map<int, std::vector<int>> cIDs_by_size;    // size -> vector(idx)
 
-  NUCC::MemoryKeeper<NUCC::MapMember_t<int, NUCC::Vec_t<int>>> *keeper3;
+  NUCC::MemoryKeeper *keeper3;
   NUCC::MapAlloc_t<int, NUCC::Vec_t<int>> *alloc_map_vec2;
   NUCC::Map_t<int, NUCC::Vec_t<int>> *cIDs_by_size_all;
   // std::unordered_map<int, std::vector<int>> cIDs_by_size_all;

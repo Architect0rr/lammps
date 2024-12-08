@@ -57,15 +57,15 @@ ComputeClusterSizeExt::ComputeClusterSizeExt(LAMMPS* lmp, int narg, char** arg) 
   size_cutoff = utils::inumeric(FLERR, arg[4], true, lmp);
   if (size_cutoff < 1) { error->all(FLERR, "size_cutoff for compute cluster/size must be greater than 0"); }
 
-  keeper1 = new MemoryKeeper<MapMember_t<int, int>>(memory);
+  keeper1 = new MemoryKeeper(memory);
   cluster_map_allocator = new MapAlloc_t<int, int>(keeper1);
   cluster_map = new Map_t<int, int>(*cluster_map_allocator);
 
-  keeper2 = new MemoryKeeper<MapMember_t<int, Vec_t<int>>>(memory);
+  keeper2 = new MemoryKeeper(memory);
   alloc_map_vec1 = new MapAlloc_t<int, Vec_t<int>>(keeper2);
   cIDs_by_size = new Map_t<int, Vec_t<int>>(*alloc_map_vec1);
 
-  keeper3 = new MemoryKeeper<MapMember_t<int, Vec_t<int>>>(memory);
+  keeper3 = new MemoryKeeper(memory);
   alloc_map_vec2 = new MapAlloc_t<int, Vec_t<int>>(keeper3);
   cIDs_by_size_all = new Map_t<int, Vec_t<int>>(*alloc_map_vec2);
 
@@ -112,9 +112,9 @@ void ComputeClusterSizeExt::init()
   vector = dist.data();
 
   nloc = static_cast<int>(atom->nlocal * LMP_NUCC_ALLOC_COEFF);
-  keeper1->pool_size(nloc);
-  keeper2->pool_size(nloc);
-  keeper3->pool_size(nloc);
+  keeper1->pool_size<MapMember_t<int, int>>(nloc);
+  keeper2->pool_size<MapMember_t<int, Vec_t<int>>>(nloc);
+  keeper3->pool_size<MapMember_t<int, Vec_t<int>>>(nloc);
 
   cluster_map->reserve(nloc);
   cIDs_by_size->reserve(size_cutoff);
