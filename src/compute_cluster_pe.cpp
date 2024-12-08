@@ -13,6 +13,7 @@
 
 #include "compute_cluster_pe.h"
 #include "compute_cluster_size.h"
+#include "nucc_cspan.hpp"
 
 #include "comm.h"
 #include "error.h"
@@ -27,8 +28,8 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-ComputeClusterPE::ComputeClusterPE(LAMMPS *lmp, int narg, char **arg) : Compute(lmp, narg, arg)
-{
+ComputeClusterPE::ComputeClusterPE(LAMMPS *lmp, int narg, char **arg)
+    : Compute(lmp, narg, arg) {
   vector_flag = 1;
   size_vector = 0;
   extvector = 0;
@@ -36,15 +37,20 @@ ComputeClusterPE::ComputeClusterPE(LAMMPS *lmp, int narg, char **arg) : Compute(
   size_local_rows = 0;
   size_local_cols = 0;
 
-  if (narg < 3) { utils::missing_cmd_args(FLERR, "compute cluster/pe", error); }
+  if (narg < 3) {
+    utils::missing_cmd_args(FLERR, "compute cluster/pe", error);
+  }
 
   // Parse arguments //
 
   // Get cluster/size compute
-  compute_cluster_size = dynamic_cast<ComputeClusterSize *>(lmp->modify->get_compute_by_id(arg[3]));
+  compute_cluster_size = dynamic_cast<ComputeClusterSize *>(
+      lmp->modify->get_compute_by_id(arg[3]));
   if (compute_cluster_size == nullptr) {
-    error->all(FLERR, "compute {}: Cannot find compute with style 'cluster/size' with id: {}",
-               style, arg[3]);
+    error->all(
+        FLERR,
+        "compute {}: Cannot find compute with style 'cluster/size' with id: {}",
+        style, arg[3]);
   }
 
   // Get the critical size
@@ -52,11 +58,13 @@ ComputeClusterPE::ComputeClusterPE(LAMMPS *lmp, int narg, char **arg) : Compute(
   if ((narg >= 4) && (::strcmp(arg[4], "inherit") != 0)) {
     int t_size_cutoff = utils::inumeric(FLERR, arg[4], true, lmp);
     if (t_size_cutoff < 1) {
-      error->all(FLERR, "size_cutoff for compute {} must be greater than 0", style);
+      error->all(FLERR, "size_cutoff for compute {} must be greater than 0",
+                 style);
     }
     if (t_size_cutoff > size_cutoff) {
       error->all(FLERR,
-                 "size_cutoff for compute {} cannot be greater than it of compute cluster/size",
+                 "size_cutoff for compute {} cannot be greater than it of "
+                 "compute cluster/size",
                  style);
     }
   }
@@ -64,65 +72,67 @@ ComputeClusterPE::ComputeClusterPE(LAMMPS *lmp, int narg, char **arg) : Compute(
   // Get ke/atom compute
   auto computes = lmp->modify->get_compute_by_style("pe/atom");
   if (computes.empty()) {
-    error->all(FLERR, "compute {}: Cannot find compute with style 'pe/atom'", style);
+    error->all(FLERR, "compute {}: Cannot find compute with style 'pe/atom'",
+               style);
   }
   compute_pe_atom = computes[0];
-
-  size_local_rows = size_cutoff + 1;
-  memory->create(local_pes, size_local_rows + 1, "compute:cluster/pe:local_pes");
-  vector_local = local_pes;
-
-  size_vector = size_cutoff + 1;
-  memory->create(pes, size_vector + 1, "compute:cluster/pe:pes");
-  vector = pes;
 }
 
 /* ---------------------------------------------------------------------- */
 
-ComputeClusterPE::~ComputeClusterPE() noexcept(true)
-{
-  if (local_pes != nullptr) { memory->destroy(local_pes); }
-  if (pes != nullptr) { memory->destroy(pes); }
+ComputeClusterPE::~ComputeClusterPE() noexcept(true) {
+  local_pes.destroy(memory);
+  pes.destroy(memory);
 }
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeClusterPE::init()
-{
+void ComputeClusterPE::init() {
   if ((modify->get_compute_by_style(style).size() > 1) && (comm->me == 0)) {
     error->warning(FLERR, "More than one compute {}", style);
   }
+
+  size_local_rows = size_cutoff + 1;
+  local_pes.create(memory, size_local_rows, "compute:cluster/pe:local_pes");
+  vector_local = local_pes.data();
+
+  size_vector = size_cutoff + 1;
+  pes.create(memory, size_vector, "compute:cluster/pe:pes");
+  vector = pes.data();
 }
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeClusterPE::compute_vector()
-{
+void ComputeClusterPE::compute_vector() {
   invoked_vector = update->ntimestep;
 
   compute_local();
 
-  ::memset(pes, 0.0, size_vector * sizeof(double));
-  ::MPI_Allreduce(local_pes, pes, size_vector, MPI_DOUBLE, MPI_SUM, world);
+  pes.reset();
+  ::MPI_Allreduce(local_pes.data(), pes.data(), size_vector, MPI_DOUBLE,
+                  MPI_SUM, world);
 
   const double *dist = compute_cluster_size->vector;
-  for (int i = 0; i < size_vector; ++i) { pes[i] /= dist[i]; }
+  for (int i = 0; i < size_vector; ++i) {
+    pes[i] /= dist[i];
+  }
 }
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeClusterPE::compute_local()
-{
+void ComputeClusterPE::compute_local() {
   invoked_local = update->ntimestep;
 
   if (compute_cluster_size->invoked_vector != update->ntimestep) {
     compute_cluster_size->compute_vector();
   }
 
-  if (compute_pe_atom->invoked_peratom != update->ntimestep) { compute_pe_atom->compute_peratom(); }
+  if (compute_pe_atom->invoked_peratom != update->ntimestep) {
+    compute_pe_atom->compute_peratom();
+  }
 
   const double *const peratompes = compute_pe_atom->vector_atom;
-  ::memset(local_pes, 0.0, size_local_rows * sizeof(double));
+  local_pes.reset();
 
   for (const auto &[size, vec] : compute_cluster_size->cIDs_by_size) {
     if (size < size_cutoff) {
@@ -139,7 +149,6 @@ void ComputeClusterPE::compute_local()
    memory usage of local atom-based array
 ------------------------------------------------------------------------- */
 
-double ComputeClusterPE::memory_usage()
-{
-  return static_cast<double>((size_local_rows + size_vector) * sizeof(double));
+double ComputeClusterPE::memory_usage() {
+  return static_cast<double>(pes.memory_usage() + local_pes.memory_usage());
 }

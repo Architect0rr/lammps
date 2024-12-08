@@ -21,12 +21,12 @@ ComputeStyle(cluster/pe,ComputeClusterPE);
 #define LMP_COMPUTE_CLUSTER_PE_H
 
 #include "compute.h"
-#include "compute_cluster_size.h"
+#include "nucc_cspan.hpp"
 
 namespace LAMMPS_NS {
-
+class ComputeClusterSize;
 class ComputeClusterPE : public Compute {
- public:
+public:
   ComputeClusterPE(class LAMMPS *lmp, int narg, char **arg);
   ~ComputeClusterPE() noexcept(true) override;
   void init() override;
@@ -34,16 +34,23 @@ class ComputeClusterPE : public Compute {
   void compute_local() override;
   double memory_usage() override;
 
- private:
+  inline constexpr NUCC::cspan<const double> get_data() const noexcept {
+    return pes;
+  }
+  inline constexpr NUCC::cspan<const double> get_data_local() const noexcept {
+    return local_pes;
+  }
+
+private:
   ComputeClusterSize *compute_cluster_size = nullptr;
   Compute *compute_pe_atom = nullptr;
 
-  double *pes = nullptr;          // array of pes of global clusters
-  double *local_pes = nullptr;    // array of pes of local clusters
-  int size_cutoff;                // size of max cluster
+  NUCC::cspan<double> pes;       // array of pes of global clusters
+  NUCC::cspan<double> local_pes; // array of pes of local clusters
+  int size_cutoff;               // size of max cluster
 };
 
-}    // namespace LAMMPS_NS
+} // namespace LAMMPS_NS
 
 #endif
 #endif

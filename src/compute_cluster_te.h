@@ -21,12 +21,14 @@ ComputeStyle(cluster/te,ComputeClusterTE);
 #define LMP_COMPUTE_CLUSTER_TE_H
 
 #include "compute.h"
-#include "compute_cluster_size.h"
+#include "nucc_cspan.hpp"
 
 namespace LAMMPS_NS {
-
+class ComputeClusterSize;
+class ComputeClusterPE;
+class ComputeClusterKE;
 class ComputeClusterTE : public Compute {
- public:
+public:
   ComputeClusterTE(class LAMMPS *lmp, int narg, char **arg);
   ~ComputeClusterTE() noexcept(true) override;
   void init() override;
@@ -34,17 +36,24 @@ class ComputeClusterTE : public Compute {
   void compute_local() override;
   double memory_usage() override;
 
- private:
-  ComputeClusterSize *compute_cluster_size = nullptr;
-  Compute *compute_cluster_pe = nullptr;
-  Compute *compute_cluster_ke = nullptr;
+  inline constexpr NUCC::cspan<const double> get_data() const noexcept {
+    return tes;
+  }
+  inline constexpr NUCC::cspan<const double> get_data_local() const noexcept {
+    return local_tes;
+  }
 
-  double *tes = nullptr;          // array of tes of global clusters
-  double *local_tes = nullptr;    // array of tes of local clusters
-  int size_cutoff;                // size of max cluster
+private:
+  ComputeClusterSize *compute_cluster_size = nullptr;
+  ComputeClusterPE *compute_cluster_pe = nullptr;
+  ComputeClusterKE *compute_cluster_ke = nullptr;
+
+  NUCC::cspan<double> tes;       // array of tes of global clusters
+  NUCC::cspan<double> local_tes; // array of tes of local clusters
+  int size_cutoff;               // size of max cluster
 };
 
-}    // namespace LAMMPS_NS
+} // namespace LAMMPS_NS
 
 #endif
 #endif
