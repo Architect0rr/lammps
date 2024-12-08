@@ -19,11 +19,11 @@ class MemoryKeeper {
   MemoryKeeper& operator=(const MemoryKeeper&) = delete;
   MemoryKeeper& operator=(MemoryKeeper&&) = delete;
 
-  constexpr MemoryKeeper(LAMMPS_NS::Memory* memory) noexcept : memory_(memory) {}
+  MemoryKeeper(LAMMPS_NS::Memory* memory) noexcept : memory_(memory) {}
   ~MemoryKeeper() noexcept(noexcept(clear())) { clear(); }
 
   template <typename T>
-  void store(T*& ptr, const size_t size) noexcept(noexcept(infos.emplace_back(ptr, size)))
+  void store(T*& ptr, const size_t size) noexcept(noexcept(std::declval<std::vector<PoolInfo>>().emplace_back(ptr, size)))
   {
     infos.emplace_back(ptr, size);
   }
