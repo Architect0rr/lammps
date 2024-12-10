@@ -12,37 +12,35 @@
 namespace NUCC {
 
 class MemoryKeeper {
- private:
-  struct PoolInfo {
-    template <typename T>
-    constexpr PoolInfo(T*& ptr, const size_t size) noexcept : ptr(reinterpret_cast<void*>(ptr)), size(size * sizeof(T))
-    {
-    }
+  //  private:
+  //   struct PoolInfo {
+  //     constexpr PoolInfo(char* ptr, const size_t size) noexcept : ptr(ptr), size(size) {}
 
-    PoolInfo() = delete;
+  //     PoolInfo()  = delete;
 
-    void* ptr = nullptr;
-    size_t size = 0;
-  };
+  //     char* ptr   = nullptr;
+  //     size_t size = 0;
+  //   };
+
  public:
-  MemoryKeeper() = delete;
-  MemoryKeeper(const MemoryKeeper&) = delete;
-  MemoryKeeper(MemoryKeeper&&) = delete;
+  MemoryKeeper()                               = delete;
+  MemoryKeeper(const MemoryKeeper&)            = delete;
+  MemoryKeeper(MemoryKeeper&&)                 = delete;
   MemoryKeeper& operator=(const MemoryKeeper&) = delete;
-  MemoryKeeper& operator=(MemoryKeeper&&) = delete;
+  MemoryKeeper& operator=(MemoryKeeper&&)      = delete;
 
   MemoryKeeper(LAMMPS_NS::Memory* memory) noexcept : memory_(memory) {}
   ~MemoryKeeper() noexcept(noexcept(clear())) { clear(); }
 
   template <typename T>
-  void store(T*& ptr, const size_t size) noexcept(noexcept(std::declval<std::vector<PoolInfo>>().emplace_back(ptr, size)))
+  void store(T*& ptr, const size_t size) noexcept(noexcept(std::declval<std::vector<std::pair<char*, std::size_t>>>().emplace_back(ptr, size)))
   {
     infos.emplace_back(ptr, size);
   }
 
   void clear() noexcept(noexcept(std::declval<LAMMPS_NS::Memory>().destroy<void>(std::declval<void*&>())))
   {
-    for (auto& pool : infos) { memory_->destroy(pool.ptr); }
+    for (auto& pool : infos) { memory_->destroy(pool.first); }
   }
 
   inline constexpr std::size_t pool_size() const noexcept
@@ -52,42 +50,40 @@ class MemoryKeeper {
   }
 
   template <typename T>
-  inline constexpr void pool_size(std::size_t n) noexcept { _pool_size = n * sizeof(T); }
+  inline constexpr void pool_size(std::size_t n) noexcept
+  {
+    _pool_size = n * sizeof(T);
+  }
 
   inline constexpr void pool_size(std::size_t n) noexcept { _pool_size = n; }
 
-  template <typename T>
-  T* allocate(const std::size_t n)
+  char* allocate(const std::size_t nbytes)
   {
-    T* ptr = nullptr;
-    std::size_t pool_size_T = _pool_size / sizeof(T) + 1;
-    if (n > pool_size_T) {
+    char* ptr = nullptr;
+    if (nbytes > _pool_size) {
       // If requested size is larger than pool, allocate separately
-      memory_->create<T>(ptr, n, "CustomAllocator_Large");
-      infos.emplace_back(ptr, n);
+      memory_->create<char>(ptr, nbytes, "CustomAllocator_Large");
+      infos.emplace_back(std::make_pair(ptr, nbytes));
       return ptr;
     }
-    std::size_t nbytes = n * sizeof(T);
-    T* _current = reinterpret_cast<T*>(current);
     if ((current == nullptr) || (left < nbytes)) {
       // Pool is full or not initialized, request a new pool
-      memory_->create(_current, pool_size_T, "CustomAllocator_Pool");
-      infos.emplace_back(_current, pool_size_T);
+      memory_->create<char>(current, _pool_size, "CustomAllocator_Pool");
+      infos.emplace_back(std::make_pair(current, _pool_size));
       left = _pool_size;
     }
-    ptr = _current;
+    ptr = current;
     left -= nbytes;
-    _current += n;
-    current = reinterpret_cast<void *>(_current);
+    current = current + nbytes;
     return ptr;
   }
 
  private:
-  void* current = nullptr;
-  std::size_t left = 0;
+  char* current                    = nullptr;
+  std::size_t left                 = 0;
   LAMMPS_NS::Memory* const memory_ = nullptr;
-  std::size_t _pool_size = 0;
-  std::vector<PoolInfo> infos;
+  std::size_t _pool_size           = 0;
+  std::vector<std::pair<char*, std::size_t>> infos;
 };
 
 /* ---------------------------------------------------------------------- */
@@ -111,7 +107,7 @@ class CustomAllocator {
   {
   }
 
-  inline T* allocate(std::size_t n) const { return keeper_->allocate<T>(n); }
+  inline T* allocate(std::size_t n) const { return reinterpret_cast<T*>(keeper_->allocate(n * sizeof(T))); }
 
   inline constexpr void deallocate(T* /*p*/, const std::size_t /*n*/) const noexcept
   {

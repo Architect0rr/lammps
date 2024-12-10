@@ -14,8 +14,6 @@
 #include "compute_cluster_te.h"
 #include "compute_cluster_ke.h"
 #include "compute_cluster_pe.h"
-#include "compute_cluster_size.h"
-#include "compute_cluster_size_avg.h"
 #include "compute_cluster_size_ext.h"
 #include "nucc_cspan.hpp"
 
@@ -46,17 +44,8 @@ ComputeClusterTE::ComputeClusterTE(LAMMPS* lmp, int narg, char** arg) : Compute(
   // Parse arguments //
 
   // Get cluster/size compute
-  compute_cluster_size = dynamic_cast<ComputeClusterSize*>(lmp->modify->get_compute_by_id(arg[3]));
+  compute_cluster_size = dynamic_cast<ComputeClusterSizeExt*>(lmp->modify->get_compute_by_id(arg[3]));
   if (compute_cluster_size == nullptr) { error->all(FLERR, "compute {}: Cannot find compute with style 'size/cluster' with id: {}", style, arg[3]); }
-  if (compute_cluster_size->is_avg == 1) {
-    if (dynamic_cast<ComputeClusterSizeAVG*>(compute_cluster_size) == nullptr) {
-      error->all(FLERR, "compute {}: Cannot find compute with style 'size/cluster/avg' with id: {}", style, arg[3]);
-    }
-  } else {
-    if (dynamic_cast<ComputeClusterSizeExt*>(compute_cluster_size) == nullptr) {
-      error->all(FLERR, "compute {}: Cannot find compute with style 'size/cluster/ext' with id: {}", style, arg[3]);
-    }
-  }
 
   // Get source computes
   compute_cluster_pe = dynamic_cast<ComputeClusterPE*>(lmp->modify->get_compute_by_id(arg[4]));

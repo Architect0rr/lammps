@@ -31,7 +31,7 @@ using namespace NUCC;
 /* ---------------------------------------------------------------------- */
 
 ComputeClusterSizeExt::ComputeClusterSizeExt(LAMMPS* lmp, int narg, char** arg) :
-    ComputeClusterSize(lmp, narg, arg), nloc(0), nc_global(0), natom_loc(0), nloc_peratom(0)
+    Compute(lmp, narg, arg), nloc(0), nc_global(0), natom_loc(0), nloc_peratom(0)
 {
   vector_flag = 1;
   extvector = 0;
@@ -41,13 +41,11 @@ ComputeClusterSizeExt::ComputeClusterSizeExt(LAMMPS* lmp, int narg, char** arg) 
   peratom_flag = 1;
   size_peratom_cols = 0;
 
-  is_avg = 0;
-
   if (comm->nprocs > LMP_NUCC_CLUSTER_MAX_OWNERS) {
     error->all(FLERR, "{}: Number of processor exceeds MAX_OWNER limit. Recompile with higher MAX_OWNER limit.", style);
   }
 
-  if (narg < 4) { utils::missing_cmd_args(FLERR, "compute cluster/size", error); }
+  if (narg < 4) { utils::missing_cmd_args(FLERR, "compute size/cluster", error); }
 
   // Parse arguments //
 
@@ -58,18 +56,6 @@ ComputeClusterSizeExt::ComputeClusterSizeExt(LAMMPS* lmp, int narg, char** arg) 
   // Get the critical size
   size_cutoff = utils::inumeric(FLERR, arg[4], true, lmp);
   if (size_cutoff < 1) { error->all(FLERR, "{}: size_cutoff must be greater than 0", style); }
-
-  keeper1 = new MemoryKeeper(memory);
-  cluster_map_allocator = new MapAlloc_t<int, int>(keeper1);
-  cluster_map = new Map_t<int, int>(*cluster_map_allocator);
-
-  keeper2 = new MemoryKeeper(memory);
-  alloc_map_vec1 = new MapAlloc_t<int, Vec_t<int>>(keeper2);
-  cIDs_by_size = new Map_t<int, Vec_t<int>>(*alloc_map_vec1);
-
-  keeper3 = new MemoryKeeper(memory);
-  alloc_map_vec2 = new MapAlloc_t<int, Vec_t<int>>(keeper3);
-  cIDs_by_size_all = new Map_t<int, Vec_t<int>>(*alloc_map_vec2);
 
   size_vector = size_cutoff + 1;
 }
@@ -105,6 +91,18 @@ ComputeClusterSizeExt::~ComputeClusterSizeExt() noexcept(true)
 void ComputeClusterSizeExt::init()
 {
   if ((modify->get_compute_by_style(style).size() > 1) && (comm->me == 0)) { error->warning(FLERR, "More than one compute {}", style); }
+
+  keeper1 = new MemoryKeeper(memory);
+  cluster_map_allocator = new MapAlloc_t<int, int>(keeper1);
+  cluster_map = new Map_t<int, int>(*cluster_map_allocator);
+
+  keeper2 = new MemoryKeeper(memory);
+  alloc_map_vec1 = new MapAlloc_t<int, Vec_t<int>>(keeper2);
+  cIDs_by_size = new Map_t<int, Vec_t<int>>(*alloc_map_vec1);
+
+  keeper3 = new MemoryKeeper(memory);
+  alloc_map_vec2 = new MapAlloc_t<int, Vec_t<int>>(keeper3);
+  cIDs_by_size_all = new Map_t<int, Vec_t<int>>(*alloc_map_vec2);
 
   counts_global.create(memory, comm->nprocs, "size/cluster/ext:counts_global");
   displs.create(memory, comm->nprocs, "size/cluster/ext:displs");

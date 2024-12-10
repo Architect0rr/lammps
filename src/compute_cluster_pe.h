@@ -41,7 +41,7 @@ public:
   }
 
 private:
-  class ComputeClusterSize *compute_cluster_size = nullptr;
+  class ComputeClusterSizeExt *compute_cluster_size = nullptr;
   Compute *compute_pe_atom = nullptr;
 
   NUCC::cspan<double> pes;       // array of pes of global clusters

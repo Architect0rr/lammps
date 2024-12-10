@@ -12,7 +12,7 @@
 ------------------------------------------------------------------------- */
 
 #include "compute_cluster_cf.h"
-#include "compute_cluster_size.h"
+#include "compute_cluster_size_ext.h"
 #include "compute_cf_atom.h"
 
 #include "atom.h"
@@ -47,7 +47,7 @@ ComputeClusterCF::ComputeClusterCF(LAMMPS* lmp, int narg, char** arg) : Compute(
   // Parse arguments //
 
   // Get cluster/size compute
-  compute_cluster_size = dynamic_cast<ComputeClusterSize*>(lmp->modify->get_compute_by_id(arg[3]));
+  compute_cluster_size = dynamic_cast<ComputeClusterSizeExt*>(lmp->modify->get_compute_by_id(arg[3]));
   if (compute_cluster_size == nullptr) { error->all(FLERR, "compute {}: Cannot find compute with style 'cluster/size' with id: {}", style, arg[3]); }
 
   compute_rdf_atom = dynamic_cast<ComputeCFAtom*>(lmp->modify->get_compute_by_id(arg[4]));

@@ -6,8 +6,6 @@
 ------------------------------------------------------------------------- */
 
 #include "fix_cluster_crush_delete.h"
-#include "compute_cluster_size.h"
-#include "compute_cluster_size_avg.h"
 #include "compute_cluster_size_ext.h"
 #include "compute_cluster_temps.h"
 #include "fix_regen.h"
@@ -60,17 +58,8 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS* lmp, int narg, char** arg) 
   if (kmax < 2) { error->all(FLERR, "{}: kmax cannot be less than 2", style); }
 
   // Get cluster/size compute
-  compute_cluster_size = dynamic_cast<ComputeClusterSize*>(lmp->modify->get_compute_by_id(arg[5]));
+  compute_cluster_size = dynamic_cast<ComputeClusterSizeExt*>(lmp->modify->get_compute_by_id(arg[5]));
   if (compute_cluster_size == nullptr) { error->all(FLERR, "{}: Cannot find compute of style 'cluster/size' with id: {}", style,  arg[5]); }
-  if (compute_cluster_size->is_avg == 1) {
-    if (dynamic_cast<ComputeClusterSizeAVG*>(compute_cluster_size) == nullptr) {
-      error->all(FLERR, "{}: Cannot find compute with style 'size/cluster/avg' with id: {}", style, arg[5]);
-    }
-  } else {
-    if (dynamic_cast<ComputeClusterSizeExt*>(compute_cluster_size) == nullptr) {
-      error->all(FLERR, "{}: Cannot find compute with style 'size/cluster/ext' with id: {}", style, arg[5]);
-    }
-  }
   if (kmax > compute_cluster_size->get_size_cutoff()) { error->all(FLERR, "{}: kmax cannot be bigger than its value of compute size/cluster", style); }
 
   // Minimum distance to other atoms from the place atom teleports to
@@ -241,34 +230,16 @@ void FixClusterCrushDelete::pre_exchange()
   // Count amount of local atoms to move
   int atoms2move_local        = 0;
 
-  if (compute_cluster_size->is_avg == 1) {
-
-    const auto& atoms_by_cID = *dynamic_cast<ComputeClusterSizeAVG*>(compute_cluster_size)->get_atoms_by_cID();
-    for (const auto& [size, cIDs] : cIDs_by_size) {
-      if (size > kmax) {
-        clusters2crush_local += cIDs.size();
-        for (int cID : cIDs) {
-          const auto& vec = (*atoms_by_cID.find(cID)).second;
-          for (int pID : vec) { p2m[atoms2move_local++] = pID; }
-        }
-      }
-    }
-  } else {
-    int nclusters = dynamic_cast<ComputeClusterSizeExt*>(compute_cluster_size)->get_cluster_map()->size();
-    const auto& clusters = dynamic_cast<ComputeClusterSizeExt*>(compute_cluster_size)->get_clusters();
-    for (int i = 0; i < nclusters; ++i) {
-      const auto& clstr = clusters[i];
-      if (clstr.g_size > kmax) {
-        ++clusters2crush_local;
-        ::memcpy(p2m.data(), clstr.atoms().data(), clstr.l_size * sizeof(int));
-        atoms2move_local += clstr.l_size;
-        // const auto& atoms = clstr.atoms();
-        // for (int j = 0; j < clstr.l_size; ++j) { p2m[atoms2move_local++] = atoms[j]; }
-      }
+  int nclusters = dynamic_cast<ComputeClusterSizeExt*>(compute_cluster_size)->get_cluster_map()->size();
+  const auto& clusters = dynamic_cast<ComputeClusterSizeExt*>(compute_cluster_size)->get_clusters();
+  for (int i = 0; i < nclusters; ++i) {
+    const auto& clstr = clusters[i];
+    if (clstr.g_size > kmax) {
+      ++clusters2crush_local;
+      ::memcpy(p2m.data(), clstr.atoms().data(), clstr.l_size * sizeof(int));
+      atoms2move_local += clstr.l_size;
     }
   }
-
-
 
   c2c.reset();
   c2c[comm->me] = clusters2crush_local;

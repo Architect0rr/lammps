@@ -37,7 +37,7 @@ class ComputeClusterKE : public Compute {
   inline constexpr NUCC::cspan<const double> get_data_local() const noexcept { return local_kes; }
 
  private:
-  class ComputeClusterSize *compute_cluster_size = nullptr;
+  class ComputeClusterSizeExt *compute_cluster_size = nullptr;
   Compute *compute_ke_atom = nullptr;
 
   NUCC::cspan<double> kes;          // array of kes of global clusters

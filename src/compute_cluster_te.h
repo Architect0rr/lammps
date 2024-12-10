@@ -41,7 +41,7 @@ public:
   }
 
 private:
-  class ComputeClusterSize *compute_cluster_size = nullptr;
+  class ComputeClusterSizeExt *compute_cluster_size = nullptr;
   class ComputeClusterPE *compute_cluster_pe = nullptr;
   class ComputeClusterKE *compute_cluster_ke = nullptr;
 

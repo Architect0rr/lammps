@@ -33,7 +33,7 @@ class ComputeClusterCF : public Compute {
   double memory_usage() override;
 
  private:
-  class ComputeClusterSize* compute_cluster_size = nullptr;
+  class ComputeClusterSizeExt* compute_cluster_size = nullptr;
   class ComputeCFAtom* compute_rdf_atom          = nullptr;
 
   double** cf;

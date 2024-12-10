@@ -21,7 +21,6 @@ ComputeStyle(cluster/enthropy,ComputeClusterEnthropy);
 #define LMP_COMPUTE_CLUSTER_ENTHROPY_H
 
 #include "compute.h"
-#include "compute_cluster_size.h"
 
 namespace LAMMPS_NS {
 
@@ -35,7 +34,7 @@ class ComputeClusterEnthropy : public Compute {
   double memory_usage() override;
 
  private:
-  ComputeClusterSize *compute_cluster_size = nullptr;
+  class ComputeClusterSizeExt *compute_cluster_size = nullptr;
   Compute *compute_ke_atom = nullptr;
   Compute *compute_pe_atom = nullptr;
 

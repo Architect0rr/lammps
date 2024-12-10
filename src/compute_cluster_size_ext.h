@@ -20,9 +20,10 @@ ComputeStyle(size/cluster/ext,ComputeClusterSizeExt);
 #  ifndef LMP_COMPUTE_CLUSTER_SIZE_ExT_H
 #    define LMP_COMPUTE_CLUSTER_SIZE_ExT_H
 
-#    include "compute_cluster_size.h"
+#    include "compute.h"
 #    include "nucc_allocator.hpp"
 #    include "nucc_defs.hpp"
+#    include "nucc_cluster_data.hpp"
 #    include "nucc_cspan.hpp"
 
 #    include <array>
@@ -33,7 +34,7 @@ ComputeStyle(size/cluster/ext,ComputeClusterSizeExt);
 
 namespace LAMMPS_NS {
 
-class ComputeClusterSizeExt : public ComputeClusterSize {
+class ComputeClusterSizeExt : public Compute {
  public:
   ComputeClusterSizeExt(class LAMMPS *lmp, int narg, char **arg);
   ~ComputeClusterSizeExt() noexcept(true) override;
@@ -42,15 +43,15 @@ class ComputeClusterSizeExt : public ComputeClusterSize {
   void compute_peratom() override;
   double memory_usage() override;
 
-  inline constexpr int get_size_cutoff() const noexcept(true) override { return size_cutoff; }
-  inline constexpr NUCC::cspan<const double> get_data() const noexcept override { return dist; }
+  inline constexpr int get_size_cutoff() const noexcept(true) { return size_cutoff; }
+  inline constexpr NUCC::cspan<const double> get_data() const noexcept { return dist; }
   inline constexpr int get_nonexclusive() const noexcept(true) { return nonexclusive; }
   // inline constexpr const std::unordered_map<int, int> &get_cluster_map() const noexcept(true) { return cluster_map; }
   // inline constexpr const std::unordered_map<int, std::vector<int>> &get_cIDs_by_size() const noexcept(true) { return cIDs_by_size; }
   // inline constexpr const std::unordered_map<int, std::vector<int>> &get_cIDs_by_size_all() const noexcept(true) { return cIDs_by_size_all; }
   inline constexpr const NUCC::Map_t<int, int> *get_cluster_map() const noexcept(true) { return cluster_map; }
-  inline constexpr const NUCC::Map_t<int, NUCC::Vec_t<int>> *get_cIDs_by_size_my() const noexcept(true) { return cIDs_by_size; }
-  inline constexpr const NUCC::Map_t<int, NUCC::Vec_t<int>> *get_cIDs_by_size() const noexcept(true) override { return cIDs_by_size_all; }
+  inline constexpr const NUCC::Map_t<int, NUCC::Vec_t<int>> *get_cIDs_by_size_my() const noexcept { return cIDs_by_size; }
+  inline constexpr const NUCC::Map_t<int, NUCC::Vec_t<int>> *get_cIDs_by_size() const noexcept { return cIDs_by_size_all; }
   inline constexpr const NUCC::cspan<const NUCC::cluster_data> get_clusters() const noexcept(true) { return clusters; }
 
  private:

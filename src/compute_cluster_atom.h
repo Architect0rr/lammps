@@ -11,25 +11,38 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#ifndef LMP_COMPUTE_CLUSTER_SIZE_BASE_H
-#define LMP_COMPUTE_CLUSTER_SIZE_BASE_H
+#ifdef COMPUTE_CLASS
+// clang-format off
+ComputeStyle(cluster/atom,ComputeClusterAtom);
+// clang-format on
+#else
+
+#ifndef LMP_COMPUTE_CLUSTER_ATOM_H
+#define LMP_COMPUTE_CLUSTER_ATOM_H
 
 #include "compute.h"
-#    include "nucc_defs.hpp"
 
 namespace LAMMPS_NS {
-class ComputeClusterSize : public Compute {
+
+class ComputeClusterAtom : public Compute {
  public:
-  ComputeClusterSize(class LAMMPS *lmp, int narg, char **arg): Compute(lmp, narg, arg) {};
+  ComputeClusterAtom(class LAMMPS *, int, char **);
+  ~ComputeClusterAtom() override;
+  void init() override;
+  void init_list(int, class NeighList *) override;
+  void compute_peratom() override;
+  int pack_forward_comm(int, int *, double *, int, int *) override;
+  void unpack_forward_comm(int, int, double *) override;
+  double memory_usage() override;
 
-  inline constexpr virtual int get_size_cutoff() const noexcept = 0;
-  inline constexpr virtual NUCC::cspan<const double> get_data() const noexcept = 0;
-
-  inline constexpr virtual const NUCC::Map_t<int, NUCC::Vec_t<int>>* get_cIDs_by_size() const noexcept = 0;
-
-  int is_avg;
+ private:
+  int nmax;
+  double cutsq;
+  class NeighList *list;
+  double *clusterID;
 };
 
 }    // namespace LAMMPS_NS
 
+#endif
 #endif

@@ -13,7 +13,7 @@
 
 #ifdef COMPUTE_CLASS
 // clang-format off
-ComputeStyle(cluster/temp,ComputeClusterTemp);
+ComputeStyle(temp/cluster,ComputeClusterTemp);
 // clang-format on
 #else
 
@@ -24,8 +24,6 @@ ComputeStyle(cluster/temp,ComputeClusterTemp);
 #include "nucc_cspan.hpp"
 
 namespace LAMMPS_NS {
-class ComputeClusterSize;
-class ComputeClusterKE;
 class ComputeClusterTemp : public Compute {
  public:
   ComputeClusterTemp(class LAMMPS *lmp, int narg, char **arg);
@@ -37,8 +35,8 @@ class ComputeClusterTemp : public Compute {
   inline constexpr NUCC::cspan<const double> get_data() const noexcept { return temp; }
 
  private:
-  ComputeClusterSize *compute_cluster_size = nullptr;
-  ComputeClusterKE *compute_cluster_ke = nullptr;
+  class ComputeClusterSizeExt *compute_cluster_size = nullptr;
+  class ComputeClusterKE *compute_cluster_ke = nullptr;
 
   NUCC::cspan<double> temp;    // array of temps of global clusters
   int size_cutoff;             // size of max cluster

@@ -27,7 +27,7 @@ class FixClusterCrushDelete : public Fix {
 
  protected:
   class Region *region = nullptr;
-  class ComputeClusterSize *compute_cluster_size = nullptr;
+  class ComputeClusterSizeExt *compute_cluster_size = nullptr;
   class ComputeClusterTemp *compute_temp = nullptr;
   class FixRegen *fix_regen = nullptr;
 

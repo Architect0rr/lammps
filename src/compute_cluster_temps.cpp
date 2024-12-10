@@ -13,7 +13,7 @@
 
 #include "compute_cluster_temps.h"
 #include "compute_cluster_ke.h"
-#include "compute_cluster_size.h"
+#include "compute_cluster_size_ext.h"
 
 #include "comm.h"
 #include "domain.h"
@@ -35,20 +35,20 @@ ComputeClusterTemp::ComputeClusterTemp(LAMMPS *lmp, int narg, char **arg) : Comp
   size_vector = 0;
   extvector = 0;
 
-  if (narg < 5) { utils::missing_cmd_args(FLERR, "compute cluster/temp", error); }
+  if (narg < 5) { utils::missing_cmd_args(FLERR, "compute temp/cluster", error); }
 
   // Parse arguments //
 
   // Get cluster/size compute
-  compute_cluster_size = dynamic_cast<ComputeClusterSize *>(lmp->modify->get_compute_by_id(arg[3]));
+  compute_cluster_size = dynamic_cast<ComputeClusterSizeExt *>(lmp->modify->get_compute_by_id(arg[3]));
   if (compute_cluster_size == nullptr) {
-    error->all(FLERR, "{}: Cannot find compute with style 'cluster/size' with id: {}", style,
+    error->all(FLERR, "{}: Cannot find compute with style 'size/cluster' with id: {}", style,
                arg[3]);
   }
 
   compute_cluster_ke = dynamic_cast<ComputeClusterKE *>((lmp->modify->get_compute_by_id(arg[4])));
   if (compute_cluster_ke == nullptr) {
-    error->all(FLERR, "{}: Cannot find compute with style 'cluster/ke' with id: {}", style,
+    error->all(FLERR, "{}: Cannot find compute with style 'ke/cluster' with id: {}", style,
                arg[4]);
   }
 
@@ -79,7 +79,7 @@ void ComputeClusterTemp::init()
   }
 
   size_vector = size_cutoff + 1;
-  temp.create(memory, size_vector, "cluster/temp:temp");
+  temp.create(memory, size_vector, "temp/cluster:temp");
   vector = temp.data();
 }
 
