@@ -61,6 +61,8 @@ src/Makefile.package.settings-e
 /install/x64-GUI-MSVC
 /install
 .Rhistory
+
 .trunk
 .aider*
 .env
+.trash
