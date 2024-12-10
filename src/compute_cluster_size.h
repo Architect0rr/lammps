@@ -11,48 +11,25 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#ifdef COMPUTE_CLASS
-// clang-format off
-ComputeStyle(cluster/size,ComputeClusterSize);
-// clang-format on
-#else
-
-#ifndef LMP_COMPUTE_CLUSTER_SIZE_H
-#define LMP_COMPUTE_CLUSTER_SIZE_H
+#ifndef LMP_COMPUTE_CLUSTER_SIZE_BASE_H
+#define LMP_COMPUTE_CLUSTER_SIZE_BASE_H
 
 #include "compute.h"
-
-#include "nucc_cspan.hpp"
-#include <unordered_map>
+#    include "nucc_defs.hpp"
 
 namespace LAMMPS_NS {
 class ComputeClusterSize : public Compute {
  public:
-  ComputeClusterSize(class LAMMPS *lmp, int narg, char **arg);
-  ~ComputeClusterSize() noexcept(true) override;
-  void init() override;
-  void compute_vector() override;
-  void compute_peratom() override;
-  double memory_usage() override;
+  ComputeClusterSize(class LAMMPS *lmp, int narg, char **arg): Compute(lmp, narg, arg) {};
 
-  inline constexpr int get_size_cutoff() const noexcept { return size_cutoff; }
-  inline constexpr NUCC::cspan<const double> get_data() const noexcept { return dist; }
+  inline constexpr virtual int get_size_cutoff() const noexcept = 0;
+  inline constexpr virtual NUCC::cspan<const double> get_data() const noexcept = 0;
 
-  std::unordered_map<int, std::vector<int>> atoms_by_cID;    // Mapping cID  -> local idx
-  std::unordered_map<int, std::vector<int>> cIDs_by_size;    // Mapping size -> cIDs
+  inline constexpr virtual const NUCC::Map_t<int, NUCC::Vec_t<int>>* get_cIDs_by_size() const noexcept = 0;
 
- private:
-  int nloc;         // number of reserved elements in atoms_by_cID and cIDs_by_size
-  int nloc_atom;    // nunber of reserved elements in peratom array
-  NUCC::cspan<double> peratom_size;    // peratom array (size of cluster it is in)
-  NUCC::cspan<double> dist;            // cluster size distribution (vector == dist)
-  int nc_global;                       // number of clusters total
-  int size_cutoff;                     // number of elements reserved in dist
-
-  Compute *compute_cluster_atom = nullptr;
+  int is_avg;
 };
 
 }    // namespace LAMMPS_NS
 
-#endif
 #endif

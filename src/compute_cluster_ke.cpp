@@ -13,6 +13,8 @@
 
 #include "compute_cluster_ke.h"
 #include "compute_cluster_size.h"
+#include "compute_cluster_size_avg.h"
+#include "compute_cluster_size_ext.h"
 #include "nucc_cspan.hpp"
 
 #include "atom.h"
@@ -32,45 +34,40 @@ using NUCC::cspan;
 
 /* ---------------------------------------------------------------------- */
 
-ComputeClusterKE::ComputeClusterKE(LAMMPS *lmp, int narg, char **arg)
-    : Compute(lmp, narg, arg) /*, substract_vcm(0)*/
+ComputeClusterKE::ComputeClusterKE(LAMMPS* lmp, int narg, char** arg) : Compute(lmp, narg, arg) /*, substract_vcm(0)*/
 {
-  vector_flag = 1;
-  size_vector = 0;
-  extvector = 0;
-  local_flag = 1;
+  vector_flag     = 1;
+  size_vector     = 0;
+  extvector       = 0;
+  local_flag      = 1;
   size_local_rows = 0;
   size_local_cols = 0;
 
-  if (narg < 4) {
-    utils::missing_cmd_args(FLERR, "compute cluster/ke", error);
-  }
+  if (narg < 4) { utils::missing_cmd_args(FLERR, "compute ke/cluster", error); }
 
   // Parse arguments //
 
   // Get cluster/size compute
-  compute_cluster_size = dynamic_cast<ComputeClusterSize *>(
-      lmp->modify->get_compute_by_id(arg[3]));
-  if (compute_cluster_size == nullptr) {
-    error->all(
-        FLERR,
-        "compute {}: Cannot find compute with style 'cluster/size' with id: {}",
-        style, arg[3]);
+  compute_cluster_size = dynamic_cast<ComputeClusterSize*>(lmp->modify->get_compute_by_id(arg[3]));
+  if (compute_cluster_size == nullptr) { error->all(FLERR, "compute {}: Cannot find compute with style 'size/cluster' with id: {}", style, arg[3]); }
+  if (compute_cluster_size->is_avg == 1) {
+    if (dynamic_cast<ComputeClusterSizeAVG*>(compute_cluster_size) == nullptr) {
+      error->all(FLERR, "compute {}: Cannot find compute with style 'size/cluster/avg' with id: {}", style, arg[3]);
+    }
+  } else {
+    if (dynamic_cast<ComputeClusterSizeExt*>(compute_cluster_size) == nullptr) {
+      error->all(FLERR, "compute {}: Cannot find compute with style 'size/cluster/ext' with id: {}", style, arg[3]);
+    }
   }
 
   size_cutoff = compute_cluster_size->get_size_cutoff();
 
-  int iarg = 4;
+  int iarg    = 4;
   while (iarg < narg) {
-    if (iarg + 2 > narg) {
-      error->all(FLERR, "Illegal compute cluster/ke command");
-    }
+    if (iarg + 2 > narg) { error->all(FLERR, "Illegal compute ke/cluster command"); }
     if (::strcmp(arg[iarg], "cut") == 0) {
       int t_size_cutoff = utils::inumeric(FLERR, arg[iarg + 1], false, lmp);
-      if (t_size_cutoff < 1) {
-        error->all(FLERR, "size_cutoff for compute {} must be greater than 0",
-                   style);
-      }
+      if (t_size_cutoff < 1) { error->all(FLERR, "size_cutoff for compute {} must be greater than 0", style); }
       if (t_size_cutoff > size_cutoff) {
         error->all(FLERR,
                    "size_cutoff for compute {} cannot be greater than it of "
@@ -92,77 +89,80 @@ ComputeClusterKE::ComputeClusterKE(LAMMPS *lmp, int narg, char **arg)
 
   // Get ke/atom compute
   auto computes = lmp->modify->get_compute_by_style("ke/atom");
-  if (computes.empty()) {
-    error->all(FLERR, "compute {}: Cannot find compute with style 'ke/atom'",
-               style);
-  }
+  if (computes.empty()) { error->all(FLERR, "compute {}: Cannot find compute with style 'ke/atom'", style); }
   compute_ke_atom = computes[0];
 }
 
 /* ---------------------------------------------------------------------- */
 
-ComputeClusterKE::~ComputeClusterKE() noexcept(true) {
+ComputeClusterKE::~ComputeClusterKE() noexcept(true)
+{
   local_kes.destroy(memory);
   kes.destroy(memory);
 }
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeClusterKE::init() {
-  if ((modify->get_compute_by_style(style).size() > 1) && (comm->me == 0)) {
-    error->warning(FLERR, "More than one compute {}", style);
-  }
+void ComputeClusterKE::init()
+{
+  if ((modify->get_compute_by_style(style).size() > 1) && (comm->me == 0)) { error->warning(FLERR, "More than one compute {}", style); }
 
   size_local_rows = size_cutoff + 1;
-  local_kes.create(memory, size_local_rows, "compute:cluster/ke:local_kes");
+  local_kes.create(memory, size_local_rows, "compute:ke/cluster:local_kes");
   vector_local = local_kes.data();
 
-  size_vector = size_cutoff + 1;
-  kes.create(memory, size_vector, "compute:cluster/ke:kes");
+  size_vector  = size_cutoff + 1;
+  kes.create(memory, size_vector, "compute:ke/cluster:kes");
   vector = kes.data();
 }
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeClusterKE::compute_vector() {
+void ComputeClusterKE::compute_vector()
+{
   invoked_vector = update->ntimestep;
 
   compute_local();
 
   kes.reset();
-  ::MPI_Allreduce(local_kes.data(), kes.data(), size_vector, MPI_DOUBLE,
-                  MPI_SUM, world);
+  ::MPI_Allreduce(local_kes.data(), kes.data(), size_vector, MPI_DOUBLE, MPI_SUM, world);
 
-  const double *dist = compute_cluster_size->vector;
+  const double* dist = compute_cluster_size->vector;
   for (int i = 0; i < size_vector; ++i) {
-    if (dist[i] > 0) {
-      kes[i] /= dist[i];
-    }
+    if (dist[i] > 0) { kes[i] /= dist[i]; }
   }
 }
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeClusterKE::compute_local() {
+void ComputeClusterKE::compute_local()
+{
   invoked_local = update->ntimestep;
 
-  if (compute_cluster_size->invoked_vector != update->ntimestep) {
-    compute_cluster_size->compute_vector();
-  }
+  if (compute_cluster_size->invoked_vector != update->ntimestep) { compute_cluster_size->compute_vector(); }
 
-  if (compute_ke_atom->invoked_peratom != update->ntimestep) {
-    compute_ke_atom->compute_peratom();
-  }
+  if (compute_ke_atom->invoked_peratom != update->ntimestep) { compute_ke_atom->compute_peratom(); }
 
-  const double *const peratomkes = compute_ke_atom->vector_atom;
+  const double* const peratomkes = compute_ke_atom->vector_atom;
   local_kes.reset();
 
-  for (const auto &[size, vec] : compute_cluster_size->cIDs_by_size) {
-    if (size < size_cutoff) {
-      for (const tagint cid : vec) {
-        for (const tagint pid : compute_cluster_size->atoms_by_cID[cid]) {
-          local_kes[size] += peratomkes[pid];
+  if (compute_cluster_size->is_avg == 1) {
+    const auto& atoms_by_cID = *(dynamic_cast<ComputeClusterSizeAVG*>(compute_cluster_size))->get_atoms_by_cID();
+    for (const auto& [size, vec] : *compute_cluster_size->get_cIDs_by_size()) {
+      if (size < size_cutoff) {
+        for (const int cid : vec) {
+          for (auto pid : (*atoms_by_cID.find(cid)).second) { local_kes[size] += peratomkes[pid]; }
         }
+      }
+    }
+  } else {
+    int nclusters = dynamic_cast<ComputeClusterSizeExt*>(compute_cluster_size)->get_cluster_map()->size();
+    const auto& clusters = dynamic_cast<ComputeClusterSizeExt*>(compute_cluster_size)->get_clusters();
+    for (int i = 0; i < nclusters; ++i) {
+      const auto& clstr = clusters[i];
+      const auto& atoms = clstr.atoms();
+      for (int j = 0; j < clstr.l_size; ++j) {
+        local_kes[clstr.g_size] += peratomkes[atoms[j]];
       }
     }
   }
@@ -172,6 +172,7 @@ void ComputeClusterKE::compute_local() {
    memory usage of local atom-based array
 ------------------------------------------------------------------------- */
 
-double ComputeClusterKE::memory_usage() {
+double ComputeClusterKE::memory_usage()
+{
   return static_cast<double>(kes.memory_usage() + local_kes.memory_usage());
 }

@@ -7,6 +7,8 @@
 
 #include "fix_cluster_crush_delete.h"
 #include "compute_cluster_size.h"
+#include "compute_cluster_size_avg.h"
+#include "compute_cluster_size_ext.h"
 #include "compute_cluster_temps.h"
 #include "fix_regen.h"
 #include "nucc_cspan.hpp"
@@ -38,41 +40,42 @@ constexpr int DEFAULT_MAXTRY = 1000;
 
 /* ---------------------------------------------------------------------- */
 
-FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) :
-    Fix(lmp, narg, arg), screenflag(1), fileflag(0), scaleflag(0), next_step(0), nloc(0),
-    at_once(1), groupname(std::string()), fix_temp(false), maxtry(::DEFAULT_MAXTRY), ntype(0),
-    sigma(0), reneigh_forced(false), ninserted_prev(0)
+FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS* lmp, int narg, char** arg) :
+    Fix(lmp, narg, arg), screenflag(1), fileflag(0), scaleflag(0), next_step(0), nloc(0), at_once(1), groupname(std::string()), fix_temp(false),
+    maxtry(::DEFAULT_MAXTRY), ntype(0), sigma(0), reneigh_forced(false), ninserted_prev(0)
 {
   restart_pbc = 1;
+  nevery      = 1;
 
-  nevery = 1;
-
-  if (narg < 9) { utils::missing_cmd_args(FLERR, "fix cluster/crush", error); }
+  if (narg < 9) { utils::missing_cmd_args(FLERR, "fix cluster/crush/delete", error); }
 
   // Parse arguments //
 
   // Target region
   region = domain->get_region_by_id(arg[3]);
-  if (region == nullptr) {
-    error->all(FLERR, "fix cluster/crush: Cannot find target region {}", arg[3]);
-  }
+  if (region == nullptr) { error->all(FLERR, "{}: Cannot find target region {}", style, arg[3]); }
 
   // Get the critical size
   kmax = utils::inumeric(FLERR, arg[4], true, lmp);
-  if (kmax < 2) { error->all(FLERR, "kmax for fix cluster/crush cannot be less than 2"); }
+  if (kmax < 2) { error->all(FLERR, "{}: kmax cannot be less than 2", style); }
 
   // Get cluster/size compute
-  compute_cluster_size = dynamic_cast<ComputeClusterSize *>(lmp->modify->get_compute_by_id(arg[5]));
-  if (compute_cluster_size == nullptr) {
-    error->all(FLERR, "fix cluster/crush: Cannot find compute of style 'cluster/size' with id: {}",
-               arg[5]);
+  compute_cluster_size = dynamic_cast<ComputeClusterSize*>(lmp->modify->get_compute_by_id(arg[5]));
+  if (compute_cluster_size == nullptr) { error->all(FLERR, "{}: Cannot find compute of style 'cluster/size' with id: {}", style,  arg[5]); }
+  if (compute_cluster_size->is_avg == 1) {
+    if (dynamic_cast<ComputeClusterSizeAVG*>(compute_cluster_size) == nullptr) {
+      error->all(FLERR, "{}: Cannot find compute with style 'size/cluster/avg' with id: {}", style, arg[5]);
+    }
+  } else {
+    if (dynamic_cast<ComputeClusterSizeExt*>(compute_cluster_size) == nullptr) {
+      error->all(FLERR, "{}: Cannot find compute with style 'size/cluster/ext' with id: {}", style, arg[5]);
+    }
   }
+  if (kmax > compute_cluster_size->get_size_cutoff()) { error->all(FLERR, "{}: kmax cannot be bigger than its value of compute size/cluster", style); }
 
   // Minimum distance to other atoms from the place atom teleports to
   overlap = utils::numeric(FLERR, arg[6], true, lmp);
-  if (overlap < 0) {
-    error->all(FLERR, "Minimum distance for fix cluster/crush must be non-negative");
-  }
+  if (overlap < 0) { error->all(FLERR, "{}: Minimum distance must be non-negative", style); }
 
   // apply scaling factor for styles that use distance-dependent factors
 
@@ -81,28 +84,24 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) 
 
   // Get the ntype atom creation
   ntype = utils::inumeric(FLERR, arg[8], true, lmp);
-  if ((ntype <= 0) || (ntype > atom->ntypes)) {
-    error->all(FLERR, "Invalid atom type in create_atoms command");
-  }
+  if ((ntype <= 0) || (ntype > atom->ntypes)) { error->all(FLERR, "{}: nvalid atom type in create_atoms command", style); }
 
   // Parse optional keywords
   int iarg = 9;
-  fp = nullptr;
+  fp       = nullptr;
 
   while (iarg < narg) {
     if (::strcmp(arg[iarg], "maxtry") == 0) {
       // Max attempts to search for a new suitable location
       maxtry = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);
-      if (maxtry < 1) { error->all(FLERR, "maxtry for fix cluster/crush cannot be less than 1"); }
+      if (maxtry < 1) { error->all(FLERR, "{}: maxtry cannot be less than 1", style); }
       iarg += 2;
 
     } else if (::strcmp(arg[iarg], "temp") == 0) {
       // Monomer temperature
-      fix_temp = true;
+      fix_temp            = true;
       monomer_temperature = utils::numeric(FLERR, arg[iarg + 1], true, lmp);
-      if (monomer_temperature < 0) {
-        error->all(FLERR, "Monomer temperature for fix cluster/crush cannot be negative");
-      }
+      if (monomer_temperature < 0) { error->all(FLERR, "{}: Monomer temperature cannot be negative", style); }
 
       iarg += 2;    // 3
 
@@ -110,7 +109,7 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) 
 
       // Get max number of tries for calling delete_monomers()/add_monomers()
       at_once = utils::inumeric(FLERR, arg[iarg + 1], true, lmp);
-      if (at_once < 1) { error->all(FLERR, "at_once for fix cluster/crush cannot be less than 1"); }
+      if (at_once < 1) { error->all(FLERR, "{}: at_once cannot be less than 1", style); }
       iarg += 2;
 
     } else if (::strcmp(arg[iarg], "noscreen") == 0) {
@@ -122,11 +121,8 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) 
       if (comm->me == 0) {
         // Write output to new file
         fileflag = 1;
-        fp = ::fopen(arg[iarg + 1], "w");
-        if (fp == nullptr) {
-          error->one(FLERR, "Cannot open fix cluster/crush stats file {}: {}", arg[iarg + 1],
-                     utils::getsyserror());
-        }
+        fp       = ::fopen(arg[iarg + 1], "w");
+        if (fp == nullptr) { error->one(FLERR, "{}: Cannot open stats file {}: {}", style, arg[iarg + 1], utils::getsyserror()); }
       }
       iarg += 2;
     } else if (::strcmp(arg[iarg], "group") == 0) {
@@ -137,11 +133,8 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) 
       if (comm->me == 0) {
         // Append output to file
         fileflag = 1;
-        fp = ::fopen(arg[iarg + 1], "a");
-        if (fp == nullptr) {
-          error->one(FLERR, "Cannot open fix cluster/crush stats file {}: {}", arg[iarg + 1],
-                     utils::getsyserror());
-        }
+        fp       = ::fopen(arg[iarg + 1], "a");
+        if (fp == nullptr) { error->one(FLERR, "{}: Cannot open stats file {}: {}", style, arg[iarg + 1], utils::getsyserror()); }
       }
       iarg += 2;
 
@@ -156,11 +149,11 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) 
       } else if (::strcmp(arg[iarg + 1], "lattice") == 0) {
         scaleflag = 1;
       } else {
-        error->all(FLERR, "Unknown fix cluster/crush units option {}", arg[iarg + 1]);
+        error->all(FLERR, "{}: Unknown units option {}", style, arg[iarg + 1]);
       }
       iarg += 2;
     } else {
-      error->all(FLERR, "Illegal fix cluster/crush command option {}", arg[iarg]);
+      error->all(FLERR, "{}: Illegal command option {}", style, arg[iarg]);
     }
   }
 
@@ -169,17 +162,13 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS *lmp, int narg, char **arg) 
     ::fflush(fp);
   }
 
-  next_step = update->ntimestep - (update->ntimestep % nevery);
+  next_step          = update->ntimestep - (update->ntimestep % nevery);
 
   // Get temp compute
   auto temp_computes = lmp->modify->get_compute_by_style("temp");
-  if (temp_computes.empty()) {
-    error->all(FLERR, "compute supersaturation: Cannot find compute with style 'temp'.");
-  }
-  compute_temp = dynamic_cast<ComputeClusterTemp *>(temp_computes[0]);
-  if (atom->mass_setflag[ntype] == 0) {
-    error->all(FLERR, "Fix cluster/crush_delete: Atom mass for atom type {} is not set!", ntype);
-  }
+  if (temp_computes.empty()) { error->all(FLERR, "{}: Cannot find compute with style 'temp'.", style); }
+  compute_temp = dynamic_cast<ComputeClusterTemp*>(temp_computes[0]);
+  if (atom->mass_setflag[ntype] == 0) { error->all(FLERR, "{}: Atom mass for atom type {} is not set!", style, ntype); }
   sigma = ::sqrt(monomer_temperature / atom->mass[ntype]);
 }
 
@@ -200,22 +189,19 @@ FixClusterCrushDelete::~FixClusterCrushDelete() noexcept(true)
 
 void FixClusterCrushDelete::init()
 {
-  if ((modify->get_fix_by_style(style).size() > 1) && (comm->me == 0)) {
-    error->warning(FLERR, "More than one fix {}", style);
-  }
+  if ((modify->get_fix_by_style(style).size() > 1) && (comm->me == 0)) { error->warning(FLERR, "More than one fix {}", style); }
 
-  pproc.create(memory, comm->nprocs, "cluster/crush:pproc");
-  c2c.create(memory, comm->nprocs, "cluster/crush:c2c");
+  pproc.create(memory, comm->nprocs, "cluster/crush/delete:pproc");
+  c2c.create(memory, comm->nprocs, "cluster/crush/delete:c2c");
 
   nloc = atom->nlocal;
-  p2m.create(memory, nloc, "fix cluster/crush:p2m");
+  p2m.create(memory, nloc, "cluster/crush/delete:p2m");
 
-  std::string fixcmd =
-      fmt::format("CCDREGENFIX all regen 1 {} 1 {} {} region {} near {} "
-                  "attempt {} temp {} units box",
-                  ntype, xseed, at_once, region->id, overlap, maxtry, monomer_temperature);
+  std::string fixcmd = fmt::format("CCDREGENFIX all regen 1 {} 1 {} {} region {} near {} "
+                                   "attempt {} temp {} units box",
+                                   ntype, xseed, at_once, region->id, overlap, maxtry, monomer_temperature);
   if (groupname.length() > 0) { fixcmd += fmt::format(" group {}", groupname); }
-  fix_regen = dynamic_cast<FixRegen *>(modify->add_fix(fixcmd));
+  fix_regen = dynamic_cast<FixRegen*>(modify->add_fix(fixcmd));
   fix_regen->init();
 }
 
@@ -234,41 +220,55 @@ void FixClusterCrushDelete::pre_exchange()
 {
   if (reneigh_forced) {
     next_reneighbor = 0;
-    reneigh_forced = false;
+    reneigh_forced  = false;
   }
 
   if (update->ntimestep < next_step) { return; }
   next_step = update->ntimestep + nevery;
 
-  if (compute_cluster_size->invoked_vector < update->ntimestep) {
-    compute_cluster_size->compute_vector();
-  }
-  const auto &cIDs_by_size = compute_cluster_size->cIDs_by_size;
-  auto &atoms_by_cID = compute_cluster_size->atoms_by_cID;
+  if (compute_cluster_size->invoked_vector < update->ntimestep) { compute_cluster_size->compute_vector(); }
+  const auto& cIDs_by_size = *compute_cluster_size->get_cIDs_by_size();
+
 
   if (nloc < atom->nlocal) {
     nloc = atom->nlocal;
-    p2m.grow(memory, nloc, "fix cluster/crush:p2m");
+    p2m.grow(memory, nloc, "cluster/crush/delete:p2m");
     p2m.reset();
   }
 
   // Count amount of local clusters to crush
   bigint clusters2crush_local = 0;
   // Count amount of local atoms to move
-  int atoms2move_local = 0;
+  int atoms2move_local        = 0;
 
-  for (const auto &[size, cIDs] : cIDs_by_size) {
-    if (size > kmax) {
-      clusters2crush_local += cIDs.size();
-      for (int cID : cIDs) {
-        const auto &vec = atoms_by_cID[cID];
-        for (int pID : vec) {
-          p2m[atoms2move_local] = pID;
-          ++atoms2move_local;
+  if (compute_cluster_size->is_avg == 1) {
+
+    const auto& atoms_by_cID = *dynamic_cast<ComputeClusterSizeAVG*>(compute_cluster_size)->get_atoms_by_cID();
+    for (const auto& [size, cIDs] : cIDs_by_size) {
+      if (size > kmax) {
+        clusters2crush_local += cIDs.size();
+        for (int cID : cIDs) {
+          const auto& vec = (*atoms_by_cID.find(cID)).second;
+          for (int pID : vec) { p2m[atoms2move_local++] = pID; }
         }
       }
     }
+  } else {
+    int nclusters = dynamic_cast<ComputeClusterSizeExt*>(compute_cluster_size)->get_cluster_map()->size();
+    const auto& clusters = dynamic_cast<ComputeClusterSizeExt*>(compute_cluster_size)->get_clusters();
+    for (int i = 0; i < nclusters; ++i) {
+      const auto& clstr = clusters[i];
+      if (clstr.g_size > kmax) {
+        ++clusters2crush_local;
+        ::memcpy(p2m.data(), clstr.atoms().data(), clstr.l_size * sizeof(int));
+        atoms2move_local += clstr.l_size;
+        // const auto& atoms = clstr.atoms();
+        // for (int j = 0; j < clstr.l_size; ++j) { p2m[atoms2move_local++] = atoms[j]; }
+      }
+    }
   }
+
+
 
   c2c.reset();
   c2c[comm->me] = clusters2crush_local;
@@ -278,7 +278,7 @@ void FixClusterCrushDelete::pre_exchange()
   pproc[comm->me] = atoms2move_local;
   ::MPI_Allgather(&atoms2move_local, 1, MPI_INT, pproc.data(), 1, MPI_INT, world);
 
-  bigint atoms2move_total = 0;
+  bigint atoms2move_total     = 0;
   bigint clusters2crush_total = 0;
   for (int proc = 0; proc < comm->nprocs; ++proc) {
     atoms2move_total += pproc[proc];
@@ -290,8 +290,7 @@ void FixClusterCrushDelete::pre_exchange()
       if (screenflag != 0) { utils::logmesg(lmp, "No clusters with size exceeding {}\n", kmax); }
       if (fileflag != 0) {
         bigint ninserted = fix_regen->get_ninserted();
-        fmt::print(fp, "{},{},0,0,{},{}\n", update->ntimestep, atom->natoms,
-                   ninserted - ninserted_prev, fix_regen->get_ninsert() - ninserted);
+        fmt::print(fp, "{},{},0,0,{},{}\n", update->ntimestep, atom->natoms, ninserted - ninserted_prev, fix_regen->get_ninsert() - ninserted);
         ::fflush(fp);
       }
     }
@@ -302,20 +301,16 @@ void FixClusterCrushDelete::pre_exchange()
   deleteAtoms(atoms2move_local);
   postDelete();
   next_reneighbor = update->ntimestep + 1;
-  reneigh_forced = true;
+  reneigh_forced  = true;
   fix_regen->add_ninsert(atoms2move_total);
   fix_regen->force_reneigh(next_reneighbor);
 
   if (comm->me == 0) {
     // print status
-    if (screenflag != 0) {
-      utils::logmesg(lmp, "Crushed {} clusters -> deleted {} atoms.\n", clusters2crush_total,
-                     atoms2move_total);
-    }
+    if (screenflag != 0) { utils::logmesg(lmp, "Crushed {} clusters -> deleted {} atoms.\n", clusters2crush_total, atoms2move_total); }
     if (fileflag != 0) {
       bigint ninserted = fix_regen->get_ninserted();
-      fmt::print(fp, "{},{},{},{},{},{}\n", update->ntimestep, atom->natoms, clusters2crush_total,
-                 atoms2move_total, ninserted - ninserted_prev,
+      fmt::print(fp, "{},{},{},{},{},{}\n", update->ntimestep, atom->natoms, clusters2crush_total, atoms2move_total, ninserted - ninserted_prev,
                  fix_regen->get_ninsert() - ninserted);
       ::fflush(fp);
     }
@@ -332,9 +327,7 @@ void FixClusterCrushDelete::deleteAtoms(int atoms2move_local) noexcept(true)
   // delete local atoms
   // reset nlocal
 
-  for (int i = atoms2move_local - 1; i >= 0; --i) {
-    atom->avec->copy(atom->nlocal - atoms2move_local + i, p2m[i], 1);
-  }
+  for (int i = atoms2move_local - 1; i >= 0; --i) { atom->avec->copy(atom->nlocal - atoms2move_local + i, p2m[i], 1); }
 
   atom->nlocal -= atoms2move_local;
 }    // void FixClusterCrush::delete_monomers(int)
@@ -344,7 +337,7 @@ void FixClusterCrushDelete::deleteAtoms(int atoms2move_local) noexcept(true)
 void FixClusterCrushDelete::postDelete() noexcept(true)
 {
   if (atom->molecular == Atom::ATOMIC) {
-    tagint *tag = atom->tag;
+    tagint* tag      = atom->tag;
     int const nlocal = atom->nlocal;
     for (int i = 0; i < nlocal; ++i) { tag[i] = 0; }
     atom->tag_extend();
@@ -357,11 +350,11 @@ void FixClusterCrushDelete::postDelete() noexcept(true)
 
   // reset bonus data counts
 
-  const auto *avec_ellipsoid = dynamic_cast<AtomVecEllipsoid *>(atom->style_match("ellipsoid"));
-  const auto *avec_line = dynamic_cast<AtomVecLine *>(atom->style_match("line"));
-  const auto *avec_tri = dynamic_cast<AtomVecTri *>(atom->style_match("tri"));
-  const auto *avec_body = dynamic_cast<AtomVecBody *>(atom->style_match("body"));
-  bigint nlocal_bonus = 0;
+  const auto* avec_ellipsoid = dynamic_cast<AtomVecEllipsoid*>(atom->style_match("ellipsoid"));
+  const auto* avec_line      = dynamic_cast<AtomVecLine*>(atom->style_match("line"));
+  const auto* avec_tri       = dynamic_cast<AtomVecTri*>(atom->style_match("tri"));
+  const auto* avec_body      = dynamic_cast<AtomVecBody*>(atom->style_match("body"));
+  bigint nlocal_bonus        = 0;
 
   if (atom->nellipsoids > 0) {
     nlocal_bonus = avec_ellipsoid->nlocal_bonus;

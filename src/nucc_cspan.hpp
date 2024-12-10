@@ -2,15 +2,13 @@
 #define __NUCC_CUSTOM_CSPAN_HPP
 
 #include "memory.h"
+#include "nucc_defs.hpp"
 
 #include <algorithm>
 #include <concepts>
 #include <iostream>
 #include <span>
 #include <type_traits>
-
-#define __NUCC_CSPAN_CHECK_ACCESS
-// #define __NUCC_CSPAN_DEBUG_CALLS
 
 namespace NUCC {
 

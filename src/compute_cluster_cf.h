@@ -13,36 +13,32 @@
 
 #ifdef COMPUTE_CLASS
 // clang-format off
-ComputeStyle(ke/cluster,ComputeClusterKE);
+ComputeStyle(cluster/cf,ComputeClusterCF);
 // clang-format on
 #else
 
-#ifndef LMP_COMPUTE_CLUSTER_KE_H
-#define LMP_COMPUTE_CLUSTER_KE_H
+#ifndef LMP_COMPUTE_CLUSTER_RDF_H
+#define LMP_COMPUTE_CLUSTER_RDF_H
 
 #include "compute.h"
-#include "nucc_cspan.hpp"
 
 namespace LAMMPS_NS {
-class ComputeClusterKE : public Compute {
+class ComputeClusterCF : public Compute {
  public:
-  ComputeClusterKE(class LAMMPS *lmp, int narg, char **arg);
-  ~ComputeClusterKE() noexcept(true) override;
+  ComputeClusterCF(class LAMMPS* lmp, int narg, char** arg);
+  ~ComputeClusterCF() noexcept(true) override;
   void init() override;
   void compute_vector() override;
   void compute_local() override;
   double memory_usage() override;
 
-  inline constexpr NUCC::cspan<const double> get_data() const noexcept { return kes; }
-  inline constexpr NUCC::cspan<const double> get_data_local() const noexcept { return local_kes; }
-
  private:
-  class ComputeClusterSize *compute_cluster_size = nullptr;
-  Compute *compute_ke_atom = nullptr;
+  class ComputeClusterSize* compute_cluster_size = nullptr;
+  class ComputeCFAtom* compute_rdf_atom          = nullptr;
 
-  NUCC::cspan<double> kes;          // array of kes of global clusters
-  NUCC::cspan<double> local_kes;    // array of kes of local clusters
-  int size_cutoff;                  // size of max cluster
+  double** cf;
+  double** cf_local;
+  int size_cutoff;    // size of max cluster
 };
 
 }    // namespace LAMMPS_NS

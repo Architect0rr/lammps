@@ -6,7 +6,7 @@
 
 #ifdef FIX_CLASS
 // clang-format off
-FixStyle(cluster/crush_delete,FixClusterCrushDelete);
+FixStyle(cluster/crush/delete,FixClusterCrushDelete);
 // clang-format on
 #else
 
@@ -17,10 +17,6 @@ FixStyle(cluster/crush_delete,FixClusterCrushDelete);
 #include "nucc_cspan.hpp"
 
 namespace LAMMPS_NS {
-class Region;
-class ComputeClusterSize;
-class ComputeClusterTemp;
-class FixRegen;
 class FixClusterCrushDelete : public Fix {
  public:
   FixClusterCrushDelete(class LAMMPS *lmp, int narg, char **arg);
@@ -30,10 +26,10 @@ class FixClusterCrushDelete : public Fix {
   void pre_exchange() override;
 
  protected:
-  Region *region = nullptr;
-  ComputeClusterSize *compute_cluster_size = nullptr;
-  ComputeClusterTemp *compute_temp = nullptr;
-  FixRegen *fix_regen = nullptr;
+  class Region *region = nullptr;
+  class ComputeClusterSize *compute_cluster_size = nullptr;
+  class ComputeClusterTemp *compute_temp = nullptr;
+  class FixRegen *fix_regen = nullptr;
 
   int xseed;
 

@@ -35,7 +35,7 @@ ComputeClusterTemp::ComputeClusterTemp(LAMMPS *lmp, int narg, char **arg) : Comp
   size_vector = 0;
   extvector = 0;
 
-  if (narg < 3) { utils::missing_cmd_args(FLERR, "compute cluster/temp", error); }
+  if (narg < 5) { utils::missing_cmd_args(FLERR, "compute cluster/temp", error); }
 
   // Parse arguments //
 
@@ -46,22 +46,21 @@ ComputeClusterTemp::ComputeClusterTemp(LAMMPS *lmp, int narg, char **arg) : Comp
                arg[3]);
   }
 
+  compute_cluster_ke = dynamic_cast<ComputeClusterKE *>((lmp->modify->get_compute_by_id(arg[4])));
+  if (compute_cluster_ke == nullptr) {
+    error->all(FLERR, "{}: Cannot find compute with style 'cluster/ke' with id: {}", style,
+               arg[4]);
+  }
+
   // Get the critical size
   size_cutoff = compute_cluster_size->get_size_cutoff();
-  if ((narg >= 4) && (::strcmp(arg[4], "inherit") != 0)) {
-    int t_size_cutoff = utils::inumeric(FLERR, arg[4], true, lmp);
+  if ((narg >= 5) && (::strcmp(arg[5], "inherit") != 0)) {
+    int t_size_cutoff = utils::inumeric(FLERR, arg[5], true, lmp);
     if (t_size_cutoff < 1) {
-      error->all(FLERR, "size_cutoff for {} must be greater than 0", style);
+      error->all(FLERR, "size_cutoff for {} must be greater than 0: {}", style, arg[5]);
     }
     size_cutoff = MIN(size_cutoff, t_size_cutoff);
   }
-
-  // Get ke/atom compute
-  auto computes = lmp->modify->get_compute_by_style("cluster/ke");
-  if (computes.empty()) {
-    error->all(FLERR, "{}: Cannot find compute with style 'cluster/ke'", style);
-  }
-  compute_cluster_ke = dynamic_cast<ComputeClusterKE *>(computes[0]);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -80,7 +79,6 @@ void ComputeClusterTemp::init()
   }
 
   size_vector = size_cutoff + 1;
-  // memory->create(temp, size_vector + 1, "cluster/temp:temp");
   temp.create(memory, size_vector, "cluster/temp:temp");
   vector = temp.data();
 }
@@ -99,9 +97,8 @@ void ComputeClusterTemp::compute_vector()
     compute_cluster_ke->compute_vector();
   }
 
-  cspan<const double> kes = compute_cluster_ke->get_data();
-  // ::memset(temp, 0.0, size_vector * sizeof(double));
   temp.reset();
+  cspan<const double> kes = compute_cluster_ke->get_data();
   cspan<const double> dist = compute_cluster_size->get_data();
   for (int i = 0; i < size_cutoff; ++i) {
     if (dist[i] > 0) { temp[i] = 2 * kes[i] / i / domain->dimension; }
@@ -114,5 +111,5 @@ void ComputeClusterTemp::compute_vector()
 
 double ComputeClusterTemp::memory_usage()
 {
-  return static_cast<double>(size_vector * sizeof(double));
+  return static_cast<double>(temp.memory_usage());
 }

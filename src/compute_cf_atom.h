@@ -13,33 +13,44 @@
 
 #ifdef COMPUTE_CLASS
 // clang-format off
-ComputeStyle(cluster/atom,ComputeClusterAtom);
+ComputeStyle(cf/atom,ComputeCFAtom);
 // clang-format on
 #else
 
-#ifndef LMP_COMPUTE_CLUSTER_ATOM_H
-#define LMP_COMPUTE_CLUSTER_ATOM_H
+#ifndef COMPUTE_RDF_ATOM_H
+#define COMPUTE_RDF_ATOM_H
 
 #include "compute.h"
+#include "nucc_cspan.hpp"
+#include <array>
 
 namespace LAMMPS_NS {
 
-class ComputeClusterAtom : public Compute {
+class ComputeCFAtom : public Compute {
  public:
-  ComputeClusterAtom(class LAMMPS *, int, char **);
-  ~ComputeClusterAtom() override;
+  ComputeCFAtom(class LAMMPS*, int, char**);
+  ~ComputeCFAtom() override;
   void init() override;
-  void init_list(int, class NeighList *) override;
+  void init_list(int, class NeighList*) override;
   void compute_peratom() override;
-  int pack_forward_comm(int, int *, double *, int, int *) override;
-  void unpack_forward_comm(int, int, double *) override;
   double memory_usage() override;
+
+  inline constexpr const std::array<int, 3>& get_nbins() const noexcept { return nbins; }
+  inline constexpr const std::array<NUCC::cspan<double>, 3>& get_bins() const noexcept { return bins; }
 
  private:
   int nmax;
+  class NeighList* list;
+  double cutoff;
   double cutsq;
-  class NeighList *list;
-  double *clusterID;
+
+  std::array<double, 3> sigmas;
+  std::array<int, 3> nbins;
+  std::array<double, 3> norms;
+  double norm;
+
+  double** rdf;
+  std::array<NUCC::cspan<double>, 3> bins;
 };
 
 }    // namespace LAMMPS_NS

@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include "compute_cluster_size.h"
+#include "compute_cluster_size_avg.h"
 
 #include "atom.h"
 #include "comm.h"
@@ -23,10 +23,11 @@
 #include <cstring>
 
 using namespace LAMMPS_NS;
+using namespace NUCC;
 
 /* ---------------------------------------------------------------------- */
 
-ComputeClusterSize::ComputeClusterSize(LAMMPS* lmp, int narg, char** arg) : Compute(lmp, narg, arg), nloc(0), nloc_atom(0), nc_global(0)
+ComputeClusterSizeAVG::ComputeClusterSizeAVG(LAMMPS* lmp, int narg, char** arg) : ComputeClusterSize(lmp, narg, arg), nloc(0), nloc_atom(0), nc_global(0)
 {
   vector_flag = 1;
   extvector = 0;
@@ -35,6 +36,8 @@ ComputeClusterSize::ComputeClusterSize(LAMMPS* lmp, int narg, char** arg) : Comp
 
   peratom_flag = 1;
   size_peratom_cols = 0;
+
+  is_avg = 1;
 
   if (narg < 4) { utils::missing_cmd_args(FLERR, "compute cluster/size", error); }
 
@@ -56,15 +59,19 @@ ComputeClusterSize::ComputeClusterSize(LAMMPS* lmp, int narg, char** arg) : Comp
 
 /* ---------------------------------------------------------------------- */
 
-ComputeClusterSize::~ComputeClusterSize() noexcept(true)
+ComputeClusterSizeAVG::~ComputeClusterSizeAVG() noexcept(true)
 {
   dist.destroy(memory);
   peratom_size.destroy(memory);
+
+  delete keeper;
+  delete alloc_map_vec;
+  delete cIDs_by_size;
 }
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeClusterSize::init()
+void ComputeClusterSizeAVG::init()
 {
   if ((modify->get_compute_by_style(style).size() > 1) && (comm->me == 0)) { error->warning(FLERR, "More than one compute {}", style); }
 
@@ -77,28 +84,33 @@ void ComputeClusterSize::init()
   peratom_size.reset();
   vector_atom = peratom_size.data();
 
+  keeper = new MemoryKeeper(memory);
+  alloc_map_vec = new MapAlloc_t<int, Vec_t<int>>(keeper);
+  cIDs_by_size = new Map_t<int, Vec_t<int>>(*alloc_map_vec);
+
   initialized_flag = 1;
 }
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeClusterSize::compute_vector()
+void ComputeClusterSizeAVG::compute_vector()
 {
   invoked_vector = update->ntimestep;
 
   if (compute_cluster_atom->invoked_peratom != update->ntimestep) { compute_cluster_atom->compute_peratom(); }
 
   const double* cluster_ids = compute_cluster_atom->vector_atom;
+  auto& cmap = *cIDs_by_size;
 
   if (atom->nlocal > nloc) {
     nloc = atom->nlocal;
     atoms_by_cID.reserve(nloc);
-    cIDs_by_size.reserve(nloc);
+    cmap.reserve(nloc);
   }
 
   // Clear buffers
   atoms_by_cID.clear();
-  cIDs_by_size.clear();
+  cmap.clear();
 
   // Sort atom IDs by cluster IDs
   for (int i = 0; i < atom->nlocal; ++i) {
@@ -114,7 +126,7 @@ void ComputeClusterSize::compute_vector()
   for (int i = 1; i <= atom->natoms; ++i) {
     l_size = atoms_by_cID.count(i) == 0 ? 0 : atoms_by_cID[i].size();
     ::MPI_Allreduce(&l_size, &g_size, 1, MPI_INT, MPI_SUM, world);
-    if (l_size > 0) { cIDs_by_size[g_size].emplace_back(i); }
+    if (l_size > 0) { cmap[g_size].emplace_back(i); }
     if (g_size > 0) {
       if (g_size < size_cutoff) { dist[g_size] += 1; }
       ++nc_global;
@@ -126,7 +138,7 @@ void ComputeClusterSize::compute_vector()
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeClusterSize::compute_peratom()
+void ComputeClusterSizeAVG::compute_peratom()
 {
   invoked_peratom = update->ntimestep;
 
@@ -139,7 +151,7 @@ void ComputeClusterSize::compute_peratom()
     vector_atom = peratom_size.data();
   }
 
-  for (const auto& [size, cIDs] : cIDs_by_size) {
+  for (const auto& [size, cIDs] : *cIDs_by_size) {
     for (auto cID : cIDs) {
       for (auto pID : atoms_by_cID[cID]) { peratom_size[pID] = size; }
     }
@@ -150,7 +162,7 @@ void ComputeClusterSize::compute_peratom()
    memory usage of maps and dist
 ------------------------------------------------------------------------- */
 
-double ComputeClusterSize::memory_usage()
+double ComputeClusterSizeAVG::memory_usage()
 {
   std::size_t usage = peratom_size.memory_usage() + dist.memory_usage();
   return static_cast<double>(usage);    // it is needed to be repaired

@@ -13,7 +13,7 @@
 
 #ifdef COMPUTE_CLASS
 // clang-format off
-ComputeStyle(cluster/pe,ComputeClusterPE);
+ComputeStyle(pe/cluster,ComputeClusterPE);
 // clang-format on
 #else
 
@@ -24,7 +24,6 @@ ComputeStyle(cluster/pe,ComputeClusterPE);
 #include "nucc_cspan.hpp"
 
 namespace LAMMPS_NS {
-class ComputeClusterSize;
 class ComputeClusterPE : public Compute {
 public:
   ComputeClusterPE(class LAMMPS *lmp, int narg, char **arg);
@@ -42,7 +41,7 @@ public:
   }
 
 private:
-  ComputeClusterSize *compute_cluster_size = nullptr;
+  class ComputeClusterSize *compute_cluster_size = nullptr;
   Compute *compute_pe_atom = nullptr;
 
   NUCC::cspan<double> pes;       // array of pes of global clusters
