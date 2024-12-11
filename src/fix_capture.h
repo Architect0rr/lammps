@@ -13,10 +13,7 @@ FixStyle(capture,FixCapture);
 #ifndef LAMMPS_FIX_CAPTURE_H
 #define LAMMPS_FIX_CAPTURE_H
 
-#include "compute.h"
 #include "fix.h"
-#include "random_park.h"
-#include "region.h"
 
 namespace LAMMPS_NS {
 
@@ -39,9 +36,9 @@ class FixCapture : public Fix {
   void pre_exchange() override;
 
  protected:
-  Region *region = nullptr;
-  RanPark *vrandom = nullptr;
-  Compute *compute_temp = nullptr;
+  class Region *region = nullptr;
+  class RanPark *vrandom = nullptr;
+  class Compute *compute_temp = nullptr;
 
   double *sigmas{};
   double **rmins{};

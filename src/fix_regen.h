@@ -38,10 +38,10 @@ class FixRegen : public Fix {
   void restart(char *) override;
   void *extract(const char *, int &) override;
 
-  inline bigint get_ninsert() const noexcept(true) { return ninsert; }
-  inline bigint get_ninserted() const noexcept(true) { return ninserted; }
-  inline void add_ninsert(const bigint n) noexcept(true) { ninsert += n; }
-  inline void force_reneigh(const bigint n) noexcept(true) { next_reneighbor = n; }
+  inline constexpr bigint get_ninsert()         const noexcept { return ninsert; }
+  inline constexpr bigint get_ninserted()       const noexcept { return ninserted; }
+  inline constexpr void add_ninsert(const bigint n)   noexcept { ninsert += n; }
+  inline constexpr void force_reneigh(const bigint n) noexcept { next_reneighbor = n; }
 
  private:
   bigint ninsert;
@@ -76,6 +76,11 @@ class FixRegen : public Fix {
   tagint maxtag_all{}, maxmol_all{};
   class RanPark *random;
 
+  bool check_overlap(int natom);
+  int check_subbonds(double *newcoord, double *sublo, double*subhi);
+  void generate_velocity(double *vnew);
+  void correct_velocity(double *vnew, double* coord);
+  void reset_vertical(double *coord);
   void find_maxid();
   void options(int, char **);
   int vartest(double, double, double);    // evaluate a variable with new atom position

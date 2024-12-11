@@ -317,29 +317,17 @@ void FixRegen::setup_pre_exchange()
 
 void FixRegen::pre_exchange()
 {
-  int i{};
-  int m{};
-  int n{};
-  int nlocalprev{};
-  int imol{};
+  // just return if should not be called on this timestep
+
+  if (next_reneighbor != update->ntimestep) { return;}
+
   int natom{};
-  int flag{};
-  int flagall{};
+  int imol{};
   double coord[3];
-  double lamda[3];
-  double delx{};
-  double dely{};
-  double delz{};
-  double rsq{};
   double r[3];
   double vnew[3];
   double rotmat[3][3];
   double quat[4];
-  double *newcoord = nullptr;
-
-  // just return if should not be called on this timestep
-
-  if (next_reneighbor != update->ntimestep) { return;}
 
   // clear ghost count (and atom map) and any ghost bonus data
   //   internal to AtomVec
@@ -372,8 +360,6 @@ void FixRegen::pre_exchange()
 
     // attempt an insertion until successful
 
-    int const dimension = domain->dimension;
-
     int success = 0;
     int attempt = 0;
     while (attempt < maxattempt) {
@@ -398,52 +384,15 @@ void FixRegen::pre_exchange()
 
       // adjust vertical coord by offset
 
-      if (dimension == 2) { coord[1] += offset;
-      } else { coord[2] += offset;}
+      if (domain->dimension == 2) { coord[1] += offset; }
+      else { coord[2] += offset; }
 
       // if global, reset vertical coord to be lo-hi above highest atom
       // if local, reset vertical coord to be lo-hi above highest "nearby" atom
       // local computation computes lateral distance between 2 particles w/ PBC
       // when done, have final coord of atom or center pt of molecule
 
-      if ((globalflag != 0) || (localflag != 0)) {
-        int dim = 0;
-        double max{};
-        double maxall{};
-        double delx{};
-        double dely{};
-        double delz{};
-        double rsq{};
-
-        if (dimension == 2) {
-          dim = 1;
-          max = domain->boxlo[1];
-        } else {
-          dim = 2;
-          max = domain->boxlo[2];
-        }
-
-        double **x = atom->x;
-        int const nlocal = atom->nlocal;
-        for (i = 0; i < nlocal; i++) {
-          if (localflag != 0) {
-            delx = coord[0] - x[i][0];
-            dely = coord[1] - x[i][1];
-            delz = 0.0;
-            domain->minimum_image(delx,dely,delz);
-            if (dimension == 2) { rsq = delx*delx;
-            } else { rsq = delx*delx + dely*dely;}
-            if (rsq > deltasq) { continue;}
-          }
-          if (x[i][dim] > max) { max = x[i][dim];}
-        }
-
-        MPI_Allreduce(&max,&maxall,1,MPI_DOUBLE,MPI_MAX,world);
-        if (dimension == 2) {
-          coord[1] = maxall + lo + random->uniform()*(hi-lo);
-        } else {
-          coord[2] = maxall + lo + random->uniform()*(hi-lo);}
-      }
+      if ((globalflag != 0) || (localflag != 0)) { reset_vertical(coord); }
 
       // coords = coords of all atoms
       // for molecule, perform random rotation around center pt
@@ -455,14 +404,13 @@ void FixRegen::pre_exchange()
         coords[0][0] = coord[0];
         coords[0][1] = coord[1];
         coords[0][2] = coord[2];
-        imageflags[0] = (static_cast<imageint>(IMGMAX) << IMG2BITS) |
-          (static_cast<imageint>(IMGMAX) << IMGBITS) | IMGMAX;
+        imageflags[0] = (static_cast<imageint>(IMGMAX) << IMG2BITS) | (static_cast<imageint>(IMGMAX) << IMGBITS) | IMGMAX;
       } else {
         double const rng = random->uniform();
         imol = 0;
         while (rng > molfrac[imol]) { imol++;}
         natom = onemols[imol]->natoms;
-        if (dimension == 3) {
+        if (domain->dimension == 3) {
           if (orientflag != 0) {
             r[0] = rx;
             r[1] = ry;
@@ -480,7 +428,7 @@ void FixRegen::pre_exchange()
         MathExtra::norm3(r);
         MathExtra::axisangle_to_quat(r,theta,quat);
         MathExtra::quat_to_mat(quat,rotmat);
-        for (i = 0; i < natom; i++) {
+        for (int i = 0; i < natom; i++) {
           MathExtra::matvec(rotmat,onemols[imol]->dx[i],coords[i]);
           coords[i][0] += coord[0];
           coords[i][1] += coord[1];
@@ -496,99 +444,42 @@ void FixRegen::pre_exchange()
       // if less than near, try again
       // use minimum_image() to account for PBC
 
-      double **x = atom->x;
-      int const nlocal = atom->nlocal;
-
-      flag = 0;
-      for (m = 0; m < natom; m++) {
-        for (i = 0; i < nlocal; i++) {
-          delx = coords[m][0] - x[i][0];
-          dely = coords[m][1] - x[i][1];
-          delz = coords[m][2] - x[i][2];
-          domain->minimum_image(delx,dely,delz);
-          rsq = delx*delx + dely*dely + delz*delz;
-          if (rsq < nearsq) { flag = 1;}
-        }
-      }
-      MPI_Allreduce(&flag,&flagall,1,MPI_INT,MPI_MAX,world);
-      if (flagall != 0) { continue;}
+      if (!check_overlap(natom)) { continue;}
 
       // proceed with insertion
 
-      nlocalprev = atom->nlocal;
+      int nlocalprev = atom->nlocal;
 
       // choose random velocity for new particle
       // used for every atom in molecule
 
-      if (tempflag != 0) {
-        vnew[0] = random->gaussian() * vsigma;
-        vnew[1] = random->gaussian() * vsigma;
-        vnew[2] = random->gaussian() * vsigma;
-      } else {
-        vnew[0] = vxlo + random->uniform() * (vxhi-vxlo);
-        vnew[1] = vylo + random->uniform() * (vyhi-vylo);
-        vnew[2] = vzlo + random->uniform() * (vzhi-vzlo);
-      }
+      generate_velocity(vnew);
 
       // if target specified, change velocity vector accordingly
 
-      if (targetflag != 0) {
-        double const vel = sqrt(vnew[0]*vnew[0] + vnew[1]*vnew[1] + vnew[2]*vnew[2]);
-        delx = tx - coord[0];
-        dely = ty - coord[1];
-        delz = tz - coord[2];
-        double const rsq = delx*delx + dely*dely + delz*delz;
-        if (rsq > 0.0) {
-          double const rinv = sqrt(1.0/rsq);
-          vnew[0] = delx*rinv*vel;
-          vnew[1] = dely*rinv*vel;
-          vnew[2] = delz*rinv*vel;
-        }
-      }
+      if (targetflag != 0) { correct_velocity(vnew, coord); }
 
       // check if new atoms are in my sub-box or above it if I am highest proc
       // if so, add atom to my list via create_atom()
       // initialize additional info about the atoms
       // set group mask to "all" plus fix group
 
-      for (m = 0; m < natom; m++) {
+      for (int m = 0; m < natom; m++) {
+        double *newcoord;
+        double lamda[3];
         if (domain->triclinic != 0) {
           domain->x2lamda(coords[m],lamda);
           newcoord = lamda;
         } else { newcoord = coords[m];}
 
-        flag = 0;
-        if (newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
-            newcoord[1] >= sublo[1] && newcoord[1] < subhi[1] &&
-            newcoord[2] >= sublo[2] && newcoord[2] < subhi[2]) { flag = 1;
-        } else if (dimension == 3 && newcoord[2] >= domain->boxhi[2]) {
-          if (comm->layout != Comm::LAYOUT_TILED) {
-            if (comm->myloc[2] == comm->procgrid[2]-1 &&
-                newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
-                newcoord[1] >= sublo[1] && newcoord[1] < subhi[1]) { flag = 1;}
-          } else {
-            if (comm->mysplit[2][1] == 1.0 &&
-                newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
-                newcoord[1] >= sublo[1] && newcoord[1] < subhi[1]) { flag = 1;}
-          }
-        } else if (dimension == 2 && newcoord[1] >= domain->boxhi[1]) {
-          if (comm->layout != Comm::LAYOUT_TILED) {
-            if (comm->myloc[1] == comm->procgrid[1]-1 &&
-                newcoord[0] >= sublo[0] && newcoord[0] < subhi[0]) { flag = 1;}
-          } else {
-            if (comm->mysplit[1][1] == 1.0 &&
-                newcoord[0] >= sublo[0] && newcoord[0] < subhi[0]) { flag = 1;}
-          }
-        }
-
-        if (flag != 0) {
+        if (check_subbonds(newcoord, sublo, subhi) != 0) {
           if (mode == ATOM) {
             atom->avec->create_atom(ntype,coords[m]);
           } else {
             atom->avec->create_atom(ntype+onemols[imol]->type[m],coords[m]);
           }
-          n = atom->nlocal - 1;
-          atom->tag[n] = maxtag_all + m+1;
+          int n = atom->nlocal - 1;
+          // atom->tag[n] = maxtag_all + m+1;
           if (mode == MOLECULE) {
             if (atom->molecule_flag != 0) {
               if (onemols[imol]->moleculeflag != 0) {
@@ -623,10 +514,8 @@ void FixRegen::pre_exchange()
       // FixShake::set_molecule stores shake info for molecule
 
       if (mode == MOLECULE) {
-        if (rigidflag != 0) {
-          fixrigid->set_molecule(nlocalprev,maxtag_all,imol,coord,vnew,quat);
-        } else if (shakeflag != 0) {
-          fixshake->set_molecule(nlocalprev,maxtag_all,imol,coord,vnew,quat);}
+        if (rigidflag != 0) { fixrigid->set_molecule(nlocalprev,maxtag_all,imol,coord,vnew,quat); }
+        else if (shakeflag != 0) { fixshake->set_molecule(nlocalprev,maxtag_all,imol,coord,vnew,quat); }
       }
 
       success = 1;
@@ -648,8 +537,7 @@ void FixRegen::pre_exchange()
 
     if (success != 0) {
       atom->natoms += natom;
-      if (atom->natoms < 0) {
-        error->all(FLERR,"Too many total atoms");}
+      if (atom->natoms < 0) { error->all(FLERR,"Too many total atoms"); }
       if (mode == MOLECULE) {
         atom->nbonds += onemols[imol]->nbonds;
         atom->nangles += onemols[imol]->nangles;
@@ -657,17 +545,16 @@ void FixRegen::pre_exchange()
         atom->nimpropers += onemols[imol]->nimpropers;
       }
       maxtag_all += natom;
-      if (maxtag_all >= MAXTAGINT) {
-        error->all(FLERR,"New atom IDs exceed maximum allowed ID");}
+      if (maxtag_all >= MAXTAGINT) { error->all(FLERR,"New atom IDs exceed maximum allowed ID"); }
       if (mode == MOLECULE && (atom->molecule_flag != 0)) {
-        if (onemols[imol]->moleculeflag != 0) {
-          maxmol_all += onemols[imol]->nmolecules;
-        } else {
-          maxmol_all++;
-        }
+        if (onemols[imol]->moleculeflag != 0) { maxmol_all += onemols[imol]->nmolecules; }
+        else { maxmol_all++; }
       }
       ninserted++;
     }
+
+    atom->tag_extend();
+    atom->tag_check();
 
     // rebuild atom map
 
@@ -680,8 +567,127 @@ void FixRegen::pre_exchange()
   // next timestep to insert
   // next_reneighbor = 0 if done
 
-  if (ninserted < ninsert) { next_reneighbor += nfreq;
-  } else { next_reneighbor = 0;}
+  if (ninserted < ninsert) { next_reneighbor += nfreq; }
+  else { next_reneighbor = 0;}
+}
+
+/* ---------------------------------------------------------------------- */
+
+bool FixRegen::check_overlap(int natom) {
+  double **x = atom->x;
+  const int nlocal = atom->nlocal;
+
+  int flag = 0;
+  for (int m = 0; (m < natom) && (flag == 0); m++) {
+    for (int i = 0; i < nlocal; i++) {
+      double delx = coords[m][0] - x[i][0];
+      double dely = coords[m][1] - x[i][1];
+      double delz = coords[m][2] - x[i][2];
+      domain->minimum_image(delx,dely,delz);
+      double rsq = delx*delx + dely*dely + delz*delz;
+      if (rsq < nearsq) {
+        flag = 1;
+        break;
+      }
+    }
+  }
+  int flagall = 0;
+  MPI_Allreduce(&flag,&flagall,1,MPI_INT,MPI_MAX,world);
+  return flagall == 0;
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixRegen::generate_velocity(double *vnew) {
+  if (tempflag != 0) {
+    vnew[0] = random->gaussian() * vsigma;
+    vnew[1] = random->gaussian() * vsigma;
+    vnew[2] = random->gaussian() * vsigma;
+  } else {
+    vnew[0] = vxlo + random->uniform() * (vxhi-vxlo);
+    vnew[1] = vylo + random->uniform() * (vyhi-vylo);
+    vnew[2] = vzlo + random->uniform() * (vzhi-vzlo);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixRegen::correct_velocity(double *vnew, double* coord) {
+  // if target specified, change velocity vector accordingly
+  const double vel = sqrt(vnew[0]*vnew[0] + vnew[1]*vnew[1] + vnew[2]*vnew[2]);
+  const double delx = tx - coord[0];
+  const double dely = ty - coord[1];
+  const double delz = tz - coord[2];
+  const double rsq = delx*delx + dely*dely + delz*delz;
+  if (rsq > 0.0) {
+    const double rinv = sqrt(1.0/rsq);
+    vnew[0] = delx*rinv*vel;
+    vnew[1] = dely*rinv*vel;
+    vnew[2] = delz*rinv*vel;
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+int FixRegen::check_subbonds(double *newcoord, double *sublo, double*subhi) {
+  int flag = 0;
+  if (newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
+      newcoord[1] >= sublo[1] && newcoord[1] < subhi[1] &&
+      newcoord[2] >= sublo[2] && newcoord[2] < subhi[2]) { flag = 1;
+  } else if (domain->dimension == 3 && newcoord[2] >= domain->boxhi[2]) {
+    if (comm->layout != Comm::LAYOUT_TILED) {
+      if (comm->myloc[2] == comm->procgrid[2]-1 &&
+          newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
+          newcoord[1] >= sublo[1] && newcoord[1] < subhi[1]) { flag = 1;}
+    } else {
+      if (comm->mysplit[2][1] == 1.0 &&
+          newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
+          newcoord[1] >= sublo[1] && newcoord[1] < subhi[1]) { flag = 1;}
+    }
+  } else if (domain->dimension == 2 && newcoord[1] >= domain->boxhi[1]) {
+    if (comm->layout != Comm::LAYOUT_TILED) {
+      if (comm->myloc[1] == comm->procgrid[1]-1 &&
+          newcoord[0] >= sublo[0] && newcoord[0] < subhi[0]) { flag = 1;}
+    } else {
+      if (comm->mysplit[1][1] == 1.0 &&
+          newcoord[0] >= sublo[0] && newcoord[0] < subhi[0]) { flag = 1;}
+    }
+  }
+  return flag;
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixRegen::reset_vertical(double* coord) {
+  int dim = 0;
+  double max{};
+  double maxall{};
+
+  if (domain->dimension == 2) {
+    dim = 1;
+    max = domain->boxlo[1];
+  } else {
+    dim = 2;
+    max = domain->boxlo[2];
+  }
+
+  double **x = atom->x;
+  int const nlocal = atom->nlocal;
+  for (int i = 0; i < nlocal; i++) {
+    if (localflag != 0) {
+      double delx = coord[0] - x[i][0];
+      double dely = coord[1] - x[i][1];
+      double delz = 0.0;
+      domain->minimum_image(delx,dely,delz);
+      double rsq = domain->dimension == 2 ? delx*delx : delx*delx + dely*dely;
+      if (rsq > deltasq) { continue;}
+    }
+    if (x[i][dim] > max) { max = x[i][dim];}
+  }
+
+  MPI_Allreduce(&max,&maxall,1,MPI_DOUBLE,MPI_MAX,world);
+  if (domain->dimension == 2) { coord[1] = maxall + lo + random->uniform()*(hi-lo); }
+  else { coord[2] = maxall + lo + random->uniform()*(hi-lo); }
 }
 
 /* ----------------------------------------------------------------------
