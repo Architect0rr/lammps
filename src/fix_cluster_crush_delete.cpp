@@ -22,6 +22,7 @@
 #include "fix.h"
 #include "fmt/base.h"
 #include "group.h"
+#include "irregular.h"
 #include "input.h"
 #include "lattice.h"
 #include "memory.h"
@@ -46,6 +47,7 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS* lmp, int narg, char** arg) 
 {
   restart_pbc = 1;
   nevery      = 1;
+  pre_exchange_migrate = 1;
 
   if (narg < 9) { utils::missing_cmd_args(FLERR, "fix cluster/crush/delete", error); }
 
@@ -393,7 +395,7 @@ void FixClusterCrushDelete::pre_exchange()
   to_insert += atoms2move_total;
   int to_insert_prev = to_insert;
 
-  add();
+  if (to_insert > 0) { add(); }
 
   if (comm->me == 0) {
     // print status
@@ -437,14 +439,14 @@ void FixClusterCrushDelete::add()
   atom->nghost = 0;
   atom->avec->clear_bonus();
 
-  double* sublo = nullptr;
-  double* subhi = nullptr;
+  double* boxlo = nullptr;
+  double* boxhi = nullptr;
   if (domain->triclinic == 0) {
-    sublo = domain->sublo;
-    subhi = domain->subhi;
+    boxlo = domain->boxlo;
+    boxhi = domain->boxhi;
   } else {
-    sublo = domain->sublo_lamda;
-    subhi = domain->subhi_lamda;
+    boxlo = domain->boxlo_lamda;
+    boxhi = domain->boxhi_lamda;
   }
 
   // find maxid in case other fixes deleted.inserted atoms
@@ -501,12 +503,10 @@ void FixClusterCrushDelete::add()
         newcoord = coord;
       }
 
-      int proceed = newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] && newcoord[1] >= sublo[1] && newcoord[1] < subhi[1] &&
-          newcoord[2] >= sublo[2] && newcoord[2] < subhi[2];
-      int proceed_any = 0;
-      ::MPI_Allreduce(&proceed, &proceed_any, 1, MPI_INT, MPI_SUM, world);
-      if ((proceed_any > 1) && (comm->me == 0)) { error->warning(FLERR, "{}: More than one places atom", style); }
-      if (proceed != 0) {
+      bool proceed = newcoord[0] >= boxlo[0] && newcoord[0] < boxhi[0] && newcoord[1] >= boxlo[1] && newcoord[1] < boxhi[1] &&
+          newcoord[2] >= boxlo[2] && newcoord[2] < boxhi[2];
+      if (!proceed) { continue; }
+      if (comm->me == 0) {
         atom->avec->create_atom(ntype, coord);
         int n          = atom->nlocal - 1;
         atom->tag[n]   = maxtag_all + 1;
@@ -540,9 +540,23 @@ void FixClusterCrushDelete::add()
     }
   }
 
+  // move atoms back inside simulation box and to new processors
+  // use remap() instead of pbc() in case atoms moved a long distance
+  // use irregular() in case atoms moved a long distance
+
+  double **x = atom->x;
+  imageint *image = atom->image;
+  for (int i = 0; i < atom->nlocal; i++) domain->remap(x[i], image[i]);
+
+  if (domain->triclinic) domain->x2lamda(atom->nlocal);
+  domain->reset_box();
+  auto irregular = new Irregular(lmp);
+  irregular->migrate_atoms(1);
+  delete irregular;
+  if (domain->triclinic) domain->lamda2x(atom->nlocal);
+
   to_insert -= ninserted;
 
-  atom->tag_extend();
   atom->tag_check();
 
   // rebuild atom map
