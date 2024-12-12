@@ -53,7 +53,7 @@ ComputeCFAtom::ComputeCFAtom(LAMMPS *lmp, int narg, char **arg) : Compute(lmp, n
 {
   peratom_flag = 1;
 
-  if (narg != 7) { error->all( FLERR, "Illegal compute cf/atom command; wrong number of arguments"); }
+  if (narg != 8) { error->all( FLERR, "Illegal compute cf/atom command; wrong number of arguments"); }
 
   // Arguments are: sigma cutoff avg yes/no cutoff2 local yes/no
   //   sigma is the gaussian width
@@ -72,6 +72,7 @@ ComputeCFAtom::ComputeCFAtom(LAMMPS *lmp, int narg, char **arg) : Compute(lmp, n
   if (sigmas[1] <= 0.0) { error->all(FLERR,"Illegal compute {} command; sigma theta must be positive: {}", style, arg[4]); }
   if (sigmas[2] <= 0.0) { error->all(FLERR,"Illegal compute {} command; sigma phi must be positive: {}",   style, arg[5]); }
   if (cutoff    <= 0.0) { error->all(FLERR,"Illegal compute {} command; cutoff must be positive: {}",      style, arg[6]); }
+  smooth = utils::logical(FLERR, arg[7], false, lmp);
   cutsq = cutoff*cutoff;
 
   // optional keywords
@@ -93,15 +94,18 @@ ComputeCFAtom::ComputeCFAtom(LAMMPS *lmp, int narg, char **arg) : Compute(lmp, n
 
   nbins[0] = static_cast<int>(cutoff / sigmas[0]) + 1;
   nbins[1] = static_cast<int>(2. / sigmas[1]) + 1;
-  nbins[3] = static_cast<int>(2 * MY_PI / sigmas[2]) + 1;
+  nbins[2] = static_cast<int>(MY_2PI / sigmas[2]) + 1;
+  if (comm->me == 0) { utils::logmesg(lmp, "{}: {} r , {} thata, {} phi bins wiil be used\n", style, nbins[0], nbins[1], nbins[2]); }
   if (nbins[0] < deltabins[0]) { error->all(FLERR, "Insufficient number of r bins, decrease sigma_r"); }
   if (nbins[1] < deltabins[1]) { error->all(FLERR, "Insufficient number of theta bins, decrease sigma_theta"); }
-  if (nbins[3] < deltabins[2]) { error->all(FLERR, "Insufficient number of phi bins, decrease sigma_phi"); }
+  if (nbins[2] < deltabins[2]) { error->all(FLERR, "Insufficient number of phi bins, decrease sigma_phi"); }
 
-  norm = 1. / (::pow(MY_2PI, 3./2.) * sigmas[0] * sigmas[1] * sigmas[3]);
+  ddvol = sigmas[0] * sigmas[1] * sigmas[2];
+  norm = 1. / (::pow(MY_2PI, 3./2.) * ddvol);
   norms[0] = 1. / (sigmas[0] * sigmas[0]);
   norms[1] = 1. / (sigmas[1] * sigmas[1]);
   norms[2] = 1. / (sigmas[2] * sigmas[2]);
+  if (comm->me == 0) { utils::logmesg(lmp, "{}: Normalizations: {:.5f} global, {:.5f} r, {:.5f} thata, {:.5f} phi\n", style, norm, norms[0], norms[1], norms[2]); }
 
   size_peratom_cols = nbins[0] * nbins[1] * nbins[2];
   nmax = 0;
@@ -133,7 +137,6 @@ void ComputeCFAtom::init()
                 " distance.", style);
   }
 
-
   // Request a full neighbor list
   int list_flags = NeighConst::REQ_FULL;
   // need neighbors of the ghost atoms
@@ -148,7 +151,14 @@ void ComputeCFAtom::init()
   for (int i = 0; i < nbins[1]; ++i) { bins[1][i] = (i + 0.5) * sigmas[1] - 1; }
   for (int i = 0; i < nbins[2]; ++i) { bins[2][i] = (i + 0.5) * sigmas[2]; }
 
-  array_atom = memory->create(rdf, atom->nmax, size_peratom_cols, "rdf");
+  rbs.create(memory, nbins[0], "r_bin_sq");
+  for (int i = 0; i < nbins[0]; ++i) { rbs[i] = 1. / (bins[0][i] * bins[0][i] * ddvol); }
+
+  if (comm->me == 0) { utils::logmesg(lmp, "{}: Created: {} r, {} thata, {} phi bins\n", style, nbins[0], nbins[1], nbins[2]); }
+
+  array_atom = memory->create(rdf, static_cast<int>(atom->nmax*LMP_NUCC_ALLOC_COEFF), size_peratom_cols, "rdf");
+  memory->create(rdf, static_cast<int>(atom->nmax*LMP_NUCC_ALLOC_COEFF), size_peratom_cols, "rdf");
+  invdens.create(memory, static_cast<int>(atom->nmax*LMP_NUCC_ALLOC_COEFF), "invdens");
 
   initialized_flag = 1;
 }
@@ -168,8 +178,10 @@ void ComputeCFAtom::compute_peratom()
 
   if (atom->nmax > nmax) {
     nmax = atom->nmax;
-    array_atom = memory->grow(rdf, atom->nmax, size_peratom_cols, "rdf");
+    array_atom = memory->grow(rdf, static_cast<int>(atom->nmax*LMP_NUCC_ALLOC_COEFF), size_peratom_cols, "rdf");
+    invdens.grow(memory, static_cast<int>(atom->nmax*LMP_NUCC_ALLOC_COEFF), "invdens");
   }
+  invdens.reset();
 
   int   inum = list->inum + list->gnum;
   int*  ilist = list->ilist;
@@ -179,20 +191,24 @@ void ComputeCFAtom::compute_peratom()
   double **x = atom->x;
   int *mask = atom->mask;
 
+  double gvolume = domain->xprd * domain->yprd * domain->zprd;
+  double ginvdensity = gvolume / atom->natoms;
+
   double neigh_cutoff = force->pair->cutforce  + neighbor->skin;
   double neigh_bin_vol = neigh_cutoff*neigh_cutoff*neigh_cutoff;
   double volume_loc = pi4over3*neigh_bin_vol;
 
   for (int ii = 0; ii < inum; ii++) {
     int i = ilist[ii];
-    if (mask[i] & groupbit) {
+    if ((mask[i] & groupbit) != 0) {
       double xtmp = x[i][0];
       double ytmp = x[i][1];
       double ztmp = x[i][2];
       int* jlist = firstneigh[i];
       int jnum = numneigh[i];
 
-      double invdensity = volume_loc / jnum;
+      double invdensity = (jnum < 2) ? (ginvdensity) : (2 * volume_loc / jnum / (jnum - 1));
+      invdens[i] = invdensity;
 
       // loop over list of all neighbors within force cutoff
 
@@ -217,39 +233,86 @@ void ComputeCFAtom::compute_peratom()
             static_cast<int>((cos_theta + 1) / sigmas[1]),
             static_cast<int>(phi / sigmas[2])
           };
+          ibins[2] %= nbins[2];
+          if (ibins[2] < 0) { ibins[2] += nbins[2]; }
 
-          int minbin_r = MIN(MAX(ibins[0] - deltabins[0], 0), nbins[0] - 1);
-          int maxbin_r = MIN(MAX(ibins[0] + deltabins[0], 0), nbins[0] - 1);
-          int minbin_theta = MIN(MAX(ibins[1] - deltabins[1], 0), nbins[1] - 1);
-          int maxbin_theta = MIN(MAX(ibins[1] + deltabins[1], 0), nbins[1] - 1);
-          int m = (ibins[2] - deltabins[2]) % nbins[2];
-          if (m < 0) { m += nbins[2]; }
+          if (smooth > 0) {
+            int minbin_r = MIN(MAX(ibins[0] - deltabins[0], 0), nbins[0] - 1);
+            int maxbin_r = MIN(MAX(ibins[0] + deltabins[0], 0), nbins[0] - 1);
+            int minbin_theta = MIN(MAX(ibins[1] - deltabins[1], 0), nbins[1] - 1);
+            int maxbin_theta = MIN(MAX(ibins[1] + deltabins[1], 0), nbins[1] - 1);
+            int m = (ibins[2] - deltabins[2]) % nbins[2];
+            if (m < 0) { m += nbins[2]; }
+            // if (comm->me == 0) { utils::logmesg(lmp, "{}: _r: {} ({}-{}), _t: {}({}-{}), _p: {}\n", style,
+            //   ibins[0], minbin_r, maxbin_r, ibins[1], minbin_theta, maxbin_theta, m
+            // ); }
 
-          for (int k = minbin_r; k < maxbin_r; ++k) {
-            double _r = (bins[0][k] - r) * (bins[0][k] - r) * norms[0];
-            for (int l = minbin_theta; l < maxbin_theta; ++l) {
-              double _t = (bins[1][l] - cos_theta) * (bins[1][l] - cos_theta) * norms[1];
-              for (int _m = 0; _m < range_phi; ++_m) {
-                double _p = bins[2][m] - phi + MY_PI;
-                int iquot = static_cast<int>(_p/MY_2PI);
-                _p -= iquot * MY_2PI - MY_PI;
-                _p *= _p * norms[2];
+            for (int k = minbin_r; k < maxbin_r; ++k) {
+              double __r = (bins[0][k] - r);
+              double _r = __r * __r * norms[0];
+              for (int l = minbin_theta; l < maxbin_theta; ++l) {
+                double __t = (bins[1][l] - cos_theta);
+                double _t = __t * __t * norms[1];
+                for (int _m = 0; _m < range_phi; ++_m) {
+                  double __p = bins[2][m] - phi;
+                  double _p = __p + MY_PI;
+                  int iquot = static_cast<int>(_p/MY_2PI);
+                  _p -= iquot * MY_2PI + MY_PI;
+                  _p *= _p * norms[2];
 
-                int idx = i * (nbins[1] * nbins[2]) + j * nbins[2] + k;
-                #ifdef __NUCC_CHECK_ACCESS
-                assert(idx < size_array_cols);
-                #endif // __NUCC_CHECK_ACCESS
+                  // if (comm->me == 0) { utils::logmesg(lmp, "{}: Sum: {}, dens: {}\n", style, asum, invdensity); }
 
-                array_atom[i][idx] += ::exp(-0.5 * (_r + _t + _p)) * norm * invdensity;
+                  int idx = k * (nbins[1] * nbins[2]) + l * nbins[2] + m;
+                  #ifdef __NUCC_CHECK_ACCESS
+                  assert(idx < size_array_cols);
+                  #endif // __NUCC_CHECK_ACCESS
 
-                if (++m >= nbins[2]) { m = 0; }
+                  double fct = -0.5 * (_r + _t + _p);
+                  rdf[i][idx] += ::exp(fct) * norm * invdensity;
+                  // (k == ibins[0]) && (l == ibins[1]) && (m == ibins[2])
+                  // if ((comm->me == 0) && (i==1)) {
+                  //   // utils::logmesg(lmp, "{}: _r: {:.5f}({:.5f}), _t: {:.5f}({:.5f}), _p: {:.5f}({} - {:.5f}) -> {:.5f}\n", style, __r, _r, __t, _t, __p, iquot, _p, fct);
+                  //   utils::logmesg(lmp, "{}: fct: {}, cf: {}\n", style, fct, rdf[i][idx]);
+                  // }
+
+                  if (++m >= nbins[2]) { m = 0; }
+                }
               }
             }
+          } else {
+            const int idx = ibins[0] * (nbins[1] * nbins[2]) + ibins[1] * nbins[2] + ibins[2];
+            #ifdef __NUCC_CHECK_ACCESS
+            assert(idx < size_array_cols);
+            #endif // __NUCC_CHECK_ACCESS
+            rdf[i][idx] += 1;
+          }
+        }
+      }
+      // if (i == 1) {
+      //   double asum = 0;
+      //   for (int k = 0; k < size_peratom_cols; ++k) { asum += rdf[i][k]; }
+      //   if (comm->me == 0) { utils::logmesg(lmp, "{}: Sum: {}, dens: {}\n", style, asum, invdensity); }
+      // }
+    }
+  }
+
+  if (smooth == 0) {
+    for (int m = 0; m < atom->nmax; ++m) {
+      double* ardf = rdf[m];
+      double invdensity = invdens[m];
+      for (int i = 0; i < nbins[0]; ++i) {
+        double dvol = rbs[i] * invdensity;
+        int nx = i * (nbins[1] * nbins[2]);
+        for (int j = 0; j < nbins[1]; ++j) {
+          int ny = nx + j * nbins[1];
+          for (int k = 0; k < nbins[2]; ++k) {
+            ardf[ny + k] *= dvol;
           }
         }
       }
     }
   }
+
 }
 
 /* ----------------------------------------------------------------------

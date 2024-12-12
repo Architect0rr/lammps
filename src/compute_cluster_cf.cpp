@@ -48,7 +48,7 @@ ComputeClusterCF::ComputeClusterCF(LAMMPS* lmp, int narg, char** arg) : Compute(
 
   // Get cluster/size compute
   compute_cluster_size = dynamic_cast<ComputeClusterSizeExt*>(lmp->modify->get_compute_by_id(arg[3]));
-  if (compute_cluster_size == nullptr) { error->all(FLERR, "compute {}: Cannot find compute with style 'cluster/size' with id: {}", style, arg[3]); }
+  if (compute_cluster_size == nullptr) { error->all(FLERR, "compute {}: Cannot find compute with style 'size/cluster' with id: {}", style, arg[3]); }
 
   compute_rdf_atom = dynamic_cast<ComputeCFAtom*>(lmp->modify->get_compute_by_id(arg[4]));
   if (compute_cluster_size == nullptr) { error->all(FLERR, "compute {}: Cannot find compute with style 'cf/atom' with id: {}", style, arg[4]); }
@@ -99,23 +99,34 @@ void ComputeClusterCF::init()
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeClusterCF::compute_vector()
+void ComputeClusterCF::compute_array()
 {
-  invoked_vector = update->ntimestep;
+  invoked_array = update->ntimestep;
 
   compute_local();
 
-  for (int i = 0; i < size_array_rows; ++i) {
+  for (int i = 1; i < size_array_rows; ++i) {
     ::memset(cf[i], 0.0, size_array_cols * sizeof(double));
-    ::MPI_Allreduce(cf_local, cf, size_array_cols, MPI_DOUBLE, MPI_SUM, world);
+    ::MPI_Allreduce(cf_local[i], cf[i], size_array_cols, MPI_DOUBLE, MPI_SUM, world);
   }
 
   const double* dist = compute_cluster_size->vector;
-  for (int i = 0; i < size_array_rows; ++i) {
+  for (int i = 1; i < size_array_rows; ++i) {
     if (dist[i] > 0) {
-      for (int j = 0; j < size_array_cols; ++j) { cf[i][j] /= dist[i]; }
+      double norm = dist[i] * i;
+      for (int j = 0; j < size_array_cols; ++j) { cf[i][j] /= norm; }
     }
   }
+  // if (comm->me == 0) {
+  //   for (int i = 1; i < size_array_rows; ++i) {
+  //     if (dist[i] > 0) {
+  //       double gsum = 0;
+  //       for (int j = 0; j < size_array_cols; ++j) { gsum += cf[i][j]; }
+  //       utils::logmesg(lmp , "{}-{:.5f} ", i, gsum);
+  //     }
+  //   }
+  //   utils::logmesg(lmp , "\n");
+  // }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -130,16 +141,22 @@ void ComputeClusterCF::compute_local()
 
   for (int i = 0; i < size_local_rows; ++i) { ::memset(cf_local[i], 0.0, size_local_cols * sizeof(double)); }
 
-  // const double** const peratomcf = compute_rdf_atom->array_atom;
-  // for (const auto& [size, vec] : compute_cluster_size->cIDs_by_size) {
-  //   if (size < size_cutoff) {
-  //     for (const tagint cid : vec) {
-  //       for (const tagint pid : compute_cluster_size->atoms_by_cID[cid]) {
-  //         for (int i = 0; i < size_local_cols; ++i) { cf_local[size][i] += peratomcf[pid][i]; }
-  //       }
-  //     }
-  //   }
-  // }
+  double** const peratomcf = compute_rdf_atom->array_atom;
+  int nclusters = (*compute_cluster_size->get_cluster_map()).size();
+  const auto& clusters = compute_cluster_size->get_clusters();
+
+  for (int i = 0; i < nclusters; ++i) {
+    const auto& clstr = clusters[i];
+    if (clstr.g_size >= size_cutoff) { continue; }
+    // if ((clstr.g_size >= size_cutoff) || (clstr.g_size >= size_local_rows)) { continue; }
+    const auto atoms = clstr.atoms();
+    for (int j = 0; j < clstr.l_size; ++j) {
+      for (int k = 0; k < size_local_cols; ++k) {
+        // if (k >= size_local_cols) { continue; }
+        cf_local[clstr.g_size][k] += peratomcf[atoms[j]][k];
+      }
+    }
+  }
 }
 
 /* ----------------------------------------------------------------------

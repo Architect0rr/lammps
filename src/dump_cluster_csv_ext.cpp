@@ -36,7 +36,7 @@ DumpClusterCSVExT::DumpClusterCSVExT(LAMMPS *lmp, int narg, char **arg) : Dump(l
   ComputeClusterSizeExt *compute_cluster_size =
       dynamic_cast<ComputeClusterSizeExt *>(modify->get_compute_by_id(arg[5]));
   if (compute_cluster_size == nullptr) {
-    error->all(FLERR, "{}: Cannot find compute cluster/size with id: {}", style, arg[4]);
+    error->all(FLERR, "{}: Cannot find compute cluster/size with id: {}", style, arg[5]);
   }
   write_cutoff = compute_cluster_size->get_size_cutoff();
 
@@ -121,14 +121,14 @@ DumpClusterCSVExT::~DumpClusterCSVExT()
       ::fclose(file_vectors[i]);
     }
   }
-  if (file_vectors != nullptr) { memory->destroy(file_vectors); }
+  if (file_vectors != nullptr) { memory->destroy<FILE*>(file_vectors); }
   if (file_scalars != nullptr) {
     ::fflush(file_scalars);
     ::fclose(file_scalars);
   }
 
-  if (compute_vectors != nullptr) { memory->destroy(compute_vectors); }
-  if (compute_scalars != nullptr) { memory->destroy(compute_scalars); }
+  if (compute_vectors != nullptr) { memory->destroy<Compute*>(compute_vectors); }
+  if (compute_scalars != nullptr) { memory->destroy<Compute*>(compute_scalars); }
 }
 
 void DumpClusterCSVExT::init_style()

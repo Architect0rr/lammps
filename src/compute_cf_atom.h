@@ -39,6 +39,8 @@ class ComputeCFAtom : public Compute {
   inline constexpr const std::array<NUCC::cspan<double>, 3>& get_bins() const noexcept { return bins; }
 
  private:
+  double ddvol;
+  int smooth;
   int nmax;
   class NeighList* list;
   double cutoff;
@@ -51,6 +53,8 @@ class ComputeCFAtom : public Compute {
 
   double** rdf;
   std::array<NUCC::cspan<double>, 3> bins;
+  NUCC::cspan<double> rbs;
+  NUCC::cspan<double> invdens;
 };
 
 }    // namespace LAMMPS_NS

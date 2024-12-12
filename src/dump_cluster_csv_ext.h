@@ -38,10 +38,10 @@ class DumpClusterCSVExT : public Dump {
   int num_vectors{};        // number of computes
   double *vector_data{};    // pointer to store vector data
   FILE **file_vectors{};
-  int write_cutoff;    // number of elements to write
+  int write_cutoff{};    // number of elements to write
   int num_scalars{};
 
-  FILE *file_scalars;
+  FILE *file_scalars{};
 
   void init_style() override;
   void write_header(bigint) override;

@@ -11,34 +11,35 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#ifdef COMPUTE_CLASS
+#ifdef DUMP_CLASS
 // clang-format off
-ComputeStyle(cf/cluster,ComputeClusterCF);
+DumpStyle(cf/cluster,DumpClusterCF);
 // clang-format on
 #else
 
-#ifndef LMP_COMPUTE_CLUSTER_RDF_H
-#define LMP_COMPUTE_CLUSTER_RDF_H
+#ifndef LMP_DUMP_CLUSTER_CF_H
+#define LMP_DUMP_CLUSTER_CF_H
 
-#include "compute.h"
+#include "dump.h"
 
 namespace LAMMPS_NS {
-class ComputeClusterCF : public Compute {
+
+class DumpClusterCF : public Dump {
  public:
-  ComputeClusterCF(class LAMMPS* lmp, int narg, char** arg);
-  ~ComputeClusterCF() noexcept(true) override;
-  void init() override;
-  void compute_array() override;
-  void compute_local() override;
-  double memory_usage() override;
+  DumpClusterCF(LAMMPS *, int, char **);
+  ~DumpClusterCF() override;
 
- private:
-  class ComputeClusterSizeExt* compute_cluster_size = nullptr;
-  class ComputeCFAtom* compute_rdf_atom          = nullptr;
+ protected:
+  class Compute* compute_cluster_size = nullptr;
+  class Compute *compute_cf = nullptr;
 
-  double** cf;
-  double** cf_local;
-  int size_cutoff;    // size of max cluster
+  FILE *file = nullptr;
+
+  void init_style() override;
+  void pack(tagint *) override;
+  void write_header(bigint) override {}
+  void write() override;
+  void write_data(int, double *) override {};
 };
 
 }    // namespace LAMMPS_NS
