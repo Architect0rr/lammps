@@ -480,7 +480,7 @@ void FixRegen::pre_exchange()
             atom->avec->create_atom(ntype+onemols[imol]->type[m],coords[m]);
           }
           int n = atom->nlocal - 1;
-          atom->tag[n] = maxtag_all + m+2;
+          atom->tag[n] = maxtag_all + m+1+added;
           if (mode == MOLECULE) {
             if (atom->molecule_flag != 0) {
               if (onemols[imol]->moleculeflag != 0) {
