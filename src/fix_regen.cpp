@@ -356,7 +356,8 @@ void FixRegen::pre_exchange()
   for (int added = 0; added < at_once; ++added) {
     // find current max atom and molecule IDs if necessary
 
-    if (idnext == 0) { find_maxid();}
+    // if (idnext == 0) { find_maxid();}
+    find_maxid();
 
     // attempt an insertion until successful
 
@@ -479,7 +480,7 @@ void FixRegen::pre_exchange()
             atom->avec->create_atom(ntype+onemols[imol]->type[m],coords[m]);
           }
           int n = atom->nlocal - 1;
-          // atom->tag[n] = maxtag_all + m+1;
+          atom->tag[n] = maxtag_all + m+2;
           if (mode == MOLECULE) {
             if (atom->molecule_flag != 0) {
               if (onemols[imol]->moleculeflag != 0) {
@@ -633,26 +634,26 @@ int FixRegen::check_subbonds(double *newcoord, double *sublo, double*subhi) {
   int flag = 0;
   if (newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
       newcoord[1] >= sublo[1] && newcoord[1] < subhi[1] &&
-      newcoord[2] >= sublo[2] && newcoord[2] < subhi[2]) { flag = 1;
-  } else if (domain->dimension == 3 && newcoord[2] >= domain->boxhi[2]) {
-    if (comm->layout != Comm::LAYOUT_TILED) {
-      if (comm->myloc[2] == comm->procgrid[2]-1 &&
-          newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
-          newcoord[1] >= sublo[1] && newcoord[1] < subhi[1]) { flag = 1;}
-    } else {
-      if (comm->mysplit[2][1] == 1.0 &&
-          newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
-          newcoord[1] >= sublo[1] && newcoord[1] < subhi[1]) { flag = 1;}
-    }
-  } else if (domain->dimension == 2 && newcoord[1] >= domain->boxhi[1]) {
-    if (comm->layout != Comm::LAYOUT_TILED) {
-      if (comm->myloc[1] == comm->procgrid[1]-1 &&
-          newcoord[0] >= sublo[0] && newcoord[0] < subhi[0]) { flag = 1;}
-    } else {
-      if (comm->mysplit[1][1] == 1.0 &&
-          newcoord[0] >= sublo[0] && newcoord[0] < subhi[0]) { flag = 1;}
-    }
-  }
+      newcoord[2] >= sublo[2] && newcoord[2] < subhi[2]) { flag = 1; }
+  // } else if (domain->dimension == 3 && newcoord[2] >= domain->boxhi[2]) {
+  //   if (comm->layout != Comm::LAYOUT_TILED) {
+  //     if (comm->myloc[2] == comm->procgrid[2]-1 &&
+  //         newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
+  //         newcoord[1] >= sublo[1] && newcoord[1] < subhi[1]) { flag = 1;}
+  //   } else {
+  //     if (comm->mysplit[2][1] == 1.0 &&
+  //         newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
+  //         newcoord[1] >= sublo[1] && newcoord[1] < subhi[1]) { flag = 1;}
+  //   }
+  // } else if (domain->dimension == 2 && newcoord[1] >= domain->boxhi[1]) {
+  //   if (comm->layout != Comm::LAYOUT_TILED) {
+  //     if (comm->myloc[1] == comm->procgrid[1]-1 &&
+  //         newcoord[0] >= sublo[0] && newcoord[0] < subhi[0]) { flag = 1;}
+  //   } else {
+  //     if (comm->mysplit[1][1] == 1.0 &&
+  //         newcoord[0] >= sublo[0] && newcoord[0] < subhi[0]) { flag = 1;}
+  //   }
+  // }
   return flag;
 }
 
