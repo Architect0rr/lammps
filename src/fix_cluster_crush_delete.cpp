@@ -22,8 +22,8 @@
 #include "fix.h"
 #include "fmt/base.h"
 #include "group.h"
-#include "irregular.h"
 #include "input.h"
+#include "irregular.h"
 #include "lattice.h"
 #include "memory.h"
 #include "modify.h"
@@ -45,8 +45,8 @@ constexpr int DEFAULT_MAXTRY = 1000;
 
 FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS* lmp, int narg, char** arg) : Fix(lmp, narg, arg)
 {
-  restart_pbc = 1;
-  nevery      = 1;
+  restart_pbc          = 1;
+  nevery               = 1;
   pre_exchange_migrate = 1;
 
   if (narg < 9) { utils::missing_cmd_args(FLERR, "fix cluster/crush/delete", error); }
@@ -526,7 +526,7 @@ void FixClusterCrushDelete::add()
 
     // warn if not successful b/c too many attempts
 
-    if ((warnflag != 0) && (success == 0) && comm->me == 0) {
+    if ((warnflag != 0) && (success == 0) && (comm->me == 0)) {
       error->warning(FLERR, "One or more particle depositions were unsuccessful");
       warnflag = 0;
     }
@@ -544,8 +544,8 @@ void FixClusterCrushDelete::add()
   // use remap() instead of pbc() in case atoms moved a long distance
   // use irregular() in case atoms moved a long distance
 
-  double **x = atom->x;
-  imageint *image = atom->image;
+  double** x      = atom->x;
+  imageint* image = atom->image;
   for (int i = 0; i < atom->nlocal; i++) domain->remap(x[i], image[i]);
 
   if (domain->triclinic) domain->x2lamda(atom->nlocal);
