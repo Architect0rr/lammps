@@ -321,6 +321,9 @@ void FixRegen::pre_exchange()
 
   if (next_reneighbor != update->ntimestep) { return;}
 
+  utils::logmesg(lmp, "Checking atoms 1...\n");
+  atom->tag_check();
+
   int natom{};
   int imol{};
   double coord[3];
@@ -356,8 +359,7 @@ void FixRegen::pre_exchange()
   for (int added = 0; added < at_once; ++added) {
     // find current max atom and molecule IDs if necessary
 
-    // if (idnext == 0) { find_maxid();}
-    find_maxid();
+    if (idnext == 0) { find_maxid();}
 
     // attempt an insertion until successful
 
@@ -480,7 +482,7 @@ void FixRegen::pre_exchange()
             atom->avec->create_atom(ntype+onemols[imol]->type[m],coords[m]);
           }
           int n = atom->nlocal - 1;
-          atom->tag[n] = maxtag_all + m+1+added;
+          // atom->tag[n] = maxtag_all + m+1;
           if (mode == MOLECULE) {
             if (atom->molecule_flag != 0) {
               if (onemols[imol]->moleculeflag != 0) {
@@ -554,17 +556,18 @@ void FixRegen::pre_exchange()
       ninserted++;
     }
 
-    atom->tag_extend();
-    atom->tag_check();
-
-    // rebuild atom map
-
-    if (atom->map_style != Atom::MAP_NONE) {
-      atom->map_init();
-      atom->map_set();
-    }
   }
 
+  atom->tag_extend();
+  utils::logmesg(lmp, "Checking tags 2...\n");
+  atom->tag_check();
+
+  // rebuild atom map
+
+  if (atom->map_style != Atom::MAP_NONE) {
+    atom->map_init();
+    atom->map_set();
+  }
   // next timestep to insert
   // next_reneighbor = 0 if done
 
