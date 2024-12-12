@@ -8,7 +8,6 @@
 #include "fix_cluster_crush_delete.h"
 #include "compute_cluster_size_ext.h"
 #include "compute_cluster_temps.h"
-#include "fix_regen.h"
 #include "nucc_cspan.hpp"
 
 #include "atom.h"
