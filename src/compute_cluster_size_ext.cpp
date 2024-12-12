@@ -73,17 +73,17 @@ ComputeClusterSizeExt::~ComputeClusterSizeExt() noexcept(true)
   gathered.destroy(memory);
   monomers.destroy(memory);
 
-  delete keeper1;
-  delete cluster_map_allocator;
   delete cluster_map;
+  delete cluster_map_allocator;
+  delete keeper1;
 
-  delete keeper2;
-  delete alloc_map_vec1;
   delete cIDs_by_size;
+  delete alloc_map_vec1;
+  delete keeper2;
 
-  delete keeper3;
-  delete alloc_map_vec2;
   delete cIDs_by_size_all;
+  delete alloc_map_vec2;
+  delete keeper3;
 }
 
 /* ---------------------------------------------------------------------- */

@@ -49,7 +49,7 @@ constexpr double pi4over3 = (4./3.)*MY_PI;
 
 /* ---------------------------------------------------------------------- */
 
-ComputeCFAtom::ComputeCFAtom(LAMMPS *lmp, int narg, char **arg) : Compute(lmp, narg, arg)
+ComputeCFAtom::ComputeCFAtom(LAMMPS *lmp, int narg, char **arg) : Compute(lmp, narg, arg), volume_loc(0)
 {
   peratom_flag = 1;
 
@@ -107,7 +107,7 @@ ComputeCFAtom::ComputeCFAtom(LAMMPS *lmp, int narg, char **arg) : Compute(lmp, n
   norms[2] = 1. / (sigmas[2] * sigmas[2]);
   if (comm->me == 0) { utils::logmesg(lmp, "{}: Normalizations: {:.5f} global, {:.5f} r, {:.5f} thata, {:.5f} phi\n", style, norm, norms[0], norms[1], norms[2]); }
 
-  size_peratom_cols = nbins[0] * nbins[1] * nbins[2];
+  size_peratom_cols = nbins[0] * nbins[1] * nbins[2] + 1;
   nmax = 0;
 }
 
@@ -158,7 +158,10 @@ void ComputeCFAtom::init()
 
   array_atom = memory->create(rdf, static_cast<int>(atom->nmax*LMP_NUCC_ALLOC_COEFF), size_peratom_cols, "rdf");
   memory->create(rdf, static_cast<int>(atom->nmax*LMP_NUCC_ALLOC_COEFF), size_peratom_cols, "rdf");
-  invdens.create(memory, static_cast<int>(atom->nmax*LMP_NUCC_ALLOC_COEFF), "invdens");
+
+  double neigh_cutoff = force->pair->cutforce  + neighbor->skin;
+  double neigh_bin_vol = neigh_cutoff*neigh_cutoff*neigh_cutoff;
+  double volume_loc = pi4over3*neigh_bin_vol;
 
   initialized_flag = 1;
 }
@@ -179,9 +182,7 @@ void ComputeCFAtom::compute_peratom()
   if (atom->nmax > nmax) {
     nmax = atom->nmax;
     array_atom = memory->grow(rdf, static_cast<int>(atom->nmax*LMP_NUCC_ALLOC_COEFF), size_peratom_cols, "rdf");
-    invdens.grow(memory, static_cast<int>(atom->nmax*LMP_NUCC_ALLOC_COEFF), "invdens");
   }
-  invdens.reset();
 
   int   inum = list->inum + list->gnum;
   int*  ilist = list->ilist;
@@ -194,9 +195,7 @@ void ComputeCFAtom::compute_peratom()
   double gvolume = domain->xprd * domain->yprd * domain->zprd;
   double ginvdensity = gvolume / atom->natoms;
 
-  double neigh_cutoff = force->pair->cutforce  + neighbor->skin;
-  double neigh_bin_vol = neigh_cutoff*neigh_cutoff*neigh_cutoff;
-  double volume_loc = pi4over3*neigh_bin_vol;
+
 
   for (int ii = 0; ii < inum; ii++) {
     int i = ilist[ii];
@@ -206,9 +205,12 @@ void ComputeCFAtom::compute_peratom()
       double ztmp = x[i][2];
       int* jlist = firstneigh[i];
       int jnum = numneigh[i];
+      double* cfi = rdf[i];
 
-      double invdensity = (jnum < 2) ? (ginvdensity) : (2 * volume_loc / jnum / (jnum - 1));
-      invdens[i] = invdensity;
+      if (jnum < 3) { continue; }
+
+      double invdensity = (jnum < 3) ? (ginvdensity) : (2 * volume_loc / (jnum - 1) / (jnum - 2));
+      cfi[size_peratom_cols - 1] = invdensity;
 
       // loop over list of all neighbors within force cutoff
 
@@ -268,7 +270,7 @@ void ComputeCFAtom::compute_peratom()
                   #endif // __NUCC_CHECK_ACCESS
 
                   double fct = -0.5 * (_r + _t + _p);
-                  rdf[i][idx] += ::exp(fct) * norm * invdensity;
+                  cfi[idx] += ::exp(fct) * norm * invdensity;
                   // (k == ibins[0]) && (l == ibins[1]) && (m == ibins[2])
                   // if ((comm->me == 0) && (i==1)) {
                   //   // utils::logmesg(lmp, "{}: _r: {:.5f}({:.5f}), _t: {:.5f}({:.5f}), _p: {:.5f}({} - {:.5f}) -> {:.5f}\n", style, __r, _r, __t, _t, __p, iquot, _p, fct);
@@ -284,7 +286,7 @@ void ComputeCFAtom::compute_peratom()
             #ifdef __NUCC_CHECK_ACCESS
             assert(idx < size_array_cols);
             #endif // __NUCC_CHECK_ACCESS
-            rdf[i][idx] += 1;
+            cfi[idx] += 1;
           }
         }
       }
@@ -298,15 +300,15 @@ void ComputeCFAtom::compute_peratom()
 
   if (smooth == 0) {
     for (int m = 0; m < atom->nmax; ++m) {
-      double* ardf = rdf[m];
-      double invdensity = invdens[m];
+      double* cfi = rdf[m];
+      double invdensity = cfi[size_peratom_cols-1];
       for (int i = 0; i < nbins[0]; ++i) {
         double dvol = rbs[i] * invdensity;
         int nx = i * (nbins[1] * nbins[2]);
         for (int j = 0; j < nbins[1]; ++j) {
           int ny = nx + j * nbins[1];
           for (int k = 0; k < nbins[2]; ++k) {
-            ardf[ny + k] *= dvol;
+            cfi[ny + k] *= dvol;
           }
         }
       }

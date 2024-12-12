@@ -50,11 +50,11 @@ class ComputeCFAtom : public Compute {
   std::array<int, 3> nbins;
   std::array<double, 3> norms;
   double norm;
+  double volume_loc;
 
   double** rdf;
   std::array<NUCC::cspan<double>, 3> bins;
   NUCC::cspan<double> rbs;
-  NUCC::cspan<double> invdens;
 };
 
 }    // namespace LAMMPS_NS
