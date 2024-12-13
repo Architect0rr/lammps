@@ -367,7 +367,7 @@ void FixClusterCrushDelete::pre_exchange()
     const auto& clstr = clusters[i];
     if (clstr.g_size > kmax) {
       ++clusters2crush_local;
-      ::memcpy(p2m.data(), clstr.atoms().data(), clstr.l_size * sizeof(int));
+      ::memcpy(p2m.offset(atoms2move_local), clstr.atoms().data(), clstr.l_size * sizeof(int));
       atoms2move_local += clstr.l_size;
     }
   }
