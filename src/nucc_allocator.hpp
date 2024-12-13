@@ -83,6 +83,7 @@ class MemoryKeeper {
     for (const auto& pair : infos) {
       sum += pair.second;
     }
+    return sum;
   }
 
  private:
