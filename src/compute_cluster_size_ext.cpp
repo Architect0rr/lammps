@@ -277,6 +277,9 @@ double ComputeClusterSizeExt::memory_usage()
   sum += clusters.memory_usage();
   sum += ns.memory_usage() + gathered.memory_usage();
   sum += monomers.memory_usage();
+  sum += keeper1->memory_usage();
+  sum += keeper2->memory_usage();
+  sum += keeper3->memory_usage();
   return static_cast<double>(sum);
 }
 

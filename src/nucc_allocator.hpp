@@ -78,6 +78,13 @@ class MemoryKeeper {
     return ptr;
   }
 
+  std::size_t memory_usage() {
+    std::size_t sum = 0;
+    for (const auto& pair : infos) {
+      sum += pair.second;
+    }
+  }
+
  private:
   char* current                    = nullptr;
   std::size_t left                 = 0;
