@@ -11,6 +11,8 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+// TODO: NUCC FILE
+
 #ifdef COMPUTE_CLASS
 // clang-format off
 ComputeStyle(cluster/volume,ComputeClusterVolume);
@@ -94,7 +96,7 @@ class ComputeClusterVolume : public Compute {
     // for (int i = 0; i < n; ++i) { array[i] = nullptr; }
     return ptr;
   }
-  
+
   template <typename TYPE> TYPE **grow_ptr_array(TYPE **&ptr, int n, const char *name)
   {
     if (n <= 0) {

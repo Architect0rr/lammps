@@ -5,6 +5,8 @@
    LAMMPS development team: developers@lammps.org
 ------------------------------------------------------------------------- */
 
+// TODO: NUCC FILE
+
 #include "fix_cluster_crush_delete.h"
 #include "compute_cluster_size_ext.h"
 #include "compute_cluster_temps.h"
@@ -399,6 +401,9 @@ void FixClusterCrushDelete::pre_exchange()
 
   if (to_insert > 0) { add(); }
 
+  bigint nblocal = atom->nlocal;
+  ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+
   if (comm->me == 0) {
     // print status
     if (screenflag != 0) { utils::logmesg(lmp, "Crushed {} clusters -> deleted {} atoms.\n", clusters2crush_total, atoms2move_total); }
@@ -567,9 +572,6 @@ void FixClusterCrushDelete::add()
     atom->map_init();
     atom->map_set();
   }
-
-  bigint nblocal = atom->nlocal;
-  ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
 }
 
 /* ---------------------------------------------------------------------- */

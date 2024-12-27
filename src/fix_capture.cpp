@@ -5,6 +5,8 @@
    LAMMPS development team: developers@lammps.org
 ------------------------------------------------------------------------- */
 
+// TODO: NUCC FILE
+
 #include "fix_capture.h"
 #include "fmt/base.h"
 #include "compute.h"

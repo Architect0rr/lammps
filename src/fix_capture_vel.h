@@ -4,6 +4,8 @@
    LAMMPS development team: developers@lammps.org
 ------------------------------------------------------------------------- */
 
+// TODO: NUCC FILE
+
 #ifdef FIX_CLASS
 // clang-format off
 FixStyle(capture/vel,FixCaptureVel);
