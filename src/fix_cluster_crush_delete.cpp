@@ -542,6 +542,11 @@ void FixClusterCrushDelete::add()
     }
   }
 
+  // reset atom->natoms
+
+  bigint nblocal = atom->nlocal;
+  ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+
   // move atoms back inside simulation box and to new processors
   // use remap() instead of pbc() in case atoms moved a long distance
   // use irregular() in case atoms moved a long distance
@@ -622,7 +627,7 @@ void FixClusterCrushDelete::postDelete() noexcept(true)
   // reset atom->natoms and also topology counts
 
   bigint nblocal = atom->nlocal;
-  ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_INT, MPI_SUM, world);
+  ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
 
   // reset bonus data counts
 
