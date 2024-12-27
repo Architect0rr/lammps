@@ -39,6 +39,7 @@ class ComputeRAMUsage : public Compute {
 
  private:
   uint64_t local_usage = 0;
+  uint64_t getCurrentMemoryUsage();
 };
 
 }    // namespace LAMMPS_NS

@@ -35,7 +35,7 @@ using namespace LAMMPS_NS;
 ComputeRAMUsage::ComputeRAMUsage(LAMMPS *lmp, int narg, char **arg) : Compute(lmp, narg, arg)
 {
   scalar_flag = 1;
-  extscalar = 1;
+  extscalar = 0;
   local_flag = 1;
   size_local_rows = 0;
   size_local_cols = 0;
@@ -60,12 +60,14 @@ double ComputeRAMUsage::compute_scalar()
   compute_local();
   uint64_t usg = 0;
   ::MPI_Allreduce(&local_usage, &usg, 1, MPI_UINT64_T, MPI_SUM, world);
-  return scalar = static_cast<double>(usg);
+  scalar = static_cast<double>(usg) / 1024.;
+  // utils::logmesg(lmp, "{}: {}, total: {}\n", comm->me, local_usage, scalar);
+  return scalar;
 }
 
 /* ---------------------------------------------------------------------- */
 
-uint getCurrentMemoryUsage() {
+uint64_t ComputeRAMUsage::getCurrentMemoryUsage() {
   std::ifstream file("/proc/self/status");
   std::string line;
   uint64_t memoryUsage = -1;
@@ -73,7 +75,9 @@ uint getCurrentMemoryUsage() {
   if (file.is_open()) {
     while (std::getline(file, line)) {
       if (line.substr(0, 6) == "VmRSS:") {
-        int res = std::sscanf(line.c_str(), "VmRSS: %ld kB", &memoryUsage);
+        // int res = std::sscanf(line.c_str(), "VmRSS: %ld kB", &memoryUsage);
+        int res = std::sscanf(line.c_str(), "VmRSS: %" PRIu64 " kB", &memoryUsage);
+        // utils::logmesg(lmp, "{}, {} -> {}\n", comm->me, line, memoryUsage);
         // memoryUsage *= 1024;
         if ((res == 0) || (res == EOF)) { memoryUsage = -1; }
         break;
