@@ -135,7 +135,7 @@ void ComputeClusterKE::compute_local()
   const double* const peratomkes = compute_ke_atom->vector_atom;
   local_kes.reset();
 
-  int nclusters = dynamic_cast<ComputeClusterSizeExt*>(compute_cluster_size)->get_cluster_map()->size();
+  int nclusters = dynamic_cast<ComputeClusterSizeExt*>(compute_cluster_size)->get_cluster_map().size();
   const auto& clusters = dynamic_cast<ComputeClusterSizeExt*>(compute_cluster_size)->get_clusters();
   for (int i = 0; i < nclusters; ++i) {
     const auto& clstr = clusters[i];

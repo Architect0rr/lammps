@@ -73,17 +73,17 @@ ComputeClusterSizeExt::~ComputeClusterSizeExt() noexcept(true)
   gathered.destroy(memory);
   monomers.destroy(memory);
 
-  delete cluster_map;
-  delete cluster_map_allocator;
-  delete keeper1;
+  // delete cluster_map;
+  // delete cluster_map_allocator;
+  // delete keeper1;
 
-  delete cIDs_by_size;
-  delete alloc_map_vec1;
-  delete keeper2;
+  // delete cIDs_by_size;
+  // delete alloc_map_vec1;
+  // delete keeper2;
 
-  delete cIDs_by_size_all;
-  delete alloc_map_vec2;
-  delete keeper3;
+  // delete cIDs_by_size_all;
+  // delete alloc_map_vec2;
+  // delete keeper3;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -92,17 +92,17 @@ void ComputeClusterSizeExt::init()
 {
   if ((modify->get_compute_by_style(style).size() > 1) && (comm->me == 0)) { error->warning(FLERR, "More than one compute {}", style); }
 
-  keeper1 = new MemoryKeeper(memory);
-  cluster_map_allocator = new MapAlloc_t<int, int>(keeper1);
-  cluster_map = new Map_t<int, int>(*cluster_map_allocator);
+  // keeper1 = new MemoryKeeper(memory);
+  // cluster_map_allocator = new MapAlloc_t<int, int>(keeper1);
+  // cluster_map = new Map_t<int, int>(*cluster_map_allocator);
 
-  keeper2 = new MemoryKeeper(memory);
-  alloc_map_vec1 = new MapAlloc_t<int, Vec_t<int>>(keeper2);
-  cIDs_by_size = new Map_t<int, Vec_t<int>>(*alloc_map_vec1);
+  // keeper2 = new MemoryKeeper(memory);
+  // alloc_map_vec1 = new MapAlloc_t<int, Vec_t<int>>(keeper2);
+  // cIDs_by_size = new Map_t<int, Vec_t<int>>(*alloc_map_vec1);
 
-  keeper3 = new MemoryKeeper(memory);
-  alloc_map_vec2 = new MapAlloc_t<int, Vec_t<int>>(keeper3);
-  cIDs_by_size_all = new Map_t<int, Vec_t<int>>(*alloc_map_vec2);
+  // keeper3 = new MemoryKeeper(memory);
+  // alloc_map_vec2 = new MapAlloc_t<int, Vec_t<int>>(keeper3);
+  // cIDs_by_size_all = new Map_t<int, Vec_t<int>>(*alloc_map_vec2);
 
   counts_global.create(memory, comm->nprocs, "size/cluster/ext:counts_global");
   displs.create(memory, comm->nprocs, "size/cluster/ext:displs");
@@ -112,13 +112,13 @@ void ComputeClusterSizeExt::init()
   vector = dist.data();
 
   nloc = static_cast<int>(atom->nlocal * LMP_NUCC_ALLOC_COEFF);
-  keeper1->pool_size<MapMember_t<int, int>>(nloc);
-  keeper2->pool_size<MapMember_t<int, Vec_t<int>>>(nloc);
-  keeper3->pool_size<MapMember_t<int, Vec_t<int>>>(nloc);
+  // keeper1->pool_size<MapMember_t<int, int>>(nloc);
+  // keeper2->pool_size<MapMember_t<int, Vec_t<int>>>(nloc);
+  // keeper3->pool_size<MapMember_t<int, Vec_t<int>>>(nloc);
 
-  cluster_map->reserve(nloc);
-  cIDs_by_size->reserve(size_cutoff);
-  cIDs_by_size_all->reserve(size_cutoff);
+  cluster_map.reserve(nloc);
+  cIDs_by_size.reserve(size_cutoff);
+  cIDs_by_size_all.reserve(size_cutoff);
 
   clusters.create(memory, nloc, "size/cluster/ext:clusters");
   ns.create(memory, 2 * nloc, "size/cluster/ext:ns");
@@ -139,9 +139,9 @@ void ComputeClusterSizeExt::compute_vector()
 {
   invoked_vector = update->ntimestep;
 
-  auto& cmap = *cluster_map;
-  auto& cbs = *cIDs_by_size;
-  auto& cbs_all = *cIDs_by_size_all;
+  auto& cmap = cluster_map;
+  auto& cbs = cIDs_by_size;
+  auto& cbs_all = cIDs_by_size_all;
   // auto &cmap = cluster_map;
 
   if (compute_cluster_atom->invoked_peratom != update->ntimestep) { compute_cluster_atom->compute_peratom(); }
@@ -277,9 +277,9 @@ double ComputeClusterSizeExt::memory_usage()
   sum += clusters.memory_usage();
   sum += ns.memory_usage() + gathered.memory_usage();
   sum += monomers.memory_usage();
-  sum += keeper1->memory_usage();
-  sum += keeper2->memory_usage();
-  sum += keeper3->memory_usage();
+  // sum += keeper1->memory_usage();
+  // sum += keeper2->memory_usage();
+  // sum += keeper3->memory_usage();
   return static_cast<double>(sum);
 }
 

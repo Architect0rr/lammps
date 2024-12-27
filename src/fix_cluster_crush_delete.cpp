@@ -348,7 +348,7 @@ void FixClusterCrushDelete::pre_exchange()
   next_step = update->ntimestep + nevery;
 
   if (compute_cluster_size->invoked_vector < update->ntimestep) { compute_cluster_size->compute_vector(); }
-  const auto& cIDs_by_size = *compute_cluster_size->get_cIDs_by_size();
+  const auto& cIDs_by_size = compute_cluster_size->get_cIDs_by_size();
 
   if (nloc < atom->nlocal) {
     nloc = atom->nlocal;
@@ -361,7 +361,7 @@ void FixClusterCrushDelete::pre_exchange()
   // Count amount of local atoms to move
   int atoms2move_local     = 0;
 
-  int nclusters            = dynamic_cast<ComputeClusterSizeExt*>(compute_cluster_size)->get_cluster_map()->size();
+  int nclusters            = dynamic_cast<ComputeClusterSizeExt*>(compute_cluster_size)->get_cluster_map().size();
   const auto& clusters     = dynamic_cast<ComputeClusterSizeExt*>(compute_cluster_size)->get_clusters();
   for (int i = 0; i < nclusters; ++i) {
     const auto& clstr = clusters[i];
