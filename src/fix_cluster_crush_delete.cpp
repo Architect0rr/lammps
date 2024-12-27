@@ -296,6 +296,9 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS* lmp, int narg, char** arg) 
     fmt::print(fp, "ntimestep,ntotal,cc,ad,added,tr\n");
     ::fflush(fp);
   }
+
+  pproc.create(memory, comm->nprocs, "cluster/crush/delete:pproc");
+  c2c.create(memory, comm->nprocs, "cluster/crush/delete:c2c");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -324,11 +327,10 @@ void FixClusterCrushDelete::init()
 {
   if ((modify->get_fix_by_style(style).size() > 1) && (comm->me == 0)) { error->warning(FLERR, "More than one fix {}", style); }
 
-  pproc.create(memory, comm->nprocs, "cluster/crush/delete:pproc");
-  c2c.create(memory, comm->nprocs, "cluster/crush/delete:c2c");
-
-  nloc = atom->nlocal;
-  p2m.create(memory, nloc, "cluster/crush/delete:p2m");
+  if ((p2m.empty()) || (nloc < atom->nlocal)) {
+    nloc = atom->nlocal;
+    p2m.grow(memory, nloc, "cluster/crush/delete:p2m");
+  }
 }
 
 /* ---------------------------------------------------------------------- */

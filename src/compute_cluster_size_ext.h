@@ -72,22 +72,22 @@ class ComputeClusterSizeExt : public Compute {
 //   NUCC::Map_t<int, NUCC::Vec_t<int>> *cIDs_by_size_all;
   std::unordered_map<int, std::vector<int>> cIDs_by_size_all;
 
-  int nloc;                          // number of reserved elements in atoms_by_cID and cIDs_by_size
+  int nloc = 0;                      // number of reserved elements in atoms_by_cID and cIDs_by_size
   NUCC::cspan<double> dist;          // cluster size distribution (vector == dist)
   NUCC::cspan<double> dist_local;    // local cluster size distribution
-  int nc_global;                     // number of clusters total
+  int nc_global = 0;                 // number of clusters total
   NUCC::cspan<int> counts_global;
   NUCC::cspan<int> displs;
   NUCC::cspan<NUCC::cluster_data> clusters;
   NUCC::cspan<int> ns;
   NUCC::cspan<int> gathered;
   NUCC::cspan<double> peratom_size;
-  bigint natom_loc;
-  int nonexclusive;
-  int nloc_peratom;
+  bigint natom_loc = 0;
+  int nonexclusive = 0;
+  int nloc_peratom = 0;
 
   NUCC::cspan<int> monomers;
-  int nmono;
+  int nmono = 0;
 
   Compute *compute_cluster_atom = nullptr;
 };

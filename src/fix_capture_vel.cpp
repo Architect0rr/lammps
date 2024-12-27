@@ -99,6 +99,10 @@ FixCaptureVel::FixCaptureVel(LAMMPS* lmp, int narg, char** arg) : Fix(lmp, narg,
 
   ncaptured[0] = 0;
   ncaptured[1] = 0;
+
+  memory->create(rmins, atom->ntypes + 1, atom->ntypes + 1, "fix_capture:rmins");
+  memory->create(vmax_coeffs, atom->ntypes + 1, "fix_capture:vmax_coeffs");
+  memory->create(sigmas, atom->ntypes + 1, "fix_capture:sigmas");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -141,10 +145,6 @@ void FixCaptureVel::init()
   for (int i = 1; i <= atom->ntypes; ++i) {
     if (atom->mass_setflag[i] == 0) { error->all(FLERR, "{}: mass is not set for atom type {}.", style, i); }
   }
-
-  memory->create(rmins, atom->ntypes + 1, atom->ntypes + 1, "fix_capture:rmins");
-  memory->create(vmax_coeffs, atom->ntypes + 1, "fix_capture:vmax_coeffs");
-  memory->create(sigmas, atom->ntypes + 1, "fix_capture:sigmas");
 
   constexpr long double eight_over_pi_sqrt = 1.5957691216057307117597842397375L;    // sqrt(8/pi)
   constexpr long double ssdd               = 0.6734396116428514837424685996751L;    // sqrt(3-8/pi)

@@ -62,6 +62,14 @@ ComputeClusterPE::ComputeClusterPE(LAMMPS* lmp, int narg, char** arg) : Compute(
   auto computes = lmp->modify->get_compute_by_style("pe/atom");
   if (computes.empty()) { error->all(FLERR, "compute {}: Cannot find compute with style 'pe/atom'", style); }
   compute_pe_atom = computes[0];
+
+  size_local_rows = size_cutoff + 1;
+  local_pes.create(memory, size_local_rows, "compute:pe/cluster:local_pes");
+  vector_local = local_pes.data();
+
+  size_vector  = size_cutoff + 1;
+  pes.create(memory, size_vector, "compute:pe/cluster:pes");
+  vector = pes.data();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -77,14 +85,6 @@ ComputeClusterPE::~ComputeClusterPE() noexcept(true)
 void ComputeClusterPE::init()
 {
   if ((modify->get_compute_by_style(style).size() > 1) && (comm->me == 0)) { error->warning(FLERR, "More than one compute {}", style); }
-
-  size_local_rows = size_cutoff + 1;
-  local_pes.create(memory, size_local_rows, "compute:pe/cluster:local_pes");
-  vector_local = local_pes.data();
-
-  size_vector  = size_cutoff + 1;
-  pes.create(memory, size_vector, "compute:pe/cluster:pes");
-  vector = pes.data();
 }
 
 /* ---------------------------------------------------------------------- */

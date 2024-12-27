@@ -61,6 +61,10 @@ ComputeClusterTemp::ComputeClusterTemp(LAMMPS *lmp, int narg, char **arg) : Comp
     }
     size_cutoff = MIN(size_cutoff, t_size_cutoff);
   }
+
+  size_vector = size_cutoff + 1;
+  temp.create(memory, size_vector, "temp/cluster:temp");
+  vector = temp.data();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -77,10 +81,6 @@ void ComputeClusterTemp::init()
   if ((modify->get_compute_by_style(style).size() > 1) && (comm->me == 0)) {
     error->warning(FLERR, "More than one compute {}", style);
   }
-
-  size_vector = size_cutoff + 1;
-  temp.create(memory, size_vector, "temp/cluster:temp");
-  vector = temp.data();
 }
 
 /* ---------------------------------------------------------------------- */

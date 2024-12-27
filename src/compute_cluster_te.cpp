@@ -65,6 +65,14 @@ ComputeClusterTE::ComputeClusterTE(LAMMPS* lmp, int narg, char** arg) : Compute(
                  style);
     }
   }
+
+  size_local_rows = size_cutoff + 1;
+  local_tes.create(memory, size_local_rows, "compute:te/cluster:local_tes");
+  vector_local = local_tes.data();
+
+  size_vector  = size_cutoff + 1;
+  tes.create(memory, size_vector, "compute:te/cluste:tes");
+  vector = tes.data();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -80,14 +88,6 @@ ComputeClusterTE::~ComputeClusterTE() noexcept(true)
 void ComputeClusterTE::init()
 {
   if ((modify->get_compute_by_style(style).size() > 1) && (comm->me == 0)) { error->warning(FLERR, "More than one compute {}", style); }
-
-  size_local_rows = size_cutoff + 1;
-  local_tes.create(memory, size_local_rows, "compute:te/cluster:local_tes");
-  vector_local = local_tes.data();
-
-  size_vector  = size_cutoff + 1;
-  tes.create(memory, size_vector, "compute:te/cluste:tes");
-  vector = tes.data();
 }
 
 /* ---------------------------------------------------------------------- */

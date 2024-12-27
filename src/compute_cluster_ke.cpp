@@ -80,6 +80,14 @@ ComputeClusterKE::ComputeClusterKE(LAMMPS* lmp, int narg, char** arg) : Compute(
   auto computes = lmp->modify->get_compute_by_style("ke/atom");
   if (computes.empty()) { error->all(FLERR, "compute {}: Cannot find compute with style 'ke/atom'", style); }
   compute_ke_atom = computes[0];
+
+  size_local_rows = size_cutoff + 1;
+  local_kes.create(memory, size_local_rows, "compute:ke/cluster:local_kes");
+  vector_local = local_kes.data();
+
+  size_vector  = size_cutoff + 1;
+  kes.create(memory, size_vector, "compute:ke/cluster:kes");
+  vector = kes.data();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -95,14 +103,6 @@ ComputeClusterKE::~ComputeClusterKE() noexcept(true)
 void ComputeClusterKE::init()
 {
   if ((modify->get_compute_by_style(style).size() > 1) && (comm->me == 0)) { error->warning(FLERR, "More than one compute {}", style); }
-
-  size_local_rows = size_cutoff + 1;
-  local_kes.create(memory, size_local_rows, "compute:ke/cluster:local_kes");
-  vector_local = local_kes.data();
-
-  size_vector  = size_cutoff + 1;
-  kes.create(memory, size_vector, "compute:ke/cluster:kes");
-  vector = kes.data();
 }
 
 /* ---------------------------------------------------------------------- */

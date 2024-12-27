@@ -105,6 +105,12 @@ ComputeClusterVolume::ComputeClusterVolume(LAMMPS *lmp, int narg, char **arg) :
 
   size_local_rows = size_cutoff + 1;
   size_vector = size_cutoff + 1;
+
+  dist_local.create(memory, size_local_rows, "compute:cluster/ke:local_kes");
+  vector_local = dist_local.data();
+  dist.create(memory, size_vector, "compute:cluster/ke:kes");
+  vector = dist.data();
+  dist_global.create(memory, size_vector * comm->nprocs, "dist_global");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -137,21 +143,14 @@ void ComputeClusterVolume::init()
   subbonds[4 + 0] = domain->sublo[2];
   subbonds[4 + 1] = domain->subhi[2];
 
-  // memory->create(dist_local, size_local_rows, "compute:cluster/ke:local_kes");
-  dist_local.create(memory, size_local_rows, "compute:cluster/ke:local_kes");
-  vector_local = dist_local.data();
-  // memory->create(dist, size_vector, "compute:cluster/ke:kes");
-  dist.create(memory, size_vector, "compute:cluster/ke:kes");
-  vector = dist.data();
-  dist_global.create(memory, size_vector * comm->nprocs, "dist_global");
-
-  nloc = static_cast<int>(atom->nlocal * LMP_NUCC_ALLOC_COEFF);
-  // memory->create(volumes, nloc, "ComputeClusterVolume:volumes");
-  volumes.create(memory, nloc, "ComputeClusterVolume:volumes");
-  if (mode == VOLUMEMODE::RECTANGLE) {
-    // memory->grow(bboxes, 6 * nloc, "ComputeClusterVolume:bboxes");
-    bboxes.create(memory, 6 * nloc, "ComputeClusterVolume:bboxes");
+  if ((nloc < atom->nlocal) || volumes.empty()) {
+    nloc = static_cast<int>(atom->nlocal * LMP_NUCC_ALLOC_COEFF);
+    volumes.grow(memory, nloc, "ComputeClusterVolume:volumes");
+    if (mode == VOLUMEMODE::RECTANGLE) {
+      bboxes.create(memory, 6 * nloc, "ComputeClusterVolume:bboxes");
+    }
   }
+
 
   // memory->create(recv_comm_matrix_local, comm->nprocs, "recv_comm_matrix_local");
   // memory->create(recv_comm_matrix_global, comm->nprocs * comm->nprocs, "recv_comm_matrix_global");
@@ -162,8 +161,7 @@ void ComputeClusterVolume::init()
     const auto radius_voxels_int = static_cast<int>(std::ceil(overlap / voxel_size));
     noff =
         3 * 2 * (radius_voxels_int + 1) * 2 * (radius_voxels_int + 1) * 2 * (radius_voxels_int + 1);
-    // memory->create(offsets, noff, "ComputeClusterVolume:offsets");
-    offsets.create(memory, noff, "ComputeClusterVolume:offsets");
+    if (offsets.empty()) { offsets.create(memory, noff, "ComputeClusterVolume:offsets"); }
 
     double const voxel_size_sq = voxel_size * voxel_size;
     noffsets = 0;
