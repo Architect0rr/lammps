@@ -33,6 +33,7 @@
 #include "region.h"
 #include "update.h"
 #include "variable.h"
+#include "tim.hpp"
 
 #include <cmath>
 #include <cstring>
@@ -391,28 +392,20 @@ void FixClusterCrushDelete::pre_exchange()
     clusters2crush_total += c2c[proc];
   }
 
-  bigint na1 = atom->natoms;
-
   if (clusters2crush_total > 0) {
     deleteAtoms(atoms2move_local);
     postDelete();
   }
-
-  bigint na2 = atom->natoms;
 
   to_insert += atoms2move_total;
   int to_insert_prev = to_insert;
 
   if (to_insert > 0) { add(); }
 
-  bigint na3 = atom->natoms;
-
   bigint nblocal = atom->nlocal;
   ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
 
-  bigint na4 = atom->natoms;
-
-  if (comm->me == 0) { utils::logmesg(lmp, "{}, {}, {}, {}\n", na1, na2, na3, na4); }
+  if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — fix cluster/crush: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
 
   if (comm->me == 0) {
     // print status

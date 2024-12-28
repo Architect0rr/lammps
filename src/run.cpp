@@ -23,7 +23,7 @@
 #include "output.h"
 #include "timer.h"
 #include "update.h"
-
+#include "tim.hpp"
 #include <cstring>
 
 using namespace LAMMPS_NS;
@@ -165,6 +165,8 @@ void Run::command(int narg, char **arg)
     else update->beginstep = update->firststep;
     if (stopflag) update->endstep = stop;
     else update->endstep = update->laststep;
+
+    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — fix cluster/crush: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
 
     if (preflag || update->first_update == 0) {
       lmp->init();
