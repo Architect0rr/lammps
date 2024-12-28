@@ -169,10 +169,6 @@ void Run::command(int narg, char **arg)
     if (stopflag) update->endstep = stop;
     else update->endstep = update->laststep;
 
-    bigint nblocal = atom->nlocal;
-    ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — run.cpp before: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
-
     if (preflag || update->first_update == 0) {
       lmp->init();
       update->integrate->setup(1);
@@ -184,10 +180,6 @@ void Run::command(int narg, char **arg)
     timer->barrier_stop();
 
     update->integrate->cleanup();
-
-    nblocal = atom->nlocal;
-    ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — run.cpp after: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
 
     Finish finish(lmp);
     finish.end(postflag);

@@ -271,18 +271,14 @@ void Verlet::run(int n)
       timer->stamp(Timer::COMM);
     } else {
       if (n_pre_exchange) {
-
-        bigint nblocal = atom->nlocal;
-        ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-        if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp before preexchange: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
-
         timer->stamp();
         modify->pre_exchange();
         timer->stamp(Timer::MODIFY);
 
-        nblocal = atom->nlocal;
-        ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-        if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp after preexchange: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
+        bigint nblocal = atom->nlocal;
+        bigint nbtot = 0;
+        ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+        if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp after preexchange: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
       }
       if (triclinic) domain->x2lamda(atom->nlocal);
       domain->pbc();
@@ -362,18 +358,15 @@ void Verlet::run(int n)
 
     // all output
     bigint nblocal = atom->nlocal;
-    ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp preout: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
+    bigint nbtot = 0;
+    ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp preout: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
     if (ntimestep == output->next) {
       timer->stamp();
       output->write(ntimestep);
       timer->stamp(Timer::OUTPUT);
     }
   }
-
-  bigint nblocal = atom->nlocal;
-  ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-  if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp eol: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
 }
 
 /* ---------------------------------------------------------------------- */

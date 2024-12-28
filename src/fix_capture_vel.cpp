@@ -135,6 +135,7 @@ int FixCaptureVel::setmask()
 {
   int mask = 0;
   mask |= INITIAL_INTEGRATE;
+  mask |= PRE_FORCE;
   return mask;
 }
 
@@ -162,6 +163,12 @@ void FixCaptureVel::init()
   neighbor->add_request(this, list_flags);
 
   to_delete.reserve(5);
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixCaptureVel::pre_force(int vflag) {
+  initial_integrate(vflag);
 }
 
 /* ---------------------------------------------------------------------- */

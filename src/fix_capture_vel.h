@@ -27,6 +27,7 @@ class FixCaptureVel : public Fix {
   int setmask() override;
   void init() override;
   void initial_integrate(int /*vflag*/) override;
+  void pre_force(int /*vflag*/) override;
   void init_list(int /*id*/, NeighList *ptr) override;
 
  protected:
