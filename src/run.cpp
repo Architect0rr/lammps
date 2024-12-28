@@ -23,8 +23,11 @@
 #include "output.h"
 #include "timer.h"
 #include "update.h"
-#include "tim.hpp"
 #include <cstring>
+
+#include "tim.hpp"
+#include "atom.h"
+#include "comm.h"
 
 using namespace LAMMPS_NS;
 
