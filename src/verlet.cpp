@@ -280,7 +280,7 @@ void Verlet::run(int n)
         modify->pre_exchange();
         timer->stamp(Timer::MODIFY);
 
-        bigint nblocal = atom->nlocal;
+        nblocal = atom->nlocal;
         ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
         if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp after preexchange: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
       }

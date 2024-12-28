@@ -185,7 +185,7 @@ void Run::command(int narg, char **arg)
 
     update->integrate->cleanup();
 
-    bigint nblocal = atom->nlocal;
+    nblocal = atom->nlocal;
     ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
     if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — run.cpp after: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
 
