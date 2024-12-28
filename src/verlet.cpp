@@ -272,10 +272,16 @@ void Verlet::run(int n)
     } else {
       if (n_pre_exchange) {
 
+        bigint nblocal = atom->nlocal;
+        ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
         if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp before preexchange: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
+
         timer->stamp();
         modify->pre_exchange();
         timer->stamp(Timer::MODIFY);
+
+        bigint nblocal = atom->nlocal;
+        ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
         if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp after preexchange: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
       }
       if (triclinic) domain->x2lamda(atom->nlocal);
@@ -355,6 +361,8 @@ void Verlet::run(int n)
     timer->stamp(Timer::MODIFY);
 
     // all output
+    bigint nblocal = atom->nlocal;
+    ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
     if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp preout: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
     if (ntimestep == output->next) {
       timer->stamp();
@@ -363,6 +371,8 @@ void Verlet::run(int n)
     }
   }
 
+  bigint nblocal = atom->nlocal;
+  ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
   if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp eol: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
 }
 
