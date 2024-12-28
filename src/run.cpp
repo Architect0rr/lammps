@@ -169,7 +169,7 @@ void Run::command(int narg, char **arg)
     if (stopflag) update->endstep = stop;
     else update->endstep = update->laststep;
 
-    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — fix cluster/crush: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
+    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — run.cpp before: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
 
     if (preflag || update->first_update == 0) {
       lmp->init();
@@ -182,6 +182,8 @@ void Run::command(int narg, char **arg)
     timer->barrier_stop();
 
     update->integrate->cleanup();
+
+    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — run.cpp after: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
 
     Finish finish(lmp);
     finish.end(postflag);

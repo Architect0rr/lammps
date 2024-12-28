@@ -33,6 +33,8 @@
 #include "timer.h"
 #include "update.h"
 
+#include "tim.hpp"
+
 #include <cstring>
 
 using namespace LAMMPS_NS;
@@ -81,7 +83,7 @@ void Verlet::init()
   if (atom->torque_flag) torqueflag = 1;
   if (atom->avec->forceclearflag) extraflag = 1;
 
-  // orthogonal vs triclinic simulation box
+  // orthogonal vs triclinic simulation boxafter
 
   triclinic = domain->triclinic;
 }
@@ -269,9 +271,12 @@ void Verlet::run(int n)
       timer->stamp(Timer::COMM);
     } else {
       if (n_pre_exchange) {
+
+        if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp before preexchange: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
         timer->stamp();
         modify->pre_exchange();
         timer->stamp(Timer::MODIFY);
+        if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp after preexchange: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
       }
       if (triclinic) domain->x2lamda(atom->nlocal);
       domain->pbc();
@@ -357,6 +362,8 @@ void Verlet::run(int n)
       timer->stamp(Timer::OUTPUT);
     }
   }
+
+  if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp eos: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
 }
 
 /* ---------------------------------------------------------------------- */
