@@ -355,7 +355,7 @@ void Verlet::run(int n)
     timer->stamp(Timer::MODIFY);
 
     // all output
-
+    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp preout: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
     if (ntimestep == output->next) {
       timer->stamp();
       output->write(ntimestep);
@@ -363,7 +363,7 @@ void Verlet::run(int n)
     }
   }
 
-  if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp eos: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
+  if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp eol: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
 }
 
 /* ---------------------------------------------------------------------- */
