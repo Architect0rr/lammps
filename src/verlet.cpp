@@ -256,11 +256,6 @@ void Verlet::run(int n)
 
     // initial time integration
 
-    bigint nblocal = atom->nlocal;
-    bigint nbtot = 0;
-    ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp step begin: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
-
     timer->stamp();
     modify->initial_integrate(vflag);
     if (n_post_integrate) modify->post_integrate();
@@ -270,30 +265,15 @@ void Verlet::run(int n)
 
     nflag = neighbor->decide();
 
-    nblocal = atom->nlocal;
-    nbtot = 0;
-    ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp ad: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
-
     if (nflag == 0) {
       timer->stamp();
       comm->forward_comm();
       timer->stamp(Timer::COMM);
     } else {
       if (n_pre_exchange) {
-        nblocal = atom->nlocal;
-        nbtot = 0;
-        ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-        if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp before preexchange: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
-
         timer->stamp();
         modify->pre_exchange();
         timer->stamp(Timer::MODIFY);
-
-        nblocal = atom->nlocal;
-        nbtot = 0;
-        ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-        if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp after preexchange: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
       }
       if (triclinic) domain->x2lamda(atom->nlocal);
       domain->pbc();
@@ -320,8 +300,8 @@ void Verlet::run(int n)
       }
     }
 
-    nblocal = atom->nlocal;
-    nbtot = 0;
+    bigint nblocal = atom->nlocal;
+    bigint nbtot = 0;
     ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
     if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp bfore preforce: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
 
@@ -343,6 +323,11 @@ void Verlet::run(int n)
       force->pair->compute(eflag,vflag);
       timer->stamp(Timer::PAIR);
     }
+
+    nblocal = atom->nlocal;
+    nbtot = 0;
+    ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp after force: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
 
     if (atom->molecular != Atom::ATOMIC) {
       if (force->bond) force->bond->compute(eflag,vflag);
@@ -369,13 +354,25 @@ void Verlet::run(int n)
       timer->stamp(Timer::COMM);
     }
 
+    nblocal = atom->nlocal;
+    nbtot = 0;
+    ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp after reverse: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
+
     // force modifications, final time integration, diagnostics
 
     if (n_post_force_any) modify->post_force(vflag);
     modify->final_integrate();
+    nblocal = atom->nlocal;
+    nbtot = 0;
+    ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp post postforce: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
     if (n_end_of_step) modify->end_of_step();
     timer->stamp(Timer::MODIFY);
-
+    nblocal = atom->nlocal;
+    nbtot = 0;
+    ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp after eos: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
     // all output
     nblocal = atom->nlocal;
     nbtot = 0;

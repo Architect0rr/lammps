@@ -167,7 +167,8 @@ void FixCaptureVel::init()
 
 /* ---------------------------------------------------------------------- */
 
-void FixCaptureVel::pre_force(int vflag) {
+void FixCaptureVel::pre_force(int vflag)
+{
   initial_integrate(vflag);
 }
 
@@ -265,7 +266,6 @@ void FixCaptureVel::pre_force(int vflag) {
   constexpr double one_over_three = 0.33333333333333;
   constexpr double two_one_third  = 1.25992104989487;
   constexpr double two_one_third_sq  = two_one_third * two_one_third;
-  //
   return two_one_third_sq /
       ::pow((2 + two_sqrt * ::sqrt(2 + (atom->mass[i] * vmax_coeffs[i] + atom->mass[j] * vmax_coeffs[j]) * compute_temp->scalar)), one_over_three);
 }
