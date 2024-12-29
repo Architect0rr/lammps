@@ -256,6 +256,11 @@ void Verlet::run(int n)
 
     // initial time integration
 
+    bigint nblocal = atom->nlocal;
+    bigint nbtot = 0;
+    ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp step begin: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
+
     timer->stamp();
     modify->initial_integrate(vflag);
     if (n_post_integrate) modify->post_integrate();
@@ -265,18 +270,28 @@ void Verlet::run(int n)
 
     nflag = neighbor->decide();
 
+    nblocal = atom->nlocal;
+    nbtot = 0;
+    ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp ad: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
+
     if (nflag == 0) {
       timer->stamp();
       comm->forward_comm();
       timer->stamp(Timer::COMM);
     } else {
       if (n_pre_exchange) {
+        nblocal = atom->nlocal;
+        nbtot = 0;
+        ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+        if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp before preexchange: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
+
         timer->stamp();
         modify->pre_exchange();
         timer->stamp(Timer::MODIFY);
 
-        bigint nblocal = atom->nlocal;
-        bigint nbtot = 0;
+        nblocal = atom->nlocal;
+        nbtot = 0;
         ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
         if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp after preexchange: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
       }
@@ -304,6 +319,11 @@ void Verlet::run(int n)
         timer->stamp(Timer::MODIFY);
       }
     }
+
+    nblocal = atom->nlocal;
+    nbtot = 0;
+    ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp bfore preforce: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
 
     // force computations
     // important for pair to come before bonded contributions
@@ -357,8 +377,8 @@ void Verlet::run(int n)
     timer->stamp(Timer::MODIFY);
 
     // all output
-    bigint nblocal = atom->nlocal;
-    bigint nbtot = 0;
+    nblocal = atom->nlocal;
+    nbtot = 0;
     ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
     if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp preout: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
     if (ntimestep == output->next) {
@@ -366,6 +386,11 @@ void Verlet::run(int n)
       output->write(ntimestep);
       timer->stamp(Timer::OUTPUT);
     }
+
+    nblocal = atom->nlocal;
+    nbtot = 0;
+    ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp aout: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
   }
 }
 
