@@ -84,6 +84,10 @@ FixCaptureVel::FixCaptureVel(LAMMPS* lmp, int narg, char** arg) : Fix(lmp, narg,
         if (fp == nullptr) { error->one(FLERR, "{}: Cannot open stats file {}: {}", style, arg[iarg + 1], utils::getsyserror()); }
       }
       iarg += 2;
+
+    } else if (::strcmp(arg[iarg], "delete_overlap") == 0) {
+      delete_overlap = true;
+      iarg += 1;
     } else {
       error->all(FLERR, "Illegal fix capture command");
     }
@@ -209,21 +213,23 @@ void FixCaptureVel::pre_force(int vflag)
         v[i][1] = vrandom->gaussian() * sigma;
         v[i][2] = vrandom->gaussian() * sigma;
       }
-      const double xtmp = x[i][0];
-      const double ytmp = x[i][1];
-      const double ztmp = x[i][2];
-      int* jlist = firstneigh[i];
-      int jnum = numneigh[i];
-      for (int jj = 0; jj < jnum; jj++) {
-        int j = jlist[jj];
-        j &= NEIGHMASK;
+      if (delete_overlap) {
+        const double xtmp = x[i][0];
+        const double ytmp = x[i][1];
+        const double ztmp = x[i][2];
+        int* jlist = firstneigh[i];
+        int jnum = numneigh[i];
+        for (int jj = 0; jj < jnum; jj++) {
+          int j = jlist[jj];
+          j &= NEIGHMASK;
 
-        const double delx = xtmp - x[j][0];
-        const double dely = ytmp - x[j][1];
-        const double delz = ztmp - x[j][2];
-        if (delx*delx + dely*dely + delz*delz < rmins[atom->type[i]][atom->type[j]]) {
-          to_delete.emplace_back(i);
-          break;
+          const double delx = xtmp - x[j][0];
+          const double dely = ytmp - x[j][1];
+          const double delz = ztmp - x[j][2];
+          if (delx*delx + dely*dely + delz*delz < rmins[atom->type[i]][atom->type[j]]) {
+            to_delete.emplace_back(i);
+            break;
+          }
         }
       }
     }

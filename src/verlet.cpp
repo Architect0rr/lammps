@@ -300,10 +300,10 @@ void Verlet::run(int n)
       }
     }
 
-    bigint nblocal = atom->nlocal;
-    bigint nbtot = 0;
-    ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp bfore preforce: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
+    // bigint nblocal = atom->nlocal;
+    // bigint nbtot = 0;
+    // ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    // if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp bfore preforce: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
 
     // force computations
     // important for pair to come before bonded contributions
@@ -324,10 +324,10 @@ void Verlet::run(int n)
       timer->stamp(Timer::PAIR);
     }
 
-    nblocal = atom->nlocal;
-    nbtot = 0;
-    ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp after force: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
+    // nblocal = atom->nlocal;
+    // nbtot = 0;
+    // ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    // if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp after force: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
 
     if (atom->molecular != Atom::ATOMIC) {
       if (force->bond) force->bond->compute(eflag,vflag);
@@ -354,40 +354,40 @@ void Verlet::run(int n)
       timer->stamp(Timer::COMM);
     }
 
-    nblocal = atom->nlocal;
-    nbtot = 0;
-    ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp after reverse: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
+    // nblocal = atom->nlocal;
+    // nbtot = 0;
+    // ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    // if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp after reverse: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
 
     // force modifications, final time integration, diagnostics
 
     if (n_post_force_any) modify->post_force(vflag);
     modify->final_integrate();
-    nblocal = atom->nlocal;
-    nbtot = 0;
-    ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp post postforce: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
+    // nblocal = atom->nlocal;
+    // nbtot = 0;
+    // ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    // if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp post postforce: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
     if (n_end_of_step) modify->end_of_step();
     timer->stamp(Timer::MODIFY);
-    nblocal = atom->nlocal;
-    nbtot = 0;
-    ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp after eos: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
+    // nblocal = atom->nlocal;
+    // nbtot = 0;
+    // ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    // if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp after eos: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
     // all output
-    nblocal = atom->nlocal;
-    nbtot = 0;
-    ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp preout: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
+    // nblocal = atom->nlocal;
+    // nbtot = 0;
+    // ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    // if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp preout: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
     if (ntimestep == output->next) {
       timer->stamp();
       output->write(ntimestep);
       timer->stamp(Timer::OUTPUT);
     }
 
-    nblocal = atom->nlocal;
-    nbtot = 0;
-    ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-    if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp aout: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
+    // nblocal = atom->nlocal;
+    // nbtot = 0;
+    // ::MPI_Allreduce(&nblocal, &nbtot, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+    // if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — verlet.cpp aout: {}\n", update->ntimestep, nbtot, getCurrentTime()); }
   }
 }
 

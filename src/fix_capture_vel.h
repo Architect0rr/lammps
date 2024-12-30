@@ -39,18 +39,19 @@ class FixCaptureVel : public Fix {
   double **rmins{};
   double *vmax_coeffs{};
 
-  bool screenflag;    // wether to print info to screen or not
-  bool fileflag;      // wether to output info to file or not
+  bool screenflag = false;    // wether to print info to screen or not
+  bool fileflag = true;      // wether to output info to file or not
+  bool delete_overlap = false;
 
-  int nsigma;    // number of gaussian sigmas of spread to allow
-  int nsigmasq;
-  FILE *fp;      // logfile
+  int nsigma = 0;    // number of gaussian sigmas of spread to allow
+  int nsigmasq = 0;
+  FILE *fp = nullptr;      // logfile
 
-  class NeighList* list;
+  class NeighList* list = nullptr;
   std::vector<int> to_delete;
 
-  bigint ncaptured[2];
-  bigint ncaptured_global[2];
+  bigint ncaptured[2]{};
+  bigint ncaptured_global[2]{};
 
   void post_delete() noexcept(true);
   long double rminsq(const int i, const int j) noexcept(true);
