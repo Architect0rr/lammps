@@ -459,7 +459,7 @@ void FixClusterCrushDelete::add()
     boxhi = domain->boxhi_lamda;
   }
 
-  // find maxid in case other fixes deleted.inserted atoms
+  // find maxid in case other fixes deleted/inserted atoms
 
   tagint* tag = atom->tag;
 
@@ -479,28 +479,11 @@ void FixClusterCrushDelete::add()
     while (attempt < maxtry) {
       ++attempt;
 
-      // choose random position for new particle within region
-      if (xdist == DIST::DIST_UNIFORM) {
-        do {
-          coord[0] = sbonds[0] + xrandom->uniform() * (sbonds[1] - sbonds[0]);
-          coord[1] = sbonds[2] + xrandom->uniform() * (sbonds[2] - sbonds[2]);
-          coord[2] = sbonds[4] + xrandom->uniform() * (sbonds[5] - sbonds[4]);
-        } while (region->match(coord[0], coord[1], coord[2]) == 0);
-      } else if (xdist == DIST::DIST_GAUSSIAN) {
-        do {
-          coord[0] = xmid[0] + xrandom->gaussian() * xsigma;
-          coord[1] = xmid[1] + xrandom->gaussian() * xsigma;
-          coord[2] = xmid[2] + xrandom->gaussian() * xsigma;
-        } while (region->match(coord[0], coord[1], coord[2]) == 0);
-      } else {
-        error->all(FLERR, "Unknown particle distribution in fix deposit");
-      }
+      gen_pos(coord);
 
       if ((varflag != 0) && vartest(coord[0], coord[1], coord[2]) == 0) { continue; }
 
       if (check_overlap(coord) != 1) { continue; }
-
-      int nlocalprev = atom->nlocal;
 
       generate_velocity(vnew);
 
@@ -509,26 +492,13 @@ void FixClusterCrushDelete::add()
       if (domain->triclinic != 0) {
         domain->x2lamda(coord, lamda);
         newcoord = lamda;
-      } else {
-        newcoord = coord;
-      }
+      } else { newcoord = coord; }
 
       bool proceed = newcoord[0] >= boxlo[0] && newcoord[0] < boxhi[0] && newcoord[1] >= boxlo[1] && newcoord[1] < boxhi[1] &&
           newcoord[2] >= boxlo[2] && newcoord[2] < boxhi[2];
       if (!proceed) { continue; }
-      if (comm->me == 0) {
-        atom->avec->create_atom(ntype, coord);
-        int n          = atom->nlocal - 1;
-        atom->tag[n]   = maxtag_all + 1;
-        atom->mask[n]  = 1 | groupbit;
-        atom->image[n] = (static_cast<imageint>(IMGMAX) << IMG2BITS) | (static_cast<imageint>(IMGMAX) << IMGBITS) | IMGMAX;
-        atom->v[n][0]  = vnew[0];
-        atom->v[n][1]  = vnew[1];
-        atom->v[n][2]  = vnew[2];
-        modify->create_attribute(n);
 
-        if (groupid != 0) { atom->mask[n] |= (1 << groupid); }
-      }
+      if (comm->me == 0) { create_atom(coord, vnew, maxtag_all + 1); }
 
       success = 1;
       break;
@@ -574,6 +544,45 @@ void FixClusterCrushDelete::add()
   if (atom->map_style != Atom::MAP_NONE) {
     atom->map_init();
     atom->map_set();
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixClusterCrushDelete::create_atom(double* coord, double* vnew, bigint tag) noexcept
+{
+  atom->avec->create_atom(ntype, coord);
+  int n          = atom->nlocal - 1;
+  atom->tag[n]   = tag;
+  atom->mask[n]  = 1 | groupbit;
+  atom->image[n] = (static_cast<imageint>(IMGMAX) << IMG2BITS) | (static_cast<imageint>(IMGMAX) << IMGBITS) | IMGMAX;
+  atom->v[n][0]  = vnew[0];
+  atom->v[n][1]  = vnew[1];
+  atom->v[n][2]  = vnew[2];
+  modify->create_attribute(n);
+
+  if (groupid != 0) { atom->mask[n] |= (1 << groupid); }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixClusterCrushDelete::gen_pos(double* const coord) const noexcept
+{
+  // choose random position for new particle within region
+  if (xdist == DIST::DIST_UNIFORM) {
+    do {
+      coord[0] = sbonds[0] + xrandom->uniform() * (sbonds[1] - sbonds[0]);
+      coord[1] = sbonds[2] + xrandom->uniform() * (sbonds[2] - sbonds[2]);
+      coord[2] = sbonds[4] + xrandom->uniform() * (sbonds[5] - sbonds[4]);
+    } while (region->match(coord[0], coord[1], coord[2]) == 0);
+  } else if (xdist == DIST::DIST_GAUSSIAN) {
+    do {
+      coord[0] = xmid[0] + xrandom->gaussian() * xsigma;
+      coord[1] = xmid[1] + xrandom->gaussian() * xsigma;
+      coord[2] = xmid[2] + xrandom->gaussian() * xsigma;
+    } while (region->match(coord[0], coord[1], coord[2]) == 0);
+  } else {
+    error->all(FLERR, "Unknown particle distribution in {}", style);
   }
 }
 
