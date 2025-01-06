@@ -206,10 +206,11 @@ void FixCaptureVel::pre_force(int vflag)
       const double vx = v[i][0];
       const double vy = v[i][1];
       const double vz = v[i][2];
-      if (vx*vx + vy*vy + vz*vz > sigmas[atom->type[i]]) {
+      const double vm = vx*vx + vy*vy + vz*vz;
+      if (vm > sigmas[atom->type[i]]) {
         ++ncaptured[0];
         const double sigma = ::sqrt(sigmas[atom->type[i]] / nsigmasq);
-        v[i][0] = vrandom->gaussian() * sigma;
+        v[i][0] *= v[i][0] / sigma;
         v[i][1] = vrandom->gaussian() * sigma;
         v[i][2] = vrandom->gaussian() * sigma;
       }

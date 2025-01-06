@@ -405,7 +405,7 @@ void FixClusterCrushDelete::pre_exchange()
   bigint nblocal = atom->nlocal;
   ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
 
-  if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — fix cluster/crush: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
+  // if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — fix cluster/crush: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
 
   if (comm->me == 0) {
     // print status
