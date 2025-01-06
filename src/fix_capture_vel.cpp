@@ -210,9 +210,9 @@ void FixCaptureVel::pre_force(int vflag)
       if (vm > sigmas[atom->type[i]]) {
         ++ncaptured[0];
         const double sigma = ::sqrt(sigmas[atom->type[i]] / nsigmasq);
-        v[i][0] *= v[i][0] / sigma;
-        v[i][1] = vrandom->gaussian() * sigma;
-        v[i][2] = vrandom->gaussian() * sigma;
+        v[i][0] *= sigma / v[i][0];
+        v[i][1] *= sigma / v[i][1];
+        v[i][2] *= sigma / v[i][2];
       }
       if (delete_overlap) {
         const double xtmp = x[i][0];
