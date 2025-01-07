@@ -17,6 +17,7 @@ FixStyle(capture/vel,FixCaptureVel);
 
 #include "fix.h"
 #include <vector>
+#include <unordered_map>
 
 namespace LAMMPS_NS {
 
@@ -27,7 +28,9 @@ class FixCaptureVel : public Fix {
   int setmask() override;
   void init() override;
   void initial_integrate(int /*vflag*/) override;
+  void end_of_step() override;
   void pre_force(int /*vflag*/) override;
+  void pre_exchange() override;
   void init_list(int /*id*/, NeighList *ptr) override;
 
  protected:
@@ -52,6 +55,8 @@ class FixCaptureVel : public Fix {
 
   bigint ncaptured[2]{};
   bigint ncaptured_global[2]{};
+
+  std::unordered_map<bigint, bool> flags;
 
   void post_delete() noexcept(true);
   long double rminsq(const int i, const int j) noexcept(true);

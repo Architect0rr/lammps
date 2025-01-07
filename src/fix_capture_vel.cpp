@@ -41,6 +41,7 @@ using namespace FixConst;
 FixCaptureVel::FixCaptureVel(LAMMPS* lmp, int narg, char** arg) : Fix(lmp, narg, arg), screenflag(true), fileflag(false)
 {
   if (narg < 6) { utils::missing_cmd_args(FLERR, "fix capture/vel", error); }
+  nevery = 1;
 
   // Parse arguments //
 
@@ -140,6 +141,8 @@ int FixCaptureVel::setmask()
   int mask = 0;
   mask |= INITIAL_INTEGRATE;
   mask |= PRE_FORCE;
+  mask |= END_OF_STEP;
+  mask |= PRE_EXCHANGE;
   return mask;
 }
 
@@ -178,8 +181,19 @@ void FixCaptureVel::pre_force(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
+void FixCaptureVel::pre_exchange()
+{
+  flags.clear();
+  for (int i = 0; i < atom->nlocal; ++i) { flags.insert({atom->tag[i], false}); }
+}
+
+/* ---------------------------------------------------------------------- */
+
 [[gnu::hot]] void FixCaptureVel::initial_integrate(int /*vflag*/)
 {
+  // flags.clear();
+  // for (int i = 0; i < atom->nlocal; ++i) { flags.insert({atom->tag[i], false}); }
+
   if (compute_temp->invoked_scalar != update->ntimestep) { compute_temp->compute_scalar(); }
 
   for (int i = 1; i <= atom->ntypes; ++i) {
@@ -209,6 +223,7 @@ void FixCaptureVel::pre_force(int vflag)
       const double vm = vx*vx + vy*vy + vz*vz;
       if (vm > sigmas[atom->type[i]]) {
         ++ncaptured[0];
+        flags[atom->tag[i]] = true;
         const double sigma = ::sqrt(sigmas[atom->type[i]] / nsigmasq);
         v[i][0] *= sigma / v[i][0];
         v[i][1] *= sigma / v[i][1];
@@ -258,6 +273,44 @@ void FixCaptureVel::pre_force(int vflag)
 
   ncaptured[0] = 0;
   ncaptured[1] = 0;
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixCaptureVel::end_of_step() {
+  bigint nloc = atom->nlocal;
+  bigint bloc = 0;
+  ::MPI_Allreduce(&nloc, &bloc, 1, MPI_LMP_BIGINT, MPI_SUM, world);
+  if (bloc < atom->natoms) {
+    for (int i = 0; i < atom->nlocal; ++i) { flags.erase(atom->tag[i]); }
+    for (const auto[k, v] : flags) {
+      utils::logmesg(lmp, "{}: Lost particle tag {}, flagged: {}", comm->me, k, v ? "true" : "false");
+    }
+    // int nrec_local = flags.size();
+    // int* nrec;
+    // int* displs;
+    // memory->create(nrec, comm->nprocs, "capture/vel:counts");
+    // memory->create(displs, comm->nprocs, "capture/vel:displs");
+    // ::MPI_Allgather(&nrec_local, 1, MPI_INT, nrec, 1, MPI_INT, world);
+    // bigint nrecv = 0;
+    // for (int i = 0; i < comm->nprocs; ++i) { nrecv += nrec[i]; }
+    // displs[0] = 0;
+    // for (int i = 1; i < comm->nprocs; ++i) { displs[i] = displs[i - 1] + nrec[i]; }
+    // bigint* to_send;
+    // bigint* to_recv;
+    // memory->create(to_send, nrec_local, "capture/vel:to_send");
+    // memory->create(to_recv, nrecv, "capture/vel:to_recv");
+    // int j = 0;
+    // for (const auto[k, v] : flags) { to_send[j++] = k; }
+    // ::MPI_Allgatherv(to_send, nrec_local, MPI_LMP_BIGINT, to_recv, nrec, displs, MPI_LMP_BIGINT, world);
+
+    // if (comm->me) {}
+
+    // memory->destroy(to_send);
+    // memory->destroy(to_recv);
+    // memory->destroy(displs);
+    // memory->destroy(nrec);
+  }
 }
 
 /* ---------------------------------------------------------------------- */
