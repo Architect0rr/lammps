@@ -56,7 +56,7 @@ class FixCaptureVel : public Fix {
   bigint ncaptured[2]{};
   bigint ncaptured_global[2]{};
 
-  std::unordered_map<bigint, bool> flags;
+  std::unordered_map<bigint, std::pair<bool, bigint>> flags;
 
   void post_delete() noexcept(true);
   long double rminsq(const int i, const int j) noexcept(true);

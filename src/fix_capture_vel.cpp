@@ -32,6 +32,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <unordered_set>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -183,8 +184,16 @@ void FixCaptureVel::pre_force(int vflag)
 
 void FixCaptureVel::pre_exchange()
 {
+  std::unordered_map<bigint, bigint> ttm;
+  for (const auto[k, v] : flags) { if (update->ntimestep - v.second < 500) { ttm.emplace(k, v.second); } }
   flags.clear();
-  for (int i = 0; i < atom->nlocal; ++i) { flags.insert({atom->tag[i], false}); }
+  for (int i = 0; i < atom->nlocal; ++i) {
+    if (ttm.count(atom->tag[i]) > 0) {
+      flags.insert({atom->tag[i], {true, ttm[atom->tag[i]]}});
+    } else {
+      flags.insert({atom->tag[i], {false, 0}});
+    }
+  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -223,7 +232,7 @@ void FixCaptureVel::pre_exchange()
       const double vm = vx*vx + vy*vy + vz*vz;
       if (vm > sigmas[atom->type[i]]) {
         ++ncaptured[0];
-        flags[atom->tag[i]] = true;
+        flags[atom->tag[i]] = {true, update->ntimestep};
         const double sigma = ::sqrt(sigmas[atom->type[i]] / nsigmasq);
         v[i][0] *= sigma / v[i][0];
         v[i][1] *= sigma / v[i][1];
@@ -284,7 +293,7 @@ void FixCaptureVel::end_of_step() {
   if (bloc < atom->natoms) {
     for (int i = 0; i < atom->nlocal; ++i) { flags.erase(atom->tag[i]); }
     for (const auto[k, v] : flags) {
-      utils::logmesg(lmp, "{}: Lost particle tag {}, flagged: {}", comm->me, k, v ? "true" : "false");
+      utils::logmesg(lmp, "{}: Lost particle tag {}, flagged: {}, {} timesteps before\n", comm->me, k, v.first ? "true" : "false", update->ntimestep - v.second);
     }
     // int nrec_local = flags.size();
     // int* nrec;
