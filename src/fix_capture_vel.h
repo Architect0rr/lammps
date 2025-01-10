@@ -30,7 +30,8 @@ class FixCaptureVel : public Fix {
   void initial_integrate(int /*vflag*/) override;
   void end_of_step() override;
   void pre_force(int /*vflag*/) override;
-  void pre_exchange() override;
+//   void pre_exchange() override;
+  void post_neighbor() override;
   void init_list(int /*id*/, NeighList *ptr) override;
 
  protected:

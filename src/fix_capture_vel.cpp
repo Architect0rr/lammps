@@ -143,7 +143,8 @@ int FixCaptureVel::setmask()
   mask |= INITIAL_INTEGRATE;
   mask |= PRE_FORCE;
   mask |= END_OF_STEP;
-  mask |= PRE_EXCHANGE;
+  // mask |= PRE_EXCHANGE;
+  mask |= POST_NEIGHBOR;
   return mask;
 }
 
@@ -182,19 +183,105 @@ void FixCaptureVel::pre_force(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixCaptureVel::pre_exchange()
+// void FixCaptureVel::pre_exchange()
+// {
+//   std::unordered_map<bigint, bigint> ttm;
+//   for (const auto[k, v] : flags) { if (update->ntimestep - v.second < 500) { ttm.emplace(k, v.second); } }
+//   flags.clear();
+//   // for (int i = 0; i < atom->nlocal; ++i) { flags.insert({atom->tag[i], {false, 0}}); }
+//   for (int i = 0; i < atom->nlocal; ++i) {
+//     if (ttm.count(atom->tag[i]) > 0) {
+//       flags.insert({atom->tag[i], {true, ttm[atom->tag[i]]}});
+//     } else {
+//       flags.insert({atom->tag[i], {false, 0}});
+//     }
+//   }
+// }
+
+void FixCaptureVel::post_neighbor()
 {
-  // std::unordered_map<bigint, bigint> ttm;
-  // for (const auto[k, v] : flags) { if (update->ntimestep - v.second < 500) { ttm.emplace(k, v.second); } }
+  std::unordered_map<bigint, bigint> ttm;
+  for (const auto[k, v] : flags) { if (update->ntimestep - v.second < 500) { ttm.emplace(k, v.second); } }
   flags.clear();
-  for (int i = 0; i < atom->nlocal; ++i) { flags.insert({atom->tag[i], {false, 0}}); }
-  // for (int i = 0; i < atom->nlocal; ++i) {
-  //   if (ttm.count(atom->tag[i]) > 0) {
-  //     flags.insert({atom->tag[i], {true, ttm[atom->tag[i]]}});
-  //   } else {
-  //     flags.insert({atom->tag[i], {false, 0}});
-  //   }
-  // }
+  // for (int i = 0; i < atom->nlocal; ++i) { flags.insert({atom->tag[i], {false, 0}}); }
+  for (int i = 0; i < atom->nlocal; ++i) {
+    if (ttm.count(atom->tag[i]) > 0) {
+      flags.insert({atom->tag[i], {true, ttm[atom->tag[i]]}});
+    } else {
+      flags.insert({atom->tag[i], {false, 0}});
+    }
+  }
+
+  if (compute_temp->invoked_scalar != update->ntimestep) { compute_temp->compute_scalar(); }
+
+  for (int i = 1; i <= atom->ntypes; ++i) {
+    sigmas[i] = nsigmasq * compute_temp->scalar / atom->mass[i];
+    for (int j = 0; j <= atom->ntypes; ++j) { rmins[i][j] = rminsq(i, j > 0 ? j : i); }
+  }
+
+  region->prematch();
+  double **v = atom->v;
+  double **x = atom->x;
+
+  int   inum = list->inum + list->gnum;
+  int*  ilist = list->ilist;
+  int*  numneigh = list->numneigh;
+  int** firstneigh = list->firstneigh;
+
+  int *mask = atom->mask;
+
+  for (int ii = 0; ii < inum; ii++) {
+    int i = ilist[ii];
+    if (i > atom->nlocal) { continue; }
+    if (((mask[i] & groupbit) != 0) && (region->match(atom->x[i][0], atom->x[i][1], atom->x[i][2]) != 0)) {
+      const double vx = v[i][0];
+      const double vy = v[i][1];
+      const double vz = v[i][2];
+      const double vm = vx*vx + vy*vy + vz*vz;
+      if (vm > sigmas[atom->type[i]]) {
+        ++ncaptured[0];
+        flags[atom->tag[i]] = {true, update->ntimestep};
+        const double sigma = ::sqrt(sigmas[atom->type[i]] / nsigmasq);
+        v[i][0] *= sigma / v[i][0];
+        v[i][1] *= sigma / v[i][1];
+        v[i][2] *= sigma / v[i][2];
+      }
+      if (delete_overlap) {
+        const double xtmp = x[i][0];
+        const double ytmp = x[i][1];
+        const double ztmp = x[i][2];
+        int* jlist = firstneigh[i];
+        int jnum = numneigh[i];
+        for (int jj = 0; jj < jnum; jj++) {
+          int j = jlist[jj];
+          j &= NEIGHMASK;
+
+          const double delx = xtmp - x[j][0];
+          const double dely = ytmp - x[j][1];
+          const double delz = ztmp - x[j][2];
+          if (delx*delx + dely*dely + delz*delz < rmins[atom->type[i]][atom->type[j]]) {
+            to_delete.emplace_back(i);
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  ncaptured[1] = to_delete.size();
+  to_delete.clear();
+
+  ncaptured_global[0] = 0;
+  ncaptured_global[1] = 0;
+  ::MPI_Allreduce(&ncaptured, &ncaptured_global, 2, MPI_LMP_BIGINT, MPI_SUM, world);
+
+  if (fileflag && ((ncaptured_global[0] > 0) || (ncaptured_global[1] > 0)) && (comm->me == 0)) {
+    fmt::print(fp, "{},{},{}\n", update->ntimestep, ncaptured_global[0], ncaptured_global[1]);
+    ::fflush(fp);
+  }
+
+  ncaptured[0] = 0;
+  ncaptured[1] = 0;
 }
 
 /* ---------------------------------------------------------------------- */

@@ -500,7 +500,7 @@ void FixClusterCrushDelete::add()
     while (attempt < maxtry) {
       ++attempt;
 
-      // generate new position and write it to coord
+      // generate new position and write it to coord (automatic check against region)
       gen_pos(coord);
 
       // check against variable
@@ -516,8 +516,6 @@ void FixClusterCrushDelete::add()
       // check against box
       bool proceed = newcoord[0] >= boxlo[0] && newcoord[0] < boxhi[0] && newcoord[1] >= boxlo[1] && newcoord[1] < boxhi[1] &&
           newcoord[2] >= boxlo[2] && newcoord[2] < boxhi[2];
-      // check against region
-      proceed = proceed && (region->match(newcoord[0], newcoord[1], newcoord[2]) != 0);
       if (!proceed) { continue; }
 
       // check for overlapping
@@ -582,27 +580,51 @@ bool FixClusterCrushDelete::placement_check_me(double* const newcoord, double* c
 
   if (placement_scheme == PLACEMENT_SCHEME::MIGRATE) { return static_cast<bool>(flag = comm->me == 0); }
 
-  if (newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
-      newcoord[1] >= sublo[1] && newcoord[1] < subhi[1] &&
-      newcoord[2] >= sublo[2] && newcoord[2] < subhi[2]) flag = true;
-  else if (domain->dimension == 3 && newcoord[2] >= domain->boxhi[2]) {
-    if (comm->layout != Comm::LAYOUT_TILED) {
-      if (comm->myloc[2] == comm->procgrid[2]-1 &&
-          newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
-          newcoord[1] >= sublo[1] && newcoord[1] < subhi[1]) flag = true;
-    } else {
-      if (comm->mysplit[2][1] == 1.0 &&
-          newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
-          newcoord[1] >= sublo[1] && newcoord[1] < subhi[1]) flag = true;
-    }
-  } else if (domain->dimension == 2 && newcoord[1] >= domain->boxhi[1]) {
-    if (comm->layout != Comm::LAYOUT_TILED) {
-      if (comm->myloc[1] == comm->procgrid[1]-1 &&
-          newcoord[0] >= sublo[0] && newcoord[0] < subhi[0]) flag = true;
-    } else {
-      if (comm->mysplit[1][1] == 1.0 &&
-          newcoord[0] >= sublo[0] && newcoord[0] < subhi[0]) flag = true;
-    }
+  if (newcoord[0] > sublo[0] && newcoord[0] < subhi[0] &&
+      newcoord[1] > sublo[1] && newcoord[1] < subhi[1] &&
+      newcoord[2] > sublo[2] && newcoord[2] < subhi[2]) flag = true;
+  // else if (domain->dimension == 3 && newcoord[2] >= domain->boxhi[2]) {
+  //   if (comm->layout != Comm::LAYOUT_TILED) {
+  //     if (comm->myloc[2] == comm->procgrid[2]-1 &&
+  //         newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
+  //         newcoord[1] >= sublo[1] && newcoord[1] < subhi[1]) flag = true;
+  //   } else {
+  //     if (comm->mysplit[2][1] == 1.0 &&
+  //         newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
+  //         newcoord[1] >= sublo[1] && newcoord[1] < subhi[1]) flag = true;
+  //   }
+  // } else if (domain->dimension == 2 && newcoord[1] >= domain->boxhi[1]) {
+  //   if (comm->layout != Comm::LAYOUT_TILED) {
+  //     if (comm->myloc[1] == comm->procgrid[1]-1 &&
+  //         newcoord[0] >= sublo[0] && newcoord[0] < subhi[0]) flag = true;
+  //   } else {
+  //     if (comm->mysplit[1][1] == 1.0 &&
+  //         newcoord[0] >= sublo[0] && newcoord[0] < subhi[0]) flag = true;
+  //   }
+  // }
+
+  double multiplier = 1. / comm->nprocs;
+  double coordaverage[3] = {0, 0, 0};
+  double coordsum[3] = {0, 0, 0};
+  ::MPI_Allreduce(newcoord, coordaverage, 3, MPI_DOUBLE, MPI_SUM, world);
+  coordaverage[0] *= multiplier;
+  coordaverage[1] *= multiplier;
+  coordaverage[2] *= multiplier;
+  coordaverage[0] -= newcoord[0];
+  coordaverage[1] -= newcoord[1];
+  coordaverage[2] -= newcoord[2];
+  coordaverage[0] *= coordaverage[0];
+  coordaverage[1] *= coordaverage[1];
+  coordaverage[2] *= coordaverage[2];
+  ::MPI_Allreduce(coordaverage, coordsum, 3, MPI_DOUBLE, MPI_SUM, world);
+  coordsum[0] *= multiplier * multiplier;
+  coordsum[1] *= multiplier * multiplier;
+  coordsum[2] *= multiplier * multiplier;
+  coordsum[0] = ::sqrt(coordsum[0]);
+  coordsum[1] = ::sqrt(coordsum[1]);
+  coordsum[2] = ::sqrt(coordsum[2]);
+  if (comm->me == 0) {
+    utils::logmesg(lmp, "Coordinate stddev: {}, {}, {}\n", coordsum[0], coordsum[1], coordsum[2]);
   }
 
   int flagsum = 0;
@@ -610,8 +632,8 @@ bool FixClusterCrushDelete::placement_check_me(double* const newcoord, double* c
   if (flagsum > 1) {
     error->all(FLERR, "{}: Multiple procs ({} procs) tried to insert an atom (seems to be a fix bug)", style, flagsum);
   }
-  if (flagsum == 0) {
-    error->warning(FLERR, "{}: No procs decided to insert a new atom, that seemed to be valid (seems to be a fix bug)", style);
+  if ((flagsum == 0) && (comm->me == 0)) {
+    utils::logmesg(lmp, "WARNING: {}: No procs decided to insert a new atom, that seemed to be valid (seems to be a fix bug)\n", style);
   }
 
   return static_cast<bool>(flag);
@@ -658,7 +680,7 @@ void FixClusterCrushDelete::gen_pos(double* const coord) const noexcept
       coord[2] = xmid[2] + xrandom->gaussian() * xsigma;
     } while (region->match(coord[0], coord[1], coord[2]) == 0);
   } else {
-    error->all(FLERR, "Unknown particle distribution in {}", style);
+    error->all(FLERR, "{}: Unknown particle distribution", style);
   }
 }
 
