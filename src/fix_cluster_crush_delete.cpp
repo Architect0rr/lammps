@@ -500,13 +500,11 @@ void FixClusterCrushDelete::add()
     while (attempt < maxtry) {
       ++attempt;
 
+      // generate new position and write it to coord
       gen_pos(coord);
 
+      // check against variable
       if ((varflag != 0) && vartest(coord[0], coord[1], coord[2]) == 0) { continue; }
-
-      if (check_overlap(coord) != 1) { continue; }
-
-      generate_velocity(vnew);
 
       double* newcoord;
       double lamda[3];
@@ -515,9 +513,18 @@ void FixClusterCrushDelete::add()
         newcoord = lamda;
       } else { newcoord = coord; }
 
-      if (!placement_check_general(newcoord, boxlo, boxhi)) { continue; }
+      // check against box
+      bool proceed = newcoord[0] >= boxlo[0] && newcoord[0] < boxhi[0] && newcoord[1] >= boxlo[1] && newcoord[1] < boxhi[1] &&
+          newcoord[2] >= boxlo[2] && newcoord[2] < boxhi[2];
+      // check against region
+      proceed = proceed && (region->match(newcoord[0], newcoord[1], newcoord[2]) != 0);
+      if (!proceed) { continue; }
 
-      if (placement_check_me(newcoord, sublo, subhi)) { create_atom(coord, vnew, maxtag_all + 1); }
+      // check for overlapping
+      if (check_overlap(coord) != 1) { continue; }
+
+      // if ok, create atom and generate velocity
+      if (placement_check_me(newcoord, sublo, subhi)) { create_atom(coord, maxtag_all + 1); }
 
       success = 1;
       break;
@@ -570,13 +577,6 @@ void FixClusterCrushDelete::add()
 
 /* ---------------------------------------------------------------------- */
 
-bool FixClusterCrushDelete::placement_check_general(double* const newcoord, double* const boxlo, double* const boxhi) {
-  return newcoord[0] >= boxlo[0] && newcoord[0] < boxhi[0] && newcoord[1] >= boxlo[1] && newcoord[1] < boxhi[1] &&
-          newcoord[2] >= boxlo[2] && newcoord[2] < boxhi[2];
-}
-
-/* ---------------------------------------------------------------------- */
-
 bool FixClusterCrushDelete::placement_check_me(double* const newcoord, double* const sublo, double* const subhi) {
   int flag = 0;
 
@@ -619,16 +619,22 @@ bool FixClusterCrushDelete::placement_check_me(double* const newcoord, double* c
 
 /* ---------------------------------------------------------------------- */
 
-void FixClusterCrushDelete::create_atom(double* coord, double* vnew, bigint tag) noexcept
+void FixClusterCrushDelete::create_atom(double* coord, bigint tag) noexcept
 {
   atom->avec->create_atom(ntype, coord);
   int n          = atom->nlocal - 1;
   atom->tag[n]   = tag;
   atom->mask[n]  = 1 | groupbit;
   atom->image[n] = (static_cast<imageint>(IMGMAX) << IMG2BITS) | (static_cast<imageint>(IMGMAX) << IMGBITS) | IMGMAX;
-  atom->v[n][0]  = vnew[0];
-  atom->v[n][1]  = vnew[1];
-  atom->v[n][2]  = vnew[2];
+  if (fix_temp != 0) {
+    atom->v[n][0] = vrandom->gaussian() * vsigma;
+    atom->v[n][1] = vrandom->gaussian() * vsigma;
+    atom->v[n][2] = vrandom->gaussian() * vsigma;
+  } else {
+    atom->v[n][0] = vels[0] + vrandom->uniform() * (vels[1] - vels[0]);
+    atom->v[n][1] = vels[2] + vrandom->uniform() * (vels[3] - vels[2]);
+    atom->v[n][2] = vels[4] + vrandom->uniform() * (vels[5] - vels[4]);
+  }
   modify->create_attribute(n);
 
   if (groupid != 0) { atom->mask[n] |= (1 << groupid); }
@@ -678,21 +684,6 @@ bool FixClusterCrushDelete::check_overlap(double* coord)
   int flagall = 0;
   MPI_Allreduce(&flag, &flagall, 1, MPI_INT, MPI_MAX, world);
   return flagall == 0;
-}
-
-/* ---------------------------------------------------------------------- */
-
-void FixClusterCrushDelete::generate_velocity(double* vnew)
-{
-  if (fix_temp != 0) {
-    vnew[0] = vrandom->gaussian() * vsigma;
-    vnew[1] = vrandom->gaussian() * vsigma;
-    vnew[2] = vrandom->gaussian() * vsigma;
-  } else {
-    vnew[0] = vels[0] + vrandom->uniform() * (vels[1] - vels[0]);
-    vnew[1] = vels[2] + vrandom->uniform() * (vels[3] - vels[2]);
-    vnew[2] = vels[4] + vrandom->uniform() * (vels[5] - vels[4]);
-  }
 }
 
 /* ---------------------------------------------------------------------- */

@@ -211,7 +211,7 @@ void FixCaptureVel::pre_exchange()
     for (int j = 0; j <= atom->ntypes; ++j) { rmins[i][j] = rminsq(i, j > 0 ? j : i); }
   }
 
-  // region->prematch();
+  region->prematch();
   double **v = atom->v;
   double **x = atom->x;
 
@@ -225,8 +225,7 @@ void FixCaptureVel::pre_exchange()
   for (int ii = 0; ii < inum; ii++) {
     int i = ilist[ii];
     if (i > atom->nlocal) { continue; }
-    if (((mask[i] & groupbit) != 0)) {
-      // && (region->match(atom->x[i][0], atom->x[i][1], atom->x[i][2]) != 0)
+    if (((mask[i] & groupbit) != 0) && (region->match(atom->x[i][0], atom->x[i][1], atom->x[i][2]) != 0)) {
       const double vx = v[i][0];
       const double vy = v[i][1];
       const double vz = v[i][2];

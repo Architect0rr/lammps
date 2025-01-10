@@ -61,7 +61,7 @@ class FixClusterCrushDelete : public Fix {
   int maxtry = 1000;
   int ntype = 0;
   int groupid = 0;
-  PLACEMENT_SCHEME placement_scheme = PLACEMENT_SCHEME::MIGRATE;
+  PLACEMENT_SCHEME placement_scheme = PLACEMENT_SCHEME::INPLACE;
 
   //velocity and coordinates
   bool fix_temp = false;
@@ -82,10 +82,8 @@ class FixClusterCrushDelete : public Fix {
   void add();
   void gen_pos(double* const coord) const noexcept;
   int vartest(double x, double y, double z);
-  void generate_velocity(double *vnew);
   bool check_overlap(double* coord);
-  void create_atom(double* coord, double* vnew, bigint tag) noexcept;
-  bool placement_check_general(double* const newcoord, double* const boxlo, double* const boxhi);
+  void create_atom(double* coord, bigint tag) noexcept;
   bool placement_check_me(double* const newcoord, double* const sublo, double* const subhi);
 };
 
