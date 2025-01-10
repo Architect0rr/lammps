@@ -575,7 +575,7 @@ void FixClusterCrushDelete::add()
 
 /* ---------------------------------------------------------------------- */
 
-bool FixClusterCrushDelete::placement_check_me(double* const newcoord, double* const sublo, double* const subhi) const {
+bool FixClusterCrushDelete::placement_check_me(const double* const newcoord, const double* const sublo, const double* const subhi) const {
   int flag = 0;
 
   if (placement_scheme == PLACEMENT_SCHEME::MIGRATE) { return static_cast<bool>(flag = comm->me == 0); }
@@ -617,11 +617,15 @@ bool FixClusterCrushDelete::placement_check_me(double* const newcoord, double* c
 
 /* ---------------------------------------------------------------------- */
 
-void FixClusterCrushDelete::check_coord_diff(double* const newcoord) const noexcept {
+void FixClusterCrushDelete::check_coord_diff(const double* const newcoord) const noexcept {
   double multiplier = 1. / comm->nprocs;
   double coordaverage[3] = {0, 0, 0};
   double coordsum[3] = {0, 0, 0};
+  int min_seed = 0;
+  int max_seed = 0;
   ::MPI_Allreduce(newcoord, coordaverage, 3, MPI_DOUBLE, MPI_SUM, world);
+  ::MPI_Allreduce(&xrandom->seed, &min_seed, 3, MPI_INT, MPI_MIN, world);
+  ::MPI_Allreduce(&xrandom->seed, &max_seed, 3, MPI_INT, MPI_MAX, world);
   coordaverage[0] *= multiplier;
   coordaverage[1] *= multiplier;
   coordaverage[2] *= multiplier;
@@ -639,7 +643,7 @@ void FixClusterCrushDelete::check_coord_diff(double* const newcoord) const noexc
   coordsum[1] = ::sqrt(coordsum[1]);
   coordsum[2] = ::sqrt(coordsum[2]);
   if (comm->me == 0) {
-    utils::logmesg(lmp, "Coordinate stddev: {}, {}, {}\n", coordsum[0], coordsum[1], coordsum[2]);
+    utils::logmesg(lmp, "Coordinate stddev: ({}, {}, {}), seeds are {}\n", coordsum[0], coordsum[1], coordsum[2], min_seed == max_seed ? "sync" : "desync");
   }
 }
 
@@ -691,7 +695,7 @@ void FixClusterCrushDelete::gen_pos(double*  coord) const noexcept
 
 /* ---------------------------------------------------------------------- */
 
-bool FixClusterCrushDelete::check_overlap(double* coord) const noexcept
+bool FixClusterCrushDelete::check_overlap(const double* const coord) const noexcept
 {
   double** x       = atom->x;
   const int nlocal = atom->nlocal;

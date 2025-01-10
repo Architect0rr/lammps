@@ -27,8 +27,8 @@ class RanPark : protected Pointers {
   void reset(int, double *);
   int state();
 
- private:
   int seed, save;
+ private:
   double second;
 };
 
