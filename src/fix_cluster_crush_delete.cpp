@@ -50,7 +50,6 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS* lmp, int narg, char** arg) 
 {
   restart_pbc          = 1;
   nevery               = 1;
-  pre_exchange_migrate = 1;
 
   if (narg < 9) { utils::missing_cmd_args(FLERR, "fix cluster/crush/delete", error); }
 
@@ -107,6 +106,17 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS* lmp, int narg, char** arg) 
       monomer_temperature = utils::numeric(FLERR, arg[iarg + 1], true, lmp);
       if (monomer_temperature < 0) { error->all(FLERR, "{}: Monomer temperature cannot be negative", style); }
       vdist = DIST::DIST_GAUSSIAN;
+      iarg += 2;
+
+    } else if (::strcmp(arg[iarg], "placement_scheme") == 0) {
+      // Placement scheme
+      if (::strcmp(arg[iarg+1], "inplace") == 0) {
+        placement_scheme = PLACEMENT_SCHEME::INPLACE;
+      } else if (::strcmp(arg[iarg+1], "migrate") == 0) {
+        placement_scheme = PLACEMENT_SCHEME::MIGRATE;
+      } else {
+        error->all(FLERR, "{}: unknown placement scheme: {}", style, arg[iarg+1]);
+      }
       iarg += 2;
 
     } else if (::strcmp(arg[iarg], "noscreen") == 0) {
@@ -208,69 +218,71 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS* lmp, int narg, char** arg) 
     } else {
       error->all(FLERR, "{}: Illegal command option {}", style, arg[iarg]);
     }
+  }
 
-    // Get temp compute
-    auto temp_computes = lmp->modify->get_compute_by_style("temp");
-    if (temp_computes.empty()) { error->all(FLERR, "{}: Cannot find compute with style 'temp'.", style); }
-    compute_temp = dynamic_cast<ComputeClusterTemp*>(temp_computes[0]);
-    if (atom->mass_setflag[ntype] == 0) { error->all(FLERR, "{}: Atom mass for atom type {} is not set!", style, ntype); }
-    vsigma    = ::sqrt(monomer_temperature / atom->mass[ntype]);
+  // further setup and error check
 
-    sbonds[0] = region->extent_xlo;
-    sbonds[1] = region->extent_xhi;
-    sbonds[2] = region->extent_ylo;
-    sbonds[3] = region->extent_yhi;
-    sbonds[4] = region->extent_zlo;
-    sbonds[5] = region->extent_zhi;
+  if (placement_scheme == PLACEMENT_SCHEME::MIGRATE) { pre_exchange_migrate = 1; }
 
-    if (domain->triclinic == 0) {
-      if (sbonds[0] < domain->boxlo[0] || sbonds[1] > domain->boxhi[0] || sbonds[2] < domain->boxlo[1] || sbonds[3] > domain->boxhi[1] ||
-          sbonds[4] < domain->boxlo[2] || sbonds[5] > domain->boxhi[2]) {
-        error->all(FLERR, "Deposition region extends outside simulation box");
-      }
-    } else {
-      if (sbonds[0] < domain->boxlo_bound[0] || sbonds[1] > domain->boxhi_bound[0] || sbonds[2] < domain->boxlo_bound[1] ||
-          sbonds[3] > domain->boxhi_bound[1] || sbonds[4] < domain->boxlo_bound[2] || sbonds[5] > domain->boxhi_bound[2]) {
-        error->all(FLERR, "Deposition region extends outside simulation box");
-      }
+  // Get temp compute
+  auto temp_computes = lmp->modify->get_compute_by_style("temp");
+  if (temp_computes.empty()) { error->all(FLERR, "{}: Cannot find compute with style 'temp'.", style); }
+  compute_temp = dynamic_cast<ComputeClusterTemp*>(temp_computes[0]);
+  if (atom->mass_setflag[ntype] == 0) { error->all(FLERR, "{}: Atom mass for atom type {} is not set!", style, ntype); }
+  vsigma    = ::sqrt(monomer_temperature / atom->mass[ntype]);
+
+  sbonds[0] = region->extent_xlo;
+  sbonds[1] = region->extent_xhi;
+  sbonds[2] = region->extent_ylo;
+  sbonds[3] = region->extent_yhi;
+  sbonds[4] = region->extent_zlo;
+  sbonds[5] = region->extent_zhi;
+
+  if (domain->triclinic == 0) {
+    if (sbonds[0] < domain->boxlo[0] || sbonds[1] > domain->boxhi[0] || sbonds[2] < domain->boxlo[1] || sbonds[3] > domain->boxhi[1] ||
+        sbonds[4] < domain->boxlo[2] || sbonds[5] > domain->boxhi[2]) {
+      error->all(FLERR, "Deposition region extends outside simulation box");
     }
-
-    // error check and further setup for mode = MOLECULE
-
-    if (atom->tag_enable == 0) { error->all(FLERR, "Cannot use fix_deposit unless atoms have IDs"); }
-
-    // apply scaling factor for styles that use distance-dependent factors
-    // setup scaling
-
-    if (scaleflag != 0) {
-      double xscale = domain->lattice->xlattice;
-      double yscale = domain->lattice->ylattice;
-      double zscale = domain->lattice->zlattice;
-      // apply scaling to all input parameters with dist/vel units
-
-      overlap *= xscale;
-      overlapsq *= xscale * xscale;
-      vels[0] *= xscale;
-      vels[1] *= xscale;
-      vels[2] *= yscale;
-      vels[3] *= yscale;
-      vels[4] *= zscale;
-      vels[5] *= zscale;
-      xmid[0] *= xscale;
-      xmid[1] *= yscale;
-      xmid[2] *= zscale;
-      xsigma *= ::pow(xscale * yscale * zscale, 1. / 3.);    // same as in region sphere
-      vsigma *= ::pow(xscale * yscale * zscale, 1. / 3.);    // same as in region sphere
+  } else {
+    if (sbonds[0] < domain->boxlo_bound[0] || sbonds[1] > domain->boxhi_bound[0] || sbonds[2] < domain->boxlo_bound[1] ||
+        sbonds[3] > domain->boxhi_bound[1] || sbonds[4] < domain->boxlo_bound[2] || sbonds[5] > domain->boxhi_bound[2]) {
+      error->all(FLERR, "Deposition region extends outside simulation box");
     }
   }
 
-  // error check and further setup for variable test
+  // error check and further setup for mode = MOLECULE
+
+  if (atom->tag_enable == 0) { error->all(FLERR, "Cannot use fix_deposit unless atoms have IDs"); }
+
+  // apply scaling factor for styles that use distance-dependent factors
+  // setup scaling
+
+  if (scaleflag != 0) {
+    double xscale = domain->lattice->xlattice;
+    double yscale = domain->lattice->ylattice;
+    double zscale = domain->lattice->zlattice;
+    // apply scaling to all input parameters with dist/vel units
+
+    overlap *= xscale;
+    overlapsq *= xscale * xscale;
+    vels[0] *= xscale;
+    vels[1] *= xscale;
+    vels[2] *= yscale;
+    vels[3] *= yscale;
+    vels[4] *= zscale;
+    vels[5] *= zscale;
+    xmid[0] *= xscale;
+    xmid[1] *= yscale;
+    xmid[2] *= zscale;
+    xsigma *= ::pow(xscale * yscale * zscale, 1. / 3.);    // same as in region sphere
+    vsigma *= ::pow(xscale * yscale * zscale, 1. / 3.);    // same as in region sphere
+  }
 
   if ((vstr == nullptr) && ((xstr != nullptr) || (ystr != nullptr) || (zstr != nullptr))) {
-    error->all(FLERR, "Incomplete use of variables in fix deposit command");
+    error->all(FLERR, "{}: Incomplete use of variables", style);
   }
   if ((vstr != nullptr) && ((xstr == nullptr) && (ystr == nullptr) && (zstr == nullptr))) {
-    error->all(FLERR, "Incomplete use of variables in fix deposit command");
+    error->all(FLERR, "{}: Incomplete use of variables", style);
   }
 
   if (varflag != 0) {
@@ -459,6 +471,15 @@ void FixClusterCrushDelete::add()
     boxhi = domain->boxhi_lamda;
   }
 
+  double *sublo,*subhi;
+  if (domain->triclinic == 0) {
+    sublo = domain->sublo;
+    subhi = domain->subhi;
+  } else {
+    sublo = domain->sublo_lamda;
+    subhi = domain->subhi_lamda;
+  }
+
   // find maxid in case other fixes deleted/inserted atoms
 
   tagint* tag = atom->tag;
@@ -494,11 +515,9 @@ void FixClusterCrushDelete::add()
         newcoord = lamda;
       } else { newcoord = coord; }
 
-      bool proceed = newcoord[0] >= boxlo[0] && newcoord[0] < boxhi[0] && newcoord[1] >= boxlo[1] && newcoord[1] < boxhi[1] &&
-          newcoord[2] >= boxlo[2] && newcoord[2] < boxhi[2];
-      if (!proceed) { continue; }
+      if (!placement_check_general(newcoord, boxlo, boxhi)) { continue; }
 
-      if (comm->me == 0) { create_atom(coord, vnew, maxtag_all + 1); }
+      if (placement_check_me(newcoord, sublo, subhi)) { create_atom(coord, vnew, maxtag_all + 1); }
 
       success = 1;
       break;
@@ -520,31 +539,82 @@ void FixClusterCrushDelete::add()
     }
   }
 
-  // move atoms back inside simulation box and to new processors
-  // use remap() instead of pbc() in case atoms moved a long distance
-  // use irregular() in case atoms moved a long distance
-
-  double** x      = atom->x;
-  imageint* image = atom->image;
-  for (int i = 0; i < atom->nlocal; i++) domain->remap(x[i], image[i]);
-
-  if (domain->triclinic) domain->x2lamda(atom->nlocal);
-  domain->reset_box();
-  auto irregular = new Irregular(lmp);
-  irregular->migrate_atoms(1);
-  delete irregular;
-  if (domain->triclinic) domain->lamda2x(atom->nlocal);
-
-  to_insert -= ninserted;
-
-  atom->tag_check();
-
   // rebuild atom map
 
   if (atom->map_style != Atom::MAP_NONE) {
     atom->map_init();
     atom->map_set();
   }
+
+  if (placement_scheme == PLACEMENT_SCHEME::MIGRATE) {
+    // move atoms back inside simulation box and to new processors
+    // use remap() instead of pbc() in case atoms moved a long distance
+    // use irregular() in case atoms moved a long distance
+
+    double** x      = atom->x;
+    imageint* image = atom->image;
+    for (int i = 0; i < atom->nlocal; i++) domain->remap(x[i], image[i]);
+
+    if (domain->triclinic) domain->x2lamda(atom->nlocal);
+    domain->reset_box();
+    auto irregular = new Irregular(lmp);
+    irregular->migrate_atoms(1);
+    delete irregular;
+    if (domain->triclinic) domain->lamda2x(atom->nlocal);
+  }
+
+  atom->tag_check();
+
+  to_insert -= ninserted;
+}
+
+/* ---------------------------------------------------------------------- */
+
+bool FixClusterCrushDelete::placement_check_general(double* const newcoord, double* const boxlo, double* const boxhi) {
+  return newcoord[0] >= boxlo[0] && newcoord[0] < boxhi[0] && newcoord[1] >= boxlo[1] && newcoord[1] < boxhi[1] &&
+          newcoord[2] >= boxlo[2] && newcoord[2] < boxhi[2];
+}
+
+/* ---------------------------------------------------------------------- */
+
+bool FixClusterCrushDelete::placement_check_me(double* const newcoord, double* const sublo, double* const subhi) {
+  int flag = 0;
+
+  if (placement_scheme == PLACEMENT_SCHEME::MIGRATE) { return static_cast<bool>(flag = comm->me == 0); }
+
+  if (newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
+      newcoord[1] >= sublo[1] && newcoord[1] < subhi[1] &&
+      newcoord[2] >= sublo[2] && newcoord[2] < subhi[2]) flag = true;
+  else if (domain->dimension == 3 && newcoord[2] >= domain->boxhi[2]) {
+    if (comm->layout != Comm::LAYOUT_TILED) {
+      if (comm->myloc[2] == comm->procgrid[2]-1 &&
+          newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
+          newcoord[1] >= sublo[1] && newcoord[1] < subhi[1]) flag = true;
+    } else {
+      if (comm->mysplit[2][1] == 1.0 &&
+          newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
+          newcoord[1] >= sublo[1] && newcoord[1] < subhi[1]) flag = true;
+    }
+  } else if (domain->dimension == 2 && newcoord[1] >= domain->boxhi[1]) {
+    if (comm->layout != Comm::LAYOUT_TILED) {
+      if (comm->myloc[1] == comm->procgrid[1]-1 &&
+          newcoord[0] >= sublo[0] && newcoord[0] < subhi[0]) flag = true;
+    } else {
+      if (comm->mysplit[1][1] == 1.0 &&
+          newcoord[0] >= sublo[0] && newcoord[0] < subhi[0]) flag = true;
+    }
+  }
+
+  int flagsum = 0;
+  ::MPI_Allreduce(&flag, &flagsum, 1, MPI_INT, MPI_SUM, world);
+  if (flagsum > 1) {
+    error->all(FLERR, "{}: Multiple procs ({} procs) tried to insert an atom (seems to be a fix bug)", style, flagsum);
+  }
+  if (flagsum == 0) {
+    error->warning(FLERR, "{}: No procs decided to insert a new atom, that seemed to be valid (seems to be a fix bug)", style);
+  }
+
+  return static_cast<bool>(flag);
 }
 
 /* ---------------------------------------------------------------------- */
