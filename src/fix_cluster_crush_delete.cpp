@@ -501,7 +501,7 @@ void FixClusterCrushDelete::add()
       ++attempt;
 
       // generate new position and write it to coord (automatic check against region)
-      gen_pos(coord);
+      gen_pos(coord, added, attempt);
 
       // check against variable
       if ((varflag != 0) && vartest(coord[0], coord[1], coord[2]) == 0) { continue; }
@@ -522,7 +522,7 @@ void FixClusterCrushDelete::add()
       if (check_overlap(coord) != 1) { continue; }
 
       // if ok, create atom and generate velocity
-      if (placement_check_me(newcoord, sublo, subhi)) { create_atom(coord, maxtag_all + 1); }
+      if (placement_check_me(newcoord, sublo, subhi, added, attempt)) { create_atom(coord, maxtag_all + 1); }
 
       success = 1;
       break;
@@ -575,7 +575,7 @@ void FixClusterCrushDelete::add()
 
 /* ---------------------------------------------------------------------- */
 
-bool FixClusterCrushDelete::placement_check_me(const double* const newcoord, const double* const sublo, const double* const subhi) const {
+bool FixClusterCrushDelete::placement_check_me(const double* const newcoord, const double* const sublo, const double* const subhi, int nparticle, int nattempt) const {
   int flag = 0;
 
   if (placement_scheme == PLACEMENT_SCHEME::MIGRATE) { return static_cast<bool>(flag = comm->me == 0); }
@@ -603,6 +603,8 @@ bool FixClusterCrushDelete::placement_check_me(const double* const newcoord, con
   //   }
   // }
 
+  check_coord_diff(newcoord, nparticle, nattempt, "placement_check");
+
   int flagsum = 0;
   ::MPI_Allreduce(&flag, &flagsum, 1, MPI_INT, MPI_SUM, world);
   if (flagsum > 1) {
@@ -617,7 +619,7 @@ bool FixClusterCrushDelete::placement_check_me(const double* const newcoord, con
 
 /* ---------------------------------------------------------------------- */
 
-void FixClusterCrushDelete::check_coord_diff(const double* const newcoord) const noexcept {
+void FixClusterCrushDelete::check_coord_diff(const double* const newcoord, int nparticle, int nattempt, const char *name) const noexcept {
   double multiplier = 1. / comm->nprocs;
   double coordaverage[3] = {0, 0, 0};
   double coordsum[3] = {0, 0, 0};
@@ -643,7 +645,7 @@ void FixClusterCrushDelete::check_coord_diff(const double* const newcoord) const
   coordsum[1] = ::sqrt(coordsum[1]);
   coordsum[2] = ::sqrt(coordsum[2]);
   if (comm->me == 0) {
-    utils::logmesg(lmp, "Coordinate stddev: ({}, {}, {}), seeds are {}\n", coordsum[0], coordsum[1], coordsum[2], min_seed == max_seed ? "sync" : "desync");
+    utils::logmesg(lmp, "{}-{}-{}-{}: Coordinate stddev: ({}, {}, {}), seeds are {}\n", update->ntimestep, nparticle, nattempt, name, coordsum[0], coordsum[1], coordsum[2], min_seed == max_seed ? "sync" : "desync");
   }
 }
 
@@ -672,7 +674,7 @@ void FixClusterCrushDelete::create_atom(double* coord, bigint tag) noexcept
 
 /* ---------------------------------------------------------------------- */
 
-void FixClusterCrushDelete::gen_pos(double*  coord) const noexcept
+void FixClusterCrushDelete::gen_pos(double* const coord, int nparticle, int nattempt) const noexcept
 {
   // choose random position for new particle within region
   if (xdist == DIST::DIST_UNIFORM) {
@@ -690,7 +692,7 @@ void FixClusterCrushDelete::gen_pos(double*  coord) const noexcept
   } else {
     error->all(FLERR, "{}: Unknown particle distribution", style);
   }
-  check_coord_diff(coord);
+  check_coord_diff(coord, nparticle, nattempt, "generation");
 }
 
 /* ---------------------------------------------------------------------- */
