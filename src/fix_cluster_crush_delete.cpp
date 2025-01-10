@@ -79,7 +79,7 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS* lmp, int narg, char** arg) 
 
   // Get the seed for coordinate generator
   int xseed = utils::inumeric(FLERR, arg[7], true, lmp);
-  xrandom   = new RanPark(lmp, xseed);
+  xrandom   = new RanPark(lmp, 12345);
 
   // Get the seed for coordinate generator
   int vseed = utils::inumeric(FLERR, arg[8], true, lmp);
@@ -575,7 +575,7 @@ void FixClusterCrushDelete::add()
 
 /* ---------------------------------------------------------------------- */
 
-bool FixClusterCrushDelete::placement_check_me(double* const newcoord, double* const sublo, double* const subhi) {
+bool FixClusterCrushDelete::placement_check_me(double* const newcoord, double* const sublo, double* const subhi) const {
   int flag = 0;
 
   if (placement_scheme == PLACEMENT_SCHEME::MIGRATE) { return static_cast<bool>(flag = comm->me == 0); }
@@ -603,6 +603,21 @@ bool FixClusterCrushDelete::placement_check_me(double* const newcoord, double* c
   //   }
   // }
 
+  int flagsum = 0;
+  ::MPI_Allreduce(&flag, &flagsum, 1, MPI_INT, MPI_SUM, world);
+  if (flagsum > 1) {
+    error->all(FLERR, "{}: Multiple procs ({} procs) tried to insert an atom (seems to be a fix bug)", style, flagsum);
+  }
+  if ((flagsum == 0) && (comm->me == 0)) {
+    utils::logmesg(lmp, "WARNING: {}: No procs decided to insert a new atom, that seemed to be valid (seems to be a fix bug)\n", style);
+  }
+
+  return static_cast<bool>(flag);
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixClusterCrushDelete::check_coord_diff(double* const newcoord) const noexcept {
   double multiplier = 1. / comm->nprocs;
   double coordaverage[3] = {0, 0, 0};
   double coordsum[3] = {0, 0, 0};
@@ -626,17 +641,6 @@ bool FixClusterCrushDelete::placement_check_me(double* const newcoord, double* c
   if (comm->me == 0) {
     utils::logmesg(lmp, "Coordinate stddev: {}, {}, {}\n", coordsum[0], coordsum[1], coordsum[2]);
   }
-
-  int flagsum = 0;
-  ::MPI_Allreduce(&flag, &flagsum, 1, MPI_INT, MPI_SUM, world);
-  if (flagsum > 1) {
-    error->all(FLERR, "{}: Multiple procs ({} procs) tried to insert an atom (seems to be a fix bug)", style, flagsum);
-  }
-  if ((flagsum == 0) && (comm->me == 0)) {
-    utils::logmesg(lmp, "WARNING: {}: No procs decided to insert a new atom, that seemed to be valid (seems to be a fix bug)\n", style);
-  }
-
-  return static_cast<bool>(flag);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -664,7 +668,7 @@ void FixClusterCrushDelete::create_atom(double* coord, bigint tag) noexcept
 
 /* ---------------------------------------------------------------------- */
 
-void FixClusterCrushDelete::gen_pos(double* const coord) const noexcept
+void FixClusterCrushDelete::gen_pos(double*  coord) const noexcept
 {
   // choose random position for new particle within region
   if (xdist == DIST::DIST_UNIFORM) {
@@ -682,11 +686,12 @@ void FixClusterCrushDelete::gen_pos(double* const coord) const noexcept
   } else {
     error->all(FLERR, "{}: Unknown particle distribution", style);
   }
+  check_coord_diff(coord);
 }
 
 /* ---------------------------------------------------------------------- */
 
-bool FixClusterCrushDelete::check_overlap(double* coord)
+bool FixClusterCrushDelete::check_overlap(double* coord) const noexcept
 {
   double** x       = atom->x;
   const int nlocal = atom->nlocal;

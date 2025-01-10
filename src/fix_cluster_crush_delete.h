@@ -82,9 +82,10 @@ class FixClusterCrushDelete : public Fix {
   void add();
   void gen_pos(double* const coord) const noexcept;
   int vartest(double x, double y, double z);
-  bool check_overlap(double* coord);
+  bool check_overlap(double* coord) const noexcept;
   void create_atom(double* coord, bigint tag) noexcept;
-  bool placement_check_me(double* const newcoord, double* const sublo, double* const subhi);
+  void check_coord_diff(double*  newcoord) const noexcept;
+  bool placement_check_me(double* const newcoord, double* const sublo, double* const subhi) const;
 };
 
 }    // namespace LAMMPS_NS
