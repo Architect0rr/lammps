@@ -565,7 +565,7 @@ void FixClusterCrushDelete::add()
     if (domain->triclinic) domain->lamda2x(atom->nlocal);
   }
 
-  if (comm->me == 0) { utils::logmesg(lmp, "{}: {}: {} atoms were inserted", style, update->ntimestep, ninserted); }
+  if (comm->me == 0) { utils::logmesg(lmp, "{}: {}: {} atoms were inserted\n", style, update->ntimestep, ninserted); }
 
   atom->tag_check();
 
