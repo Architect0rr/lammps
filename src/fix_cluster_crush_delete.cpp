@@ -625,8 +625,8 @@ void FixClusterCrushDelete::check_coord_diff(const double* const newcoord, int n
   int min_seed = 0;
   int max_seed = 0;
   ::MPI_Allreduce(newcoord, coordaverage, 3, MPI_DOUBLE, MPI_SUM, world);
-  ::MPI_Allreduce(&xrandom->seed, &min_seed, 3, MPI_INT, MPI_MIN, world);
-  ::MPI_Allreduce(&xrandom->seed, &max_seed, 3, MPI_INT, MPI_MAX, world);
+  ::MPI_Allreduce(&xrandom->seed, &min_seed, 1, MPI_INT, MPI_MIN, world);
+  ::MPI_Allreduce(&xrandom->seed, &max_seed, 1, MPI_INT, MPI_MAX, world);
   coordaverage[0] *= multiplier;
   coordaverage[1] *= multiplier;
   coordaverage[2] *= multiplier;
@@ -679,7 +679,7 @@ const double* const FixClusterCrushDelete::gen_pos(double* const coord, int npar
   if (xdist == DIST::DIST_UNIFORM) {
     do {
       coord[0] = sbonds[0] + xrandom->uniform() * (sbonds[1] - sbonds[0]);
-      coord[1] = sbonds[2] + xrandom->uniform() * (sbonds[2] - sbonds[2]);
+      coord[1] = sbonds[2] + xrandom->uniform() * (sbonds[3] - sbonds[2]);
       coord[2] = sbonds[4] + xrandom->uniform() * (sbonds[5] - sbonds[4]);
     } while (region->match(coord[0], coord[1], coord[2]) == 0);
   } else if (xdist == DIST::DIST_GAUSSIAN) {
