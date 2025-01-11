@@ -120,7 +120,7 @@ class AtomVec : protected Pointers {
   virtual int pack_restart_bonus(int, double *) { return 0; }
   virtual int unpack_restart_bonus(int, double *) { return 0; }
 
-  virtual void create_atom(int, double *);
+  virtual void create_atom(int, const double * const);
   virtual void create_atom_post(int) {}
 
   virtual void data_atom(double *, imageint, const std::vector<std::string> &, std::string &);
