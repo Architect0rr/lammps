@@ -80,10 +80,10 @@ class FixClusterCrushDelete : public Fix {
   void postDelete() noexcept(true);
 
   void add();
-  void gen_pos(double* const coord, int nparticle, int nattempt) const noexcept;
+  const double* const gen_pos(double* const coord, int nparticle, int nattempt) const noexcept;
   int vartest(double x, double y, double z);
   bool check_overlap(const double* const coord) const noexcept;
-  void create_atom(double* coord, bigint tag) noexcept;
+  void create_atom(const double* const coord, bigint tag) noexcept;
   void check_coord_diff(const double* const newcoord, int nparticle, int nattempt, const char* name) const noexcept;
   bool placement_check_me(const double* const newcoord, const double* const sublo, const double* const subhi, int nparticle, int nattempt) const;
 };

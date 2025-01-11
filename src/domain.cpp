@@ -2279,7 +2279,7 @@ void Domain::lamda2x(double *lamda, double *x)
    x and lamda can point to same 3-vector
 ------------------------------------------------------------------------- */
 
-void Domain::x2lamda(double *x, double *lamda)
+void Domain::x2lamda(const double * const x, double *lamda)
 {
   double delta[3];
   delta[0] = x[0] - boxlo[0];

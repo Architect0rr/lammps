@@ -448,7 +448,7 @@ void FixClusterCrushDelete::deleteAtoms(int atoms2move_local) noexcept(true)
 void FixClusterCrushDelete::add()
 {
   int warnflag = 0;
-  double coord[3];
+  double _coord[3];
   double r[3];
   double vnew[3];
 
@@ -501,17 +501,14 @@ void FixClusterCrushDelete::add()
       ++attempt;
 
       // generate new position and write it to coord (automatic check against region)
-      gen_pos(coord, added, attempt);
+      const double* const coord = gen_pos(_coord, added, attempt);
 
       // check against variable
       if ((varflag != 0) && vartest(coord[0], coord[1], coord[2]) == 0) { continue; }
 
-      double* newcoord;
       double lamda[3];
-      if (domain->triclinic != 0) {
-        domain->x2lamda(coord, lamda);
-        newcoord = lamda;
-      } else { newcoord = coord; }
+      domain->x2lamda(coord, lamda);
+      const double* const newcoord = domain->triclinic != 0 ? lamda : coord;
 
       // check against box
       bool proceed = newcoord[0] >= boxlo[0] && newcoord[0] < boxhi[0] && newcoord[1] >= boxlo[1] && newcoord[1] < boxhi[1] &&
@@ -567,6 +564,8 @@ void FixClusterCrushDelete::add()
     delete irregular;
     if (domain->triclinic) domain->lamda2x(atom->nlocal);
   }
+
+  if (comm->me == 0) { utils::logmesg(lmp, "{}: {}: {} atoms were inserted", style, update->ntimestep, ninserted); }
 
   atom->tag_check();
 
@@ -651,8 +650,12 @@ void FixClusterCrushDelete::check_coord_diff(const double* const newcoord, int n
 
 /* ---------------------------------------------------------------------- */
 
-void FixClusterCrushDelete::create_atom(double* coord, bigint tag) noexcept
+void FixClusterCrushDelete::create_atom(const double* const _coord, bigint tag) noexcept
 {
+  double coord[3];
+  coord[0] = _coord[0];
+  coord[1] = _coord[1];
+  coord[2] = _coord[2];
   atom->avec->create_atom(ntype, coord);
   int n          = atom->nlocal - 1;
   atom->tag[n]   = tag;
@@ -674,7 +677,7 @@ void FixClusterCrushDelete::create_atom(double* coord, bigint tag) noexcept
 
 /* ---------------------------------------------------------------------- */
 
-void FixClusterCrushDelete::gen_pos(double* const coord, int nparticle, int nattempt) const noexcept
+const double* const FixClusterCrushDelete::gen_pos(double* const coord, int nparticle, int nattempt) const noexcept
 {
   // choose random position for new particle within region
   if (xdist == DIST::DIST_UNIFORM) {
@@ -693,6 +696,7 @@ void FixClusterCrushDelete::gen_pos(double* const coord, int nparticle, int natt
     error->all(FLERR, "{}: Unknown particle distribution", style);
   }
   check_coord_diff(coord, nparticle, nattempt, "generation");
+  return coord;
 }
 
 /* ---------------------------------------------------------------------- */
