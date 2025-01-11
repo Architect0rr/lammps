@@ -108,17 +108,6 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS* lmp, int narg, char** arg) 
       vdist = DIST::DIST_GAUSSIAN;
       iarg += 2;
 
-    } else if (::strcmp(arg[iarg], "placement_scheme") == 0) {
-      // Placement scheme
-      if (::strcmp(arg[iarg+1], "inplace") == 0) {
-        placement_scheme = PLACEMENT_SCHEME::INPLACE;
-      } else if (::strcmp(arg[iarg+1], "migrate") == 0) {
-        placement_scheme = PLACEMENT_SCHEME::MIGRATE;
-      } else {
-        error->all(FLERR, "{}: unknown placement scheme: {}", style, arg[iarg+1]);
-      }
-      iarg += 2;
-
     } else if (::strcmp(arg[iarg], "noscreen") == 0) {
       // Do not output to screen
       screenflag = 0;
@@ -221,8 +210,6 @@ FixClusterCrushDelete::FixClusterCrushDelete(LAMMPS* lmp, int narg, char** arg) 
   }
 
   // further setup and error check
-
-  if (placement_scheme == PLACEMENT_SCHEME::MIGRATE) { pre_exchange_migrate = 1; }
 
   // Get temp compute
   auto temp_computes = lmp->modify->get_compute_by_style("temp");
@@ -412,18 +399,18 @@ void FixClusterCrushDelete::pre_exchange()
   to_insert += atoms2move_total;
   int to_insert_prev = to_insert;
 
-  if (to_insert > 0) { add(); }
+  int ninserted = 0;
+  if (to_insert > 0) { ninserted = add(); }
+  to_insert -= ninserted;
 
   bigint nblocal = atom->nlocal;
   ::MPI_Allreduce(&nblocal, &atom->natoms, 1, MPI_LMP_BIGINT, MPI_SUM, world);
-
-  // if (comm->me == 0) { utils::logmesg(lmp, "{}: {} — fix cluster/crush: {}\n", update->ntimestep, atom->natoms, getCurrentTime()); }
 
   if (comm->me == 0) {
     // print status
     if (screenflag != 0) { utils::logmesg(lmp, "Crushed {} clusters -> deleted {} atoms.\n", clusters2crush_total, atoms2move_total); }
     if (fileflag != 0) {
-      fmt::print(fp, "{},{},{},{},{},{}\n", update->ntimestep, atom->natoms, clusters2crush_total, atoms2move_total, to_insert_prev - to_insert,
+      fmt::print(fp, "{},{},{},{},{},{}\n", update->ntimestep, atom->natoms, clusters2crush_total, atoms2move_total, ninserted,
                  to_insert);
       ::fflush(fp);
     }
@@ -445,12 +432,11 @@ void FixClusterCrushDelete::deleteAtoms(int atoms2move_local) noexcept(true)
 
 /* ---------------------------------------------------------------------- */
 
-void FixClusterCrushDelete::add()
+int FixClusterCrushDelete::add() const
 {
   int warnflag = 0;
   double _coord[3];
-  double r[3];
-  double vnew[3];
+  // double r[3];
 
   // clear ghost count (and atom map) and any ghost bonus data
   //   internal to AtomVec
@@ -558,28 +544,7 @@ void FixClusterCrushDelete::add()
     atom->map_set();
   }
 
-  if (placement_scheme == PLACEMENT_SCHEME::MIGRATE) {
-    // move atoms back inside simulation box and to new processors
-    // use remap() instead of pbc() in case atoms moved a long distance
-    // use irregular() in case atoms moved a long distance
-
-    double** x      = atom->x;
-    imageint* image = atom->image;
-    for (int i = 0; i < atom->nlocal; i++) domain->remap(x[i], image[i]);
-
-    if (domain->triclinic) domain->x2lamda(atom->nlocal);
-    domain->reset_box();
-    auto irregular = new Irregular(lmp);
-    irregular->migrate_atoms(1);
-    delete irregular;
-    if (domain->triclinic) domain->lamda2x(atom->nlocal);
-  }
-
-  if (comm->me == 0) { utils::logmesg(lmp, "{}: {}: {} atoms were inserted\n", style, update->ntimestep, ninserted); }
-
-  atom->tag_check();
-
-  to_insert -= ninserted;
+  return ninserted;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -587,11 +552,9 @@ void FixClusterCrushDelete::add()
 int FixClusterCrushDelete::placement_check_me(const double* const newcoord, const double* const sublo, const double* const subhi, int nparticle, int nattempt) const {
   int flag = 0;
 
-  if (placement_scheme == PLACEMENT_SCHEME::MIGRATE) { return flag = comm->me == 0 ? 1 : 0; }
-
-  if (newcoord[0] > sublo[0] && newcoord[0] < subhi[0] &&
-      newcoord[1] > sublo[1] && newcoord[1] < subhi[1] &&
-      newcoord[2] > sublo[2] && newcoord[2] < subhi[2]) flag = 1;
+  if (newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
+      newcoord[1] >= sublo[1] && newcoord[1] < subhi[1] &&
+      newcoord[2] >= sublo[2] && newcoord[2] < subhi[2]) flag = 1;
   else if (domain->dimension == 3 && newcoord[2] >= domain->boxhi[2]) {
     if (comm->layout != Comm::LAYOUT_TILED) {
       if (comm->myloc[2] == comm->procgrid[2]-1 &&
@@ -612,45 +575,12 @@ int FixClusterCrushDelete::placement_check_me(const double* const newcoord, cons
     }
   }
 
-  check_coord_diff(newcoord, nparticle, nattempt, "placement_check");
   return flag;
 }
 
 /* ---------------------------------------------------------------------- */
 
-void FixClusterCrushDelete::check_coord_diff(const double* const newcoord, int nparticle, int nattempt, const char *name) const noexcept {
-  double multiplier = 1. / comm->nprocs;
-  double coordaverage[3] = {0, 0, 0};
-  double coordsum[3] = {0, 0, 0};
-  int min_seed = 0;
-  int max_seed = 0;
-  ::MPI_Allreduce(newcoord, coordaverage, 3, MPI_DOUBLE, MPI_SUM, world);
-  ::MPI_Allreduce(&xrandom->seed, &min_seed, 1, MPI_INT, MPI_MIN, world);
-  ::MPI_Allreduce(&xrandom->seed, &max_seed, 1, MPI_INT, MPI_MAX, world);
-  coordaverage[0] *= multiplier;
-  coordaverage[1] *= multiplier;
-  coordaverage[2] *= multiplier;
-  coordaverage[0] -= newcoord[0];
-  coordaverage[1] -= newcoord[1];
-  coordaverage[2] -= newcoord[2];
-  coordaverage[0] *= coordaverage[0];
-  coordaverage[1] *= coordaverage[1];
-  coordaverage[2] *= coordaverage[2];
-  ::MPI_Allreduce(coordaverage, coordsum, 3, MPI_DOUBLE, MPI_SUM, world);
-  coordsum[0] *= multiplier * multiplier;
-  coordsum[1] *= multiplier * multiplier;
-  coordsum[2] *= multiplier * multiplier;
-  coordsum[0] = ::sqrt(coordsum[0]);
-  coordsum[1] = ::sqrt(coordsum[1]);
-  coordsum[2] = ::sqrt(coordsum[2]);
-  if (comm->me == 0) {
-    utils::logmesg(lmp, "{}-{}-{}-{}: Coordinate stddev: ({}, {}, {}), seeds are {}\n", update->ntimestep, nparticle, nattempt, name, coordsum[0], coordsum[1], coordsum[2], min_seed == max_seed ? "sync" : "desync");
-  }
-}
-
-/* ---------------------------------------------------------------------- */
-
-void FixClusterCrushDelete::create_atom(const double* const coord, bigint tag) noexcept
+void FixClusterCrushDelete::create_atom(const double* const coord, bigint tag) const noexcept
 {
   atom->avec->create_atom(ntype, coord);
   int n          = atom->nlocal - 1;
@@ -691,7 +621,7 @@ const double* const FixClusterCrushDelete::gen_pos(double* const coord, int npar
   } else {
     error->all(FLERR, "{}: Unknown particle distribution", style);
   }
-  check_coord_diff(coord, nparticle, nattempt, "generation");
+  // check_coord_diff(coord, nparticle, nattempt, "generation");
   return coord;
 }
 
@@ -777,7 +707,7 @@ void FixClusterCrushDelete::postDelete() noexcept(true)
    first set x,y,z values in internal variables
 ------------------------------------------------------------------------- */
 
-int FixClusterCrushDelete::vartest(double x, double y, double z)
+int FixClusterCrushDelete::vartest(double x, double y, double z) const noexcept
 {
   if (xstr != nullptr) { input->variable->internal_set(vars[0], x); }
   if (ystr != nullptr) { input->variable->internal_set(vars[1], y); }

@@ -20,7 +20,6 @@ FixStyle(cluster/crush/delete,FixClusterCrushDelete);
 #include <array>
 
 enum class DIST {DIST_UNIFORM,DIST_GAUSSIAN};
-enum class PLACEMENT_SCHEME {INPLACE,MIGRATE};
 
 namespace LAMMPS_NS {
 class FixClusterCrushDelete : public Fix {
@@ -61,7 +60,6 @@ class FixClusterCrushDelete : public Fix {
   int maxtry = 1000;
   int ntype = 0;
   int groupid = 0;
-  PLACEMENT_SCHEME placement_scheme = PLACEMENT_SCHEME::INPLACE;
 
   //velocity and coordinates
   bool fix_temp = false;
@@ -79,12 +77,11 @@ class FixClusterCrushDelete : public Fix {
   void deleteAtoms(int atoms2move_local) noexcept(true);
   void postDelete() noexcept(true);
 
-  void add();
+  int add() const;
   const double* const gen_pos(double* const coord, int nparticle, int nattempt) const noexcept;
-  int vartest(double x, double y, double z);
+  int vartest(double x, double y, double z) const noexcept;
   bool check_overlap(const double* const coord) const noexcept;
-  void create_atom(const double* const coord, bigint tag) noexcept;
-  void check_coord_diff(const double* const newcoord, int nparticle, int nattempt, const char* name) const noexcept;
+  void create_atom(const double* const coord, bigint tag) const noexcept;
   int placement_check_me(const double* const newcoord, const double* const sublo, const double* const subhi, int nparticle, int nattempt) const;
 };
 
