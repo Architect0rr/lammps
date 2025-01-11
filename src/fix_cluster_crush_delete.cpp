@@ -650,12 +650,8 @@ void FixClusterCrushDelete::check_coord_diff(const double* const newcoord, int n
 
 /* ---------------------------------------------------------------------- */
 
-void FixClusterCrushDelete::create_atom(const double* const _coord, bigint tag) noexcept
+void FixClusterCrushDelete::create_atom(const double* const coord, bigint tag) noexcept
 {
-  double coord[3];
-  coord[0] = _coord[0];
-  coord[1] = _coord[1];
-  coord[2] = _coord[2];
   atom->avec->create_atom(ntype, coord);
   int n          = atom->nlocal - 1;
   atom->tag[n]   = tag;
