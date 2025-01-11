@@ -1590,7 +1590,7 @@ int AtomVec::unpack_restart(double *buf)
    set other values to defaults
 ------------------------------------------------------------------------- */
 
-void AtomVec::create_atom(int itype, double * coord)
+void AtomVec::create_atom(int itype, double *coord)
 {
   int m, n, datatype, cols;
   void *pdata;
