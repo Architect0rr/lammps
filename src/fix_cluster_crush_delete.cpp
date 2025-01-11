@@ -519,9 +519,19 @@ void FixClusterCrushDelete::add()
       if (check_overlap(coord) != 1) { continue; }
 
       // if ok, create atom and generate velocity
-      if (placement_check_me(newcoord, sublo, subhi, added, attempt)) { create_atom(coord, maxtag_all + 1); }
+      int placement_flag = placement_check_me(newcoord, sublo, subhi, added, attempt);
+      if (placement_flag != 0) { create_atom(coord, maxtag_all + 1); }
 
-      success = 1;
+      int flagsum = 0;
+      ::MPI_Allreduce(&placement_flag, &flagsum, 1, MPI_INT, MPI_SUM, world);
+      if (flagsum > 1) {
+        error->all(FLERR, "{}: Multiple procs ({} procs) tried to insert an atom (seems to be a fix bug)", style, flagsum);
+      }
+      if ((flagsum == 0) && (comm->me == 0)) {
+        utils::logmesg(lmp, "WARNING: {}: No procs decided to insert a new atom, that seemed to be valid (seems to be a fix bug)\n", style);
+      }
+
+      success = flagsum != 0 ? 1 : 0;
       break;
     }
 
@@ -574,46 +584,36 @@ void FixClusterCrushDelete::add()
 
 /* ---------------------------------------------------------------------- */
 
-bool FixClusterCrushDelete::placement_check_me(const double* const newcoord, const double* const sublo, const double* const subhi, int nparticle, int nattempt) const {
+int FixClusterCrushDelete::placement_check_me(const double* const newcoord, const double* const sublo, const double* const subhi, int nparticle, int nattempt) const {
   int flag = 0;
 
-  if (placement_scheme == PLACEMENT_SCHEME::MIGRATE) { return static_cast<bool>(flag = comm->me == 0); }
+  if (placement_scheme == PLACEMENT_SCHEME::MIGRATE) { return flag = comm->me == 0 ? 1 : 0; }
 
   if (newcoord[0] > sublo[0] && newcoord[0] < subhi[0] &&
       newcoord[1] > sublo[1] && newcoord[1] < subhi[1] &&
-      newcoord[2] > sublo[2] && newcoord[2] < subhi[2]) flag = true;
-  // else if (domain->dimension == 3 && newcoord[2] >= domain->boxhi[2]) {
-  //   if (comm->layout != Comm::LAYOUT_TILED) {
-  //     if (comm->myloc[2] == comm->procgrid[2]-1 &&
-  //         newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
-  //         newcoord[1] >= sublo[1] && newcoord[1] < subhi[1]) flag = true;
-  //   } else {
-  //     if (comm->mysplit[2][1] == 1.0 &&
-  //         newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
-  //         newcoord[1] >= sublo[1] && newcoord[1] < subhi[1]) flag = true;
-  //   }
-  // } else if (domain->dimension == 2 && newcoord[1] >= domain->boxhi[1]) {
-  //   if (comm->layout != Comm::LAYOUT_TILED) {
-  //     if (comm->myloc[1] == comm->procgrid[1]-1 &&
-  //         newcoord[0] >= sublo[0] && newcoord[0] < subhi[0]) flag = true;
-  //   } else {
-  //     if (comm->mysplit[1][1] == 1.0 &&
-  //         newcoord[0] >= sublo[0] && newcoord[0] < subhi[0]) flag = true;
-  //   }
-  // }
+      newcoord[2] > sublo[2] && newcoord[2] < subhi[2]) flag = 1;
+  else if (domain->dimension == 3 && newcoord[2] >= domain->boxhi[2]) {
+    if (comm->layout != Comm::LAYOUT_TILED) {
+      if (comm->myloc[2] == comm->procgrid[2]-1 &&
+          newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
+          newcoord[1] >= sublo[1] && newcoord[1] < subhi[1]) flag = 1;
+    } else {
+      if (comm->mysplit[2][1] == 1.0 &&
+          newcoord[0] >= sublo[0] && newcoord[0] < subhi[0] &&
+          newcoord[1] >= sublo[1] && newcoord[1] < subhi[1]) flag = 1;
+    }
+  } else if (domain->dimension == 2 && newcoord[1] >= domain->boxhi[1]) {
+    if (comm->layout != Comm::LAYOUT_TILED) {
+      if (comm->myloc[1] == comm->procgrid[1]-1 &&
+          newcoord[0] >= sublo[0] && newcoord[0] < subhi[0]) flag = 1;
+    } else {
+      if (comm->mysplit[1][1] == 1.0 &&
+          newcoord[0] >= sublo[0] && newcoord[0] < subhi[0]) flag = 1;
+    }
+  }
 
   check_coord_diff(newcoord, nparticle, nattempt, "placement_check");
-
-  int flagsum = 0;
-  ::MPI_Allreduce(&flag, &flagsum, 1, MPI_INT, MPI_SUM, world);
-  if (flagsum > 1) {
-    error->all(FLERR, "{}: Multiple procs ({} procs) tried to insert an atom (seems to be a fix bug)", style, flagsum);
-  }
-  if ((flagsum == 0) && (comm->me == 0)) {
-    utils::logmesg(lmp, "WARNING: {}: No procs decided to insert a new atom, that seemed to be valid (seems to be a fix bug)\n", style);
-  }
-
-  return static_cast<bool>(flag);
+  return flag;
 }
 
 /* ---------------------------------------------------------------------- */
