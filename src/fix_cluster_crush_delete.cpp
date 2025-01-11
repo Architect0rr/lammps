@@ -435,7 +435,7 @@ void FixClusterCrushDelete::deleteAtoms(int atoms2move_local) noexcept(true)
 int FixClusterCrushDelete::add() const
 {
   int warnflag = 0;
-  double _coord[3];
+  double coord[3];
   // double r[3];
 
   // clear ghost count (and atom map) and any ghost bonus data
@@ -487,7 +487,7 @@ int FixClusterCrushDelete::add() const
       ++attempt;
 
       // generate new position and write it to coord (automatic check against region)
-      const double* const coord = gen_pos(_coord, added, attempt);
+      gen_pos(coord, added, attempt);
 
       // check against variable
       if ((varflag != 0) && vartest(coord[0], coord[1], coord[2]) == 0) { continue; }
@@ -580,7 +580,7 @@ int FixClusterCrushDelete::placement_check_me(const double* const newcoord, cons
 
 /* ---------------------------------------------------------------------- */
 
-void FixClusterCrushDelete::create_atom(const double* const coord, bigint tag) const noexcept
+void FixClusterCrushDelete::create_atom(double* const coord, bigint tag) const noexcept
 {
   atom->avec->create_atom(ntype, coord);
   int n          = atom->nlocal - 1;
@@ -603,7 +603,7 @@ void FixClusterCrushDelete::create_atom(const double* const coord, bigint tag) c
 
 /* ---------------------------------------------------------------------- */
 
-const double* const FixClusterCrushDelete::gen_pos(double* const coord, int nparticle, int nattempt) const noexcept
+void FixClusterCrushDelete::gen_pos(double* const coord, int nparticle, int nattempt) const noexcept
 {
   // choose random position for new particle within region
   if (xdist == DIST::DIST_UNIFORM) {
@@ -621,8 +621,6 @@ const double* const FixClusterCrushDelete::gen_pos(double* const coord, int npar
   } else {
     error->all(FLERR, "{}: Unknown particle distribution", style);
   }
-  // check_coord_diff(coord, nparticle, nattempt, "generation");
-  return coord;
 }
 
 /* ---------------------------------------------------------------------- */
