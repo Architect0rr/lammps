@@ -252,7 +252,8 @@ void ComputeClusterSizeExt::compute_vector()
     cluster_data& clstr = clusters[clidx];
     clstr.l_size = ns[2 * clidx + 1];
     clstr.rearrange();
-    for (int i = 0; i < clstr.l_size; ++i) { peratom_size[clstr.atoms()[i]] = clstr.g_size; }
+    auto clatoms = clstr.atoms();
+    for (int i = 0; i < clstr.l_size; ++i) { peratom_size[clatoms[i]] = clstr.g_size; }
     if ((clstr.g_size < size_cutoff) && (clstr.g_size > 1)) { cbs_all[clstr.g_size].push_back(clidx); }
     if (clstr.host == comm->me) {
       if (clstr.g_size < size_cutoff) { dist_local[clstr.g_size] += 1; }

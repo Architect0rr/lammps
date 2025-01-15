@@ -372,8 +372,13 @@ void FixClusterCrushDelete::pre_exchange()
     const auto& clstr = clusters[i];
     if (clstr.g_size > kmax) {
       ++clusters2crush_local;
-      ::memcpy(p2m.offset(atoms2move_local), clstr.atoms().data(), clstr.l_size * sizeof(int));
-      atoms2move_local += clstr.l_size;
+      // ::memcpy(p2m.offset(atoms2move_local), clstr.atoms().data(), clstr.l_size * sizeof(int));
+      const auto clatoms = clstr.atoms();
+      for (int i = 0; i < clstr.l_size; ++i) {
+        if (clatoms[i] >= atom->nlocal) { error->one(FLERR, "{}/pre_exchange:{}: particle index exceeds nlocal", style, comm->me); }
+        p2m[atoms2move_local++] = clatoms[i];
+      }
+      // atoms2move_local += clstr.l_size;
     }
   }
 
