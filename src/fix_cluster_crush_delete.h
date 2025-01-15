@@ -74,7 +74,7 @@ class FixClusterCrushDelete : public Fix {
   char *vstr{}, *xstr{}, *ystr{}, *zstr{};
   std::array<int, 4> vars{};
 
-  void deleteAtoms(int atoms2move_local) noexcept(true);
+  void deleteAtoms(const int atoms2move_local) const noexcept(true);
   void postDelete() noexcept(true);
 
   int add() const;

@@ -39,6 +39,8 @@ class ComputeClusterEnthropy : public Compute {
   class ComputeClusterSizeExt *compute_cluster_size = nullptr;
   Compute *compute_ke_atom = nullptr;
   Compute *compute_pe_atom = nullptr;
+  Compute *compute_temp_cluster = nullptr;
+  Compute *compute_entropy_atom = nullptr;
 
   double *temp = nullptr;          // array of temps of global clusters
   double *local_temp = nullptr;    // array of temps of local clusters

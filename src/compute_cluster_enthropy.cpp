@@ -28,6 +28,8 @@
 
 using namespace LAMMPS_NS;
 
+constexpr double planck_constant = 0.18292026;
+
 /* ---------------------------------------------------------------------- */
 
 ComputeClusterEnthropy::ComputeClusterEnthropy(LAMMPS* lmp, int narg, char** arg) : Compute(lmp, narg, arg)
@@ -50,22 +52,31 @@ ComputeClusterEnthropy::ComputeClusterEnthropy(LAMMPS* lmp, int narg, char** arg
   // Get cluster/size compute
   compute_cluster_size = dynamic_cast<ComputeClusterSizeExt*>(lmp->modify->get_compute_by_id(arg[3]));
   if (compute_cluster_size == nullptr) {
-    error->all(FLERR, "compute cluster/enthropy: Cannot find compute with style 'cluster/size' with id: {}", arg[3]);
+    error->all(FLERR, "{}: Cannot find compute with style 'cluster/size' with id: {}", style, arg[3]);
   }
 
-  // Get the critical size
-  size_cutoff = utils::inumeric(FLERR, arg[4], true, lmp);
-  if (size_cutoff < 1) { error->all(FLERR, "size_cutoff for compute cluster/enthropy must be greater than 0"); }
+  size_cutoff = compute_cluster_size->get_size_cutoff();
+  if ((narg >= 4) && (::strcmp(arg[4], "inherit") != 0)) {
+    int t_size_cutoff = utils::inumeric(FLERR, arg[4], true, lmp);
+    if (t_size_cutoff < 1) { error->all(FLERR, "{}: size_cutoff must be greater than 0", style); }
+    if (t_size_cutoff > size_cutoff) { error->all(FLERR, "{}: size_cutoff cannot be greater than it of compute sizecluster", style); }
+  }
 
   // Get ke/atom compute
-  auto ke_computes = lmp->modify->get_compute_by_style("ke/atom");
-  if (ke_computes.empty()) { error->all(FLERR, "compute cluster/enthropy: Cannot find compute with style 'ke/atom'"); }
-  compute_ke_atom  = ke_computes[0];
+  compute_ke_atom = lmp->modify->get_compute_by_id(arg[5]);
+  if (compute_ke_atom == nullptr) { error->all(FLERR, "{}: Cannot find compute with style id '{}'", style, arg[5]); }
 
   // Get pe/atom compute
-  auto pe_computes = lmp->modify->get_compute_by_style("pe/atom");
-  if (pe_computes.empty()) { error->all(FLERR, "compute cluster/enthropy: Cannot find compute with style 'pe/atom'"); }
-  compute_pe_atom = pe_computes[0];
+  compute_pe_atom = lmp->modify->get_compute_by_id(arg[6]);
+  if (compute_pe_atom == nullptr) { error->all(FLERR, "{}: Cannot find compute with id '{}'", style, arg[6]); }
+
+  // Get entropy/atom compute
+  compute_entropy_atom = lmp->modify->get_compute_by_id(arg[7]);
+  if (compute_entropy_atom == nullptr) { error->all(FLERR, "{}: Cannot find compute with id '{}'", style, arg[7]); }
+
+  // Get temp/cluster compute
+  compute_temp_cluster = lmp->modify->get_compute_by_id(arg[8]);
+  if (compute_temp_cluster == nullptr) { error->all(FLERR, "{}: Cannot find compute with id '{}'", style, arg[8]); }
 
   size_local_rows = size_cutoff + 1;
   memory->create(local_temp, size_local_rows + 1, "compute:cluster/enthropy:temp");
@@ -80,8 +91,8 @@ ComputeClusterEnthropy::ComputeClusterEnthropy(LAMMPS* lmp, int narg, char** arg
 
 ComputeClusterEnthropy::~ComputeClusterEnthropy() noexcept(true)
 {
-  if (local_temp != nullptr) { memory->destroy(local_temp); }
-  if (temp != nullptr) { memory->destroy(temp); }
+  memory->destroy(local_temp);
+  memory->destroy(temp);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -118,15 +129,7 @@ void ComputeClusterEnthropy::compute_local()
   const double* kes = compute_ke_atom->vector_atom;
   ::memset(local_temp, 0.0, size_local_rows * sizeof(double));
 
-  // for (const auto &[size, vec] : compute_cluster_size->cIDs_by_size) {
-  //   if (size < size_cutoff) {
-  //     for (const tagint cid : vec) {
-  //       for (const tagint pid : compute_cluster_size->atoms_by_cID[cid]) {
-  //         local_temp[size] += 2 * kes[pid];
-  //       }
-  //     }
-  //   }
-  // }
+
 }
 
 /* ----------------------------------------------------------------------

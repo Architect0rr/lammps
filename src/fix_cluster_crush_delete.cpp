@@ -420,15 +420,18 @@ void FixClusterCrushDelete::pre_exchange()
 
 /* ---------------------------------------------------------------------- */
 
-void FixClusterCrushDelete::deleteAtoms(int atoms2move_local) noexcept(true)
+void FixClusterCrushDelete::deleteAtoms(const int atoms2move_local) const noexcept(true)
 {
   // delete local atoms
   // reset nlocal
 
-  for (int i = atoms2move_local - 1; i >= 0; --i) { atom->avec->copy(atom->nlocal - atoms2move_local + i, p2m[i], 1); }
-
-  atom->nlocal -= atoms2move_local;
-}    // void FixClusterCrush::delete_monomers(int)
+  for (int i = 0; i < atoms2move_local; i++) {
+    if (atom->nlocal < 0) { error->one(FLERR, "{}/deleteAtoms:{}: Negative nlocal", style, comm->me); }
+    if (p2m[i] < 0) { error->one(FLERR, "{}/deleteAtoms:{}: particle index less than 0", style, comm->me); }
+    if (p2m[i] >= atom->nlocal) { error->one(FLERR, "{}/deleteAtoms:{}: particle index exceeds nlocal", style, comm->me); }
+    atom->avec->copy((atom->nlocal--) - 1, p2m[i], 1);
+  }
+}
 
 /* ---------------------------------------------------------------------- */
 
