@@ -37,6 +37,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <algorithm>
 #include <unordered_map>
 
 using namespace LAMMPS_NS;
@@ -375,6 +376,8 @@ void FixClusterCrushDelete::pre_exchange()
       atoms2move_local += clstr.l_size;
     }
   }
+
+  std::sort(p2m.data(), p2m.data() + p2m.size(), [](auto a, auto b) { return a > b; });
 
   c2c.reset();
   c2c[comm->me] = clusters2crush_local;
