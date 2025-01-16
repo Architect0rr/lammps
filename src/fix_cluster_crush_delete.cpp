@@ -352,7 +352,7 @@ void FixClusterCrushDelete::pre_exchange()
   if (update->ntimestep < next_step) { return; }
   next_step = update->ntimestep + nevery;
 
-  if (compute_cluster_size->invoked_vector < update->ntimestep) { compute_cluster_size->compute_vector(); }
+  if (compute_cluster_size->invoked_vector != update->ntimestep) { compute_cluster_size->compute_vector(); }
   const auto& cIDs_by_size = compute_cluster_size->get_cIDs_by_size();
 
   if (nloc < atom->nlocal) {
