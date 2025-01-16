@@ -62,7 +62,7 @@ FixDeposit::FixDeposit(LAMMPS *lmp, int narg, char **arg) :
 
   ninsert = utils::inumeric(FLERR, arg[3], false, lmp);
   ntype = utils::expand_type_int(FLERR, arg[4], Atom::ATOM, lmp);
-  nfreq = utils::inumeric(FLERR, arg[5], false, lmp);
+  // nfreq = utils::inumeric(FLERR, arg[5], false, lmp);
   seed = utils::inumeric(FLERR, arg[6], false, lmp);
 
   if (seed <= 0) error->all(FLERR,"Illegal fix deposit command");
@@ -70,6 +70,16 @@ FixDeposit::FixDeposit(LAMMPS *lmp, int narg, char **arg) :
   // read options from end of input line
 
   options(narg-7,&arg[7]);
+
+  if (depunitflag == 0) {
+    nfreq = utils::inumeric(FLERR, arg[5], false, lmp);
+  } else {
+    tfreq = utils::numeric(FLERR, arg[5], false, lmp);
+    nfreq = static_cast<int>(tfreq / update->dt);
+  }
+
+  if ((nfreq < 0) || (tfreq < 0))
+    error->all(FLERR,"Deposition frequency must be greater than zero in fix deposit command");
 
   // error check on type
 
@@ -199,7 +209,8 @@ FixDeposit::FixDeposit(LAMMPS *lmp, int narg, char **arg) :
 
   force_reneighbor = 1;
   next_reneighbor = update->ntimestep + 1;
-  nfirst = next_reneighbor-nfreq;
+  nprev = next_reneighbor-nfreq;
+  ncalled = 0;
   ninserted = 0;
 }
 
@@ -300,7 +311,8 @@ void FixDeposit::init()
 
 void FixDeposit::setup_pre_exchange()
 {
-  if (ninserted < ninsert) next_reneighbor = nfirst + ((update->ntimestep - nfirst)/nfreq)*nfreq + nfreq;
+  if (depunitflag != 0) nfreq = static_cast<int>(tfreq / update->dt);
+  if (ninserted < ninsert) next_reneighbor = nprev + nfreq;
   else next_reneighbor = 0;
 }
 
@@ -331,7 +343,10 @@ void FixDeposit::pre_exchange()
   // compute current offset = bottom of insertion volume
 
   double offset = 0.0;
-  if (rateflag) offset = (update->ntimestep - nfirst) * update->dt * rate;
+  if (rateflag) {
+    if (depunitflag == 0) offset = update->dt * ncalled * nfreq * rate;
+    else offset = ncalled * tfreq * rate;
+  }
 
   double *sublo,*subhi;
   if (domain->triclinic == 0) {
@@ -546,6 +561,12 @@ void FixDeposit::pre_exchange()
         }
       }
 
+      int flagsum = 0;
+      ::MPI_Allreduce(&flag, &flagsum, 1, MPI_INT, MPI_SUM, world);
+      if (flagsum > 1) {
+        error->all(FLERR, "{}: Several procs ({}) tried to simultaneously insert the same atom", style, flagsum);
+      }
+
       if (flag) {
         if (mode == ATOM) atom->avec->create_atom(ntype,coords[m]);
         else atom->avec->create_atom(ntype+onemols[imol]->type[m],coords[m]);
@@ -642,6 +663,15 @@ void FixDeposit::pre_exchange()
   else next_reneighbor = 0;
 }
 
+/* ---------------------------------------------------------------------- */
+
+void FixDeposit::reset_dt() {
+  if (depunitflag) {
+    nfreq = static_cast<int>(tfreq / update->dt);
+    next_reneighbor = nprev + nfreq;
+  }
+}
+
 /* ----------------------------------------------------------------------
    maxtag_all = current max atom ID for all atoms
    maxmol_all = current max molecule ID for all atoms
@@ -693,6 +723,7 @@ void FixDeposit::options(int narg, char **arg)
   sigma = 1.0;
   xmid = ymid = zmid = 0.0;
   scaleflag = 1;
+  depunitflag = 0;
   targetflag = 0;
   orientflag = 0;
   warnflag = 1;
@@ -843,6 +874,12 @@ void FixDeposit::options(int narg, char **arg)
       sigma = utils::numeric(FLERR,arg[iarg+4],false,lmp);
       distflag = DIST_GAUSSIAN;
       iarg += 5;
+    } else if (strcmp(arg[iarg],"depunit") == 0) {
+      if (iarg+1 > narg) error->all(FLERR,"Illegal fix deposit command");
+      if (strcmp(arg[iarg+1],"step") == 0) depunitflag = 0;
+      else if (strcmp(arg[iarg+1],"time") == 0) depunitflag = 1;
+      else error->all(FLERR,"Illegal fix deposit command");
+      iarg += 2;
     } else if (strcmp(arg[iarg],"target") == 0) {
       if (iarg+4 > narg) error->all(FLERR,"Illegal fix deposit command");
       tx = utils::numeric(FLERR,arg[iarg+1],false,lmp);
@@ -885,6 +922,8 @@ void FixDeposit::options(int narg, char **arg)
         error->all(FLERR, "Variable for fix deposit is invalid style");
     }
   }
+
+  ++ncalled;
 }
 
 /* ----------------------------------------------------------------------
@@ -906,7 +945,8 @@ void FixDeposit::write_restart(FILE *fp)
   double list[5];
   list[n++] = random->state();
   list[n++] = ninserted;
-  list[n++] = ubuf(nfirst).d;
+  list[n++] = ubuf(nprev).d;
+  list[n++] = ubuf(ncalled).d;
   list[n++] = ubuf(next_reneighbor).d;
   list[n++] = ubuf(update->ntimestep).d;
 
@@ -928,7 +968,8 @@ void FixDeposit::restart(char *buf)
 
   seed = static_cast<int>(list[n++]);
   ninserted = static_cast<int>(list[n++]);
-  nfirst = static_cast<bigint>(ubuf(list[n++]).i);
+  nprev = static_cast<bigint>(ubuf(list[n++]).i);
+  ncalled = static_cast<int>(ubuf(list[n++]).i);
   next_reneighbor = static_cast<bigint>(ubuf(list[n++]).i);
 
   bigint ntimestep_restart = static_cast<bigint>(ubuf(list[n++]).i);

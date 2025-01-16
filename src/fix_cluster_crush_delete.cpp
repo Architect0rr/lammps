@@ -382,7 +382,7 @@ void FixClusterCrushDelete::pre_exchange()
     }
   }
 
-  std::sort(p2m.data(), p2m.data() + p2m.size(), [](auto a, auto b) { return a > b; });
+  std::sort(p2m.data(), p2m.data() + p2m.size(), std::greater<int>());
 
   c2c.reset();
   c2c[comm->me] = clusters2crush_local;
@@ -437,8 +437,9 @@ void FixClusterCrushDelete::deleteAtoms(const int atoms2move_local) const noexce
     if (atom->nlocal < 0) { error->one(FLERR, "{}/deleteAtoms:{}: Negative nlocal", style, comm->me); }
     if (p2m[i] < 0) { error->one(FLERR, "{}/deleteAtoms:{}: particle index less than 0", style, comm->me); }
     if (p2m[i] >= atom->nlocal) { error->one(FLERR, "{}/deleteAtoms:{}: particle index exceeds nlocal", style, comm->me); }
-    atom->avec->copy((atom->nlocal--) - 1, p2m[i], 1);
+    atom->avec->copy(atom->nlocal-1-i, p2m[i], 1);
   }
+  atom->nlocal -= atoms2move_local;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -447,7 +448,6 @@ int FixClusterCrushDelete::add() const
 {
   int warnflag = 0;
   double coord[3];
-  // double r[3];
 
   // clear ghost count (and atom map) and any ghost bonus data
   //   internal to AtomVec

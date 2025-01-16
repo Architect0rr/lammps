@@ -32,16 +32,18 @@ class FixDeposit : public Fix {
   void init() override;
   void setup_pre_exchange() override;
   void pre_exchange() override;
+  void reset_dt() override;
   double compute_scalar() override;
   void write_restart(FILE *) override;
   void restart(char *) override;
   void *extract(const char *, int &) override;
 
  private:
-  int ninsert, ntype, nfreq, seed;
-  int globalflag, localflag, maxattempt, rateflag, scaleflag, targetflag;
+  int ninsert, ntype, nfreq, seed, ncalled;
+  int globalflag, localflag, maxattempt, rateflag, scaleflag, targetflag, depunitflag;
   int mode, rigidflag, shakeflag, idnext, distflag, orientflag, warnflag;
   int varflag, vvar, xvar, yvar, zvar;
+  double tfreq;
   double lo, hi, deltasq, nearsq, rate, sigma;
   double vxlo, vxhi, vylo, vyhi, vzlo, vzhi;
   double xlo, xhi, ylo, yhi, zlo, zhi, xmid, ymid, zmid;
@@ -61,7 +63,7 @@ class FixDeposit : public Fix {
   double oneradius;
 
   int ninserted;
-  bigint nfirst;
+  bigint nprev;
   tagint maxtag_all, maxmol_all;
   class RanPark *random;
 

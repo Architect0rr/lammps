@@ -23,6 +23,7 @@ ComputeStyle(cluster/enthropy,ComputeClusterEnthropy);
 #define LMP_COMPUTE_CLUSTER_ENTHROPY_H
 
 #include "compute.h"
+#include "nucc_cspan.hpp"
 
 namespace LAMMPS_NS {
 
@@ -37,13 +38,10 @@ class ComputeClusterEnthropy : public Compute {
 
  private:
   class ComputeClusterSizeExt *compute_cluster_size = nullptr;
-  Compute *compute_ke_atom = nullptr;
-  Compute *compute_pe_atom = nullptr;
-  Compute *compute_temp_cluster = nullptr;
   Compute *compute_entropy_atom = nullptr;
 
-  double *temp = nullptr;          // array of temps of global clusters
-  double *local_temp = nullptr;    // array of temps of local clusters
+  NUCC::cspan<double> enth;          // array of temps of global clusters
+  NUCC::cspan<double> local_enth;    // array of temps of local clusters
   int size_cutoff;                 // size of max cluster
 };
 

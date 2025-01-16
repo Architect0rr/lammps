@@ -55,44 +55,32 @@ ComputeClusterEnthropy::ComputeClusterEnthropy(LAMMPS* lmp, int narg, char** arg
     error->all(FLERR, "{}: Cannot find compute with style 'cluster/size' with id: {}", style, arg[3]);
   }
 
+  // Get entropy/atom compute
+  compute_entropy_atom = lmp->modify->get_compute_by_id(arg[4]);
+  if (compute_entropy_atom == nullptr) { error->all(FLERR, "{}: Cannot find compute with id '{}'", style, arg[4]); }
+
   size_cutoff = compute_cluster_size->get_size_cutoff();
-  if ((narg >= 4) && (::strcmp(arg[4], "inherit") != 0)) {
-    int t_size_cutoff = utils::inumeric(FLERR, arg[4], true, lmp);
+  if ((narg >= 6) && (::strcmp(arg[5], "inherit") != 0)) {
+    int t_size_cutoff = utils::inumeric(FLERR, arg[5], true, lmp);
     if (t_size_cutoff < 1) { error->all(FLERR, "{}: size_cutoff must be greater than 0", style); }
     if (t_size_cutoff > size_cutoff) { error->all(FLERR, "{}: size_cutoff cannot be greater than it of compute sizecluster", style); }
   }
 
-  // Get ke/atom compute
-  compute_ke_atom = lmp->modify->get_compute_by_id(arg[5]);
-  if (compute_ke_atom == nullptr) { error->all(FLERR, "{}: Cannot find compute with style id '{}'", style, arg[5]); }
-
-  // Get pe/atom compute
-  compute_pe_atom = lmp->modify->get_compute_by_id(arg[6]);
-  if (compute_pe_atom == nullptr) { error->all(FLERR, "{}: Cannot find compute with id '{}'", style, arg[6]); }
-
-  // Get entropy/atom compute
-  compute_entropy_atom = lmp->modify->get_compute_by_id(arg[7]);
-  if (compute_entropy_atom == nullptr) { error->all(FLERR, "{}: Cannot find compute with id '{}'", style, arg[7]); }
-
-  // Get temp/cluster compute
-  compute_temp_cluster = lmp->modify->get_compute_by_id(arg[8]);
-  if (compute_temp_cluster == nullptr) { error->all(FLERR, "{}: Cannot find compute with id '{}'", style, arg[8]); }
-
   size_local_rows = size_cutoff + 1;
-  memory->create(local_temp, size_local_rows + 1, "compute:cluster/enthropy:temp");
-  vector_local = local_temp;
+  local_enth.create(memory, size_local_rows + 1, "compute:cluster/enthropy:temp");
+  vector_local = local_enth.data();
 
   size_vector  = size_cutoff + 1;
-  memory->create(temp, size_vector + 1, "compute:cluster/enthropy:temp");
-  vector = temp;
+  enth.create(memory, size_vector + 1, "compute:cluster/enthropy:temp");
+  vector = enth.data();
 }
 
 /* ---------------------------------------------------------------------- */
 
 ComputeClusterEnthropy::~ComputeClusterEnthropy() noexcept(true)
 {
-  memory->destroy(local_temp);
-  memory->destroy(temp);
+  local_enth.destroy(memory);
+  enth.destroy(memory);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -110,10 +98,10 @@ void ComputeClusterEnthropy::compute_vector()
 
   compute_local();
 
-  ::MPI_Allreduce(local_temp, temp, size_vector, MPI_DOUBLE, MPI_SUM, world);
+  ::MPI_Allreduce(local_enth.data(), enth.data(), size_vector, MPI_DOUBLE, MPI_SUM, world);
 
   const double* dist = compute_cluster_size->vector;
-  for (int i = 0; i < size_vector; ++i) { temp[i] /= (dist[i] * i - 1) * domain->dimension; }
+  for (int i = 0; i < size_vector; ++i) { enth[i] /= dist[i]; }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -124,12 +112,19 @@ void ComputeClusterEnthropy::compute_local()
 
   if (compute_cluster_size->invoked_vector != update->ntimestep) { compute_cluster_size->compute_vector(); }
 
-  if (compute_ke_atom->invoked_peratom != update->ntimestep) { compute_ke_atom->compute_peratom(); }
+  const double* enths = compute_entropy_atom->vector_atom;
+  local_enth.reset();
 
-  const double* kes = compute_ke_atom->vector_atom;
-  ::memset(local_temp, 0.0, size_local_rows * sizeof(double));
-
-
+  int nclusters = dynamic_cast<ComputeClusterSizeExt*>(compute_cluster_size)->get_cluster_map().size();
+  const auto& clusters = dynamic_cast<ComputeClusterSizeExt*>(compute_cluster_size)->get_clusters();
+  for (int i = 0; i < nclusters; ++i) {
+    const auto& clstr = clusters[i];
+    const auto& atoms = clstr.atoms();
+    for (int j = 0; j < clstr.l_size; ++j) {
+      auto a = local_enth[clstr.g_size];
+      local_enth[clstr.g_size] += enths[atoms[j]];
+    }
+  }
 }
 
 /* ----------------------------------------------------------------------
