@@ -252,10 +252,9 @@ void ComputeClusterSizeExt::compute_vector()
     cluster_data& clstr = clusters[clidx];
     clstr.l_size = ns[2 * clidx + 1];
     clstr.rearrange();
-    auto clatoms = clstr.atoms();
     const auto clatoms = clstr.atoms();
     for (int i = 0; i < clstr.l_size; ++i) {
-      if (clatoms[i] >= atom->nlocal) { error->one(FLERR, "{}/pre_exchange:{}: particle index exceeds nlocal", style, comm->me); }
+      if (clatoms[i] >= atom->nlocal) { error->one(FLERR, "{}/compute_vector:{}: particle index exceeds nlocal", style, comm->me); }
       peratom_size[clatoms[i]] = clstr.g_size;
     }
     if ((clstr.g_size < size_cutoff) && (clstr.g_size > 1)) { cbs_all[clstr.g_size].push_back(clidx); }
