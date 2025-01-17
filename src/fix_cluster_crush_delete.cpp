@@ -382,7 +382,7 @@ void FixClusterCrushDelete::pre_exchange()
     }
   }
 
-  std::sort(p2m.data(), p2m.data() + p2m.size(), std::greater<int>());
+  std::sort(p2m.data(), p2m.data() + atoms2move_local, std::greater<int>());
 
   c2c.reset();
   c2c[comm->me] = clusters2crush_local;
