@@ -199,17 +199,17 @@ void ComputeClusterSizeExt::compute_vector()
     }
   }
 
-  // add ghost atoms
-  for (int i = atom->nlocal; i < atom->nmax; ++i) {
-    if ((atom->mask[i] & groupbit) != 0) {
-      const auto clid = static_cast<int>(cluster_ids[i]);
-      if (cmap.count(clid) > 0) {
-        cluster_data& clstr = clusters[cmap[clid]];
-        // also possible segfault if number of ghost exceeds LMP_NUCC_CLUSTER_MAX_GHOST
-        clstr.ghost_initial()[clstr.nghost++] = i;
-      }
-    }
-  }
+  // // add ghost atoms
+  // for (int i = atom->nlocal; i < atom->nmax; ++i) {
+  //   if ((atom->mask[i] & groupbit) != 0) {
+  //     const auto clid = static_cast<int>(cluster_ids[i]);
+  //     if (cmap.count(clid) > 0) {
+  //       cluster_data& clstr = clusters[cmap[clid]];
+  //       // also possible segfault if number of ghost exceeds LMP_NUCC_CLUSTER_MAX_GHOST
+  //       clstr.ghost_initial()[clstr.nghost++] = i;
+  //     }
+  //   }
+  // }
 
   for (const auto& [clid, clidx] : cmap) {
     cluster_data& clstr = clusters[clidx];
@@ -271,7 +271,7 @@ void ComputeClusterSizeExt::compute_vector()
       if (clatoms[i] >= atom->nlocal) { error->one(FLERR, "{}/compute_vector_3:{}: particle index exceeds nlocal", style, comm->me); }
     }
     clstr.l_size = ns[2 * clidx + 1];
-    clstr.rearrange();
+    // clstr.rearrange();
     for (int i = 0; i < clstr.l_size; ++i) {
       if (clatoms[i] >= atom->nlocal) { error->one(FLERR, "{}/compute_vector_4:{}: particle index exceeds nlocal", style, comm->me); }
       peratom_size[clatoms[i]] = clstr.g_size;

@@ -8,7 +8,7 @@ namespace NUCC {
 struct cluster_data {
   explicit cluster_data(const int _clid) : clid(_clid) {}
 
-  void rearrange() noexcept { ::memcpy(_atoms + l_size, _ghost, nghost * sizeof(int)); }
+  // void rearrange() noexcept { ::memcpy(_atoms + l_size, _ghost, nghost * sizeof(int)); }
 
   NUCC::cspan<const int> atoms_all() const { return std::span<const int>(_atoms, l_size + nghost); }
 
@@ -21,7 +21,7 @@ struct cluster_data {
 
   NUCC::cspan<const int> atoms() const { return std::span<const int>(_atoms, l_size); }
 
-  NUCC::cspan<int, LMP_NUCC_CLUSTER_MAX_GHOST> ghost_initial() { return std::span<int, LMP_NUCC_CLUSTER_MAX_GHOST>(_ghost, nghost); }
+  // NUCC::cspan<int, LMP_NUCC_CLUSTER_MAX_GHOST> ghost_initial() { return std::span<int, LMP_NUCC_CLUSTER_MAX_GHOST>(_ghost, nghost); }
 
   NUCC::cspan<const int> ghost() const { return std::span<const int>(_atoms + l_size, nghost); }
 
@@ -44,7 +44,7 @@ struct cluster_data {
  private:
   int _owners[LMP_NUCC_CLUSTER_MAX_OWNERS];    // procs owning some cluster's atoms
   int _atoms[LMP_NUCC_CLUSTER_MAX_SIZE];       // local ids of atoms
-  int _ghost[LMP_NUCC_CLUSTER_MAX_GHOST];      // local ids of ghost atoms
+  // int _ghost[LMP_NUCC_CLUSTER_MAX_GHOST];      // local ids of ghost atoms
 };
 
 }    //  namespace NUCC
