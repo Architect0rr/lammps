@@ -194,7 +194,7 @@ void ComputeClusterSizeExt::compute_vector()
   for (const auto& [clid, clidx] : cmap) {
     cluster_data& clstr = clusters[clidx];
     const auto clatoms = clstr.atoms();
-    for (int i = 0; i < clstr.l_size; ++i) {
+    for (int i = 0; i < ns[2 * clidx + 1]; ++i) {
       if (clatoms[i] >= atom->nlocal) { error->one(FLERR, "{}/compute_vector_1:{}: particle index exceeds nlocal", style, comm->me); }
     }
   }
@@ -211,13 +211,13 @@ void ComputeClusterSizeExt::compute_vector()
   //   }
   // }
 
-  for (const auto& [clid, clidx] : cmap) {
-    cluster_data& clstr = clusters[clidx];
-    const auto clatoms = clstr.atoms();
-    for (int i = 0; i < clstr.l_size; ++i) {
-      if (clatoms[i] >= atom->nlocal) { error->one(FLERR, "{}/compute_vector_2:{}: particle index exceeds nlocal", style, comm->me); }
-    }
-  }
+  // for (const auto& [clid, clidx] : cmap) {
+  //   cluster_data& clstr = clusters[clidx];
+  //   const auto clatoms = clstr.atoms();
+  //   for (int i = 0; i < ns[2 * clidx + 1]; ++i) {
+  //     if (clatoms[i] >= atom->nlocal) { error->one(FLERR, "{}/compute_vector_2:{}: particle index exceeds nlocal", style, comm->me); }
+  //   }
+  // }
 
   // communicate about number of unique clusters
   const int ncluster_local = 2 * cmap.size();
@@ -267,15 +267,15 @@ void ComputeClusterSizeExt::compute_vector()
   for (const auto& [clid, clidx] : cmap) {
     cluster_data& clstr = clusters[clidx];
     const auto clatoms = clstr.atoms();
+    clstr.l_size = ns[2 * clidx + 1];
     for (int i = 0; i < clstr.l_size; ++i) {
       if (clatoms[i] >= atom->nlocal) { error->one(FLERR, "{}/compute_vector_3:{}: particle index exceeds nlocal", style, comm->me); }
     }
-    clstr.l_size = ns[2 * clidx + 1];
     // clstr.rearrange();
-    for (int i = 0; i < clstr.l_size; ++i) {
-      if (clatoms[i] >= atom->nlocal) { error->one(FLERR, "{}/compute_vector_4:{}: particle index exceeds nlocal", style, comm->me); }
-      peratom_size[clatoms[i]] = clstr.g_size;
-    }
+    // for (int i = 0; i < clstr.l_size; ++i) {
+    //   if (clatoms[i] >= atom->nlocal) { error->one(FLERR, "{}/compute_vector_4:{}: particle index exceeds nlocal", style, comm->me); }
+    //   peratom_size[clatoms[i]] = clstr.g_size;
+    // }
     if ((clstr.g_size < size_cutoff) && (clstr.g_size > 1)) { cbs_all[clstr.g_size].push_back(clidx); }
     if (clstr.host == comm->me) {
       if (clstr.g_size < size_cutoff) { dist_local[clstr.g_size] += 1; }
