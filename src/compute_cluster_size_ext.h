@@ -34,6 +34,13 @@ ComputeStyle(size/cluster/ext,ComputeClusterSizeExt);
 #    include <unordered_map>
 #    include <vector>
 
+namespace NUCC {
+  struct cldata {
+    int id = 0;
+    int sz = 0;
+  };
+}
+
 namespace LAMMPS_NS {
 
 class ComputeClusterSizeExt : public Compute {
@@ -81,8 +88,8 @@ class ComputeClusterSizeExt : public Compute {
   NUCC::cspan<int> counts_global;
   NUCC::cspan<int> displs;
   NUCC::cspan<NUCC::cluster_data> clusters;
-  NUCC::cspan<int> ns;
-  NUCC::cspan<int> gathered;
+  NUCC::cspan<NUCC::cldata> ns;
+  NUCC::cspan<NUCC::cldata> gathered;
   NUCC::cspan<double> peratom_size;
   bigint natom_loc = 0;
   int nonexclusive = 0;
@@ -92,6 +99,8 @@ class ComputeClusterSizeExt : public Compute {
   int nmono = 0;
 
   Compute *compute_cluster_atom = nullptr;
+
+  MPI_Datatype MPI_CLDATA;
 };
 
 }    // namespace LAMMPS_NS

@@ -82,12 +82,26 @@ ComputeClusterSizeExt::ComputeClusterSizeExt(LAMMPS* lmp, int narg, char** arg) 
 
   cIDs_by_size.reserve(size_cutoff);
   cIDs_by_size_all.reserve(size_cutoff);
+
+
+  MPI_Datatype type[2] = {MPI_INT, MPI_INT};
+  int blocklen[2] = {1, 1};
+  MPI_Aint disp[2];
+
+  // Calculate displacements
+  disp[0] = offsetof(cldata, id);
+  disp[1] = offsetof(cldata, sz);
+
+  MPI_Type_create_struct(2, blocklen, disp, type, &MPI_CLDATA);
+  MPI_Type_commit(&MPI_CLDATA);
 }
 
 /* ---------------------------------------------------------------------- */
 
 ComputeClusterSizeExt::~ComputeClusterSizeExt() noexcept(true)
 {
+  MPI_Type_free(&MPI_CLDATA);
+
   dist.destroy(memory);
   dist_local.destroy(memory);
   counts_global.destroy(memory);
@@ -131,8 +145,8 @@ void ComputeClusterSizeExt::init()
 
   if (ns.empty() || clusters.empty() || monomers.empty()) { error->one(FLERR, "{}: Inconsistent arrays state", style); }
 
-  if ((gathered.empty()) || (natom_loc < 2 * atom->natoms)) {
-    natom_loc = static_cast<bigint>(static_cast<long double>(2 * atom->natoms) * LMP_NUCC_ALLOC_COEFF);
+  if ((gathered.empty()) || (natom_loc < atom->natoms)) {
+    natom_loc = static_cast<bigint>(static_cast<long double>(atom->natoms) * LMP_NUCC_ALLOC_COEFF);
     gathered.grow(memory, natom_loc, "size/cluster/ext:gathered");
   }
 
@@ -182,19 +196,19 @@ void ComputeClusterSizeExt::compute_vector()
       if (cmap.count(clid) == 0) {
         const int clidx = cmap.size();
         cmap[clid] = clidx;
-        ns[2 * clidx] = clid;
-        ns[2 * clidx + 1] = 0;
+        ns[clidx].id = clid;
+        ns[clidx].sz = 0;
         clusters[clidx] = cluster_data(clid);
       }
       // possible segfault if actual cluster size exceeds LMP_NUCC_CLUSTER_MAX_SIZE + LMP_NUCC_CLUSTER_MAX_GHOST
       const int clidx = cmap[clid];
-      clusters[clidx].atoms<false>()[ns[2 * clidx + 1]++] = i;
+      clusters[clidx].atoms<false>()[ns[clidx].sz++] = i;
     }
   }
   for (const auto& [clid, clidx] : cmap) {
     cluster_data& clstr = clusters[clidx];
     const auto clatoms = clstr.atoms();
-    for (int i = 0; i < ns[2 * clidx + 1]; ++i) {
+    for (int i = 0; i < ns[clidx].sz; ++i) {
       if (clatoms[i] >= atom->nlocal) { error->one(FLERR, "{}/compute_vector_1:{}: particle index exceeds nlocal", style, comm->me); }
     }
   }
@@ -220,8 +234,8 @@ void ComputeClusterSizeExt::compute_vector()
   // }
 
   // communicate about number of unique clusters
-  const int ncluster_local = 2 * cmap.size();
-  ::MPI_Allgather(&ncluster_local, 1, MPI_INT, counts_global.data(), 1, MPI_INT, world);
+  const int ncluster_local = cmap.size();
+  ::MPI_Allgather(&ncluster_local, 1, MPI_CLDATA, counts_global.data(), 1, MPI_CLDATA, world);
 
   int tcon = counts_global[0];
   for (int i = 1; i < comm->nprocs; ++i) {
@@ -235,19 +249,19 @@ void ComputeClusterSizeExt::compute_vector()
   }
 
   // communicate about local cluster sizes
-  ::MPI_Allgatherv(ns.data(), ncluster_local, MPI_INT, gathered.data(), counts_global.data(), displs.data(), MPI_INT, world);
+  ::MPI_Allgatherv(ns.data(), ncluster_local, MPI_CLDATA, gathered.data(), counts_global.data(), displs.data(), MPI_CLDATA, world);
 
   // fill local data
   for (int i = 0; i < comm->nprocs; ++i) {
-    for (int j = 0; j < counts_global[i] - 1; j += 2) {
+    for (int j = 0; j < counts_global[i]; ++j) {
       int const k = displs[i] + j;
-      if (cmap.count(gathered[k]) > 0) {
-        cluster_data& clstr = clusters[cmap[gathered[k]]];
+      if (cmap.count(gathered[k].id) > 0) {
+        cluster_data& clstr = clusters[cmap[gathered[k].id]];
         if (i != comm->me) { clstr.owners<false>()[clstr.nowners++] = i; }
-        clstr.g_size += gathered[k + 1];
-        if (gathered[k + 1] > clstr.nhost) {
+        clstr.g_size += gathered[k].sz;
+        if (gathered[k].sz > clstr.nhost) {
           clstr.host = i;
-          clstr.nhost = gathered[k + 1];
+          clstr.nhost = gathered[k].sz;
         }
       }
     }
@@ -267,7 +281,7 @@ void ComputeClusterSizeExt::compute_vector()
   for (const auto& [clid, clidx] : cmap) {
     cluster_data& clstr = clusters[clidx];
     const auto clatoms = clstr.atoms();
-    clstr.l_size = ns[2 * clidx + 1];
+    clstr.l_size = ns[clidx].sz;
     for (int i = 0; i < clstr.l_size; ++i) {
       if (clatoms[i] >= atom->nlocal) { error->one(FLERR, "{}/compute_vector_3:{}: particle index exceeds nlocal", style, comm->me); }
     }
