@@ -235,7 +235,7 @@ void ComputeClusterSizeExt::compute_vector()
 
   // communicate about number of unique clusters
   const int ncluster_local = cmap.size();
-  ::MPI_Allgather(&ncluster_local, 1, MPI_CLDATA, counts_global.data(), 1, MPI_CLDATA, world);
+  ::MPI_Allgather(&ncluster_local, 1, MPI_INT, counts_global.data(), 1, MPI_INT, world);
 
   int tcon = counts_global[0];
   for (int i = 1; i < comm->nprocs; ++i) {
