@@ -122,8 +122,10 @@ void ComputeClusterPE::compute_local()
   for (int i = 0; i < nclusters; ++i) {
     const auto& clstr = clusters[i];
     const auto& atoms = clstr.atoms();
-    for (int j = 0; j < clstr.l_size; ++j) {
-      local_pes[clstr.g_size] += peratompes[atoms[j]];
+    if (clstr.g_size < size_cutoff) {
+      for (int j = 0; j < clstr.l_size; ++j) {
+        local_pes[clstr.g_size] += peratompes[atoms[j]];
+      }
     }
   }
 

@@ -267,8 +267,10 @@ void ComputeClusterVolume::compute_local()
       for (const auto clidx : clidxs) {
         const cluster_data &clstr = clusters[clidx];
         bool const nonexclusive = clstr.nowners > 0;
-        volumes[clidx] = occupied_volume_precomputed(clstr.atoms_all(), clstr.l_size, clstr.nghost,
-                                                     nonexclusive);
+        // volumes[clidx] = occupied_volume_precomputed(clstr.atoms_all(), clstr.l_size, clstr.nghost,
+        //                                              nonexclusive);
+        volumes[clidx] = occupied_volume_precomputed(clstr.atoms(), clstr.l_size, 0,
+        nonexclusive);
         if (nonexclusive) {
           if (clstr.host != comm->me) {
             // ++send_comm_matrix_local[clstr.host];

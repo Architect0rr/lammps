@@ -137,13 +137,15 @@ void ComputeClusterKE::compute_local()
   const double* const peratomkes = compute_ke_atom->vector_atom;
   local_kes.reset();
 
-  int nclusters = dynamic_cast<ComputeClusterSizeExt*>(compute_cluster_size)->get_cluster_map().size();
-  const auto& clusters = dynamic_cast<ComputeClusterSizeExt*>(compute_cluster_size)->get_clusters();
+  int nclusters = compute_cluster_size->get_cluster_map().size();
+  const auto& clusters = compute_cluster_size->get_clusters();
   for (int i = 0; i < nclusters; ++i) {
     const auto& clstr = clusters[i];
     const auto& atoms = clstr.atoms();
-    for (int j = 0; j < clstr.l_size; ++j) {
-      local_kes[clstr.g_size] += peratomkes[atoms[j]];
+    if (clstr.g_size < size_cutoff) {
+      for (int j = 0; j < clstr.l_size; ++j) {
+        local_kes[clstr.g_size] += peratomkes[atoms[j]];
+      }
     }
   }
 }

@@ -10,7 +10,7 @@ struct cluster_data {
 
   // void rearrange() noexcept { ::memcpy(_atoms + l_size, _ghost, nghost * sizeof(int)); }
 
-  NUCC::cspan<const int> atoms_all() const { return std::span<const int>(_atoms, l_size + nghost); }
+  // NUCC::cspan<const int> atoms_all() const { return std::span<const int>(_atoms, l_size + nghost); }
 
   template <bool Protect = true>
     requires(!Protect)
@@ -23,7 +23,7 @@ struct cluster_data {
 
   // NUCC::cspan<int, LMP_NUCC_CLUSTER_MAX_GHOST> ghost_initial() { return std::span<int, LMP_NUCC_CLUSTER_MAX_GHOST>(_ghost, nghost); }
 
-  NUCC::cspan<const int> ghost() const { return std::span<const int>(_atoms + l_size, nghost); }
+  // NUCC::cspan<const int> ghost() const { return std::span<const int>(_atoms + l_size, nghost); }
 
   template <bool Protect = true>
     requires(!Protect)
@@ -40,7 +40,7 @@ struct cluster_data {
   int host = -1;      // host proc (me if <0)
   int nhost = 0;      // local cluster size of host proc
   int nowners = 0;    // number of owners
-  int nghost = 0;     // number of ghost atoms in cluster
+  // int nghost = 0;     // number of ghost atoms in cluster
  private:
   int _owners[LMP_NUCC_CLUSTER_MAX_OWNERS];    // procs owning some cluster's atoms
   int _atoms[LMP_NUCC_CLUSTER_MAX_SIZE];       // local ids of atoms
