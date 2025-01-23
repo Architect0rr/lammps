@@ -77,7 +77,7 @@
         "BUILD_LAMMPS_SHELL": "no",
         "BUILD_LAMMPS_GUI": "no",
         "PKG_ADIOS": "yes",
-        "ADIOS2_DIR": "$env{REPOS}/ADIOS2/build",
+        "ADIOS2_DIR": "$env{REPOS_DIR}/ADIOS2/build",
         "PKG_PYTHON": "yes",
         "Python_EXECUTABLE": "$env{VIRTUAL_ENV}/bin/python3",
         "PKG_COMPRESS": "yes",
