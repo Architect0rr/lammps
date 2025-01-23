@@ -80,7 +80,8 @@
         "ADIOS2_DIR": "$env{REPOS}/ADIOS2/build",
         "PKG_PYTHON": "yes",
         "Python_EXECUTABLE": "$env{VIRTUAL_ENV}/bin/python3",
-        "PKG_COMPRESS": "yes"
+        "PKG_COMPRESS": "yes",
+        "MPI_ROOT": "$env{MPI_HOME}"
       },
       "environment": {},
       "generator": "Unix Makefiles",
